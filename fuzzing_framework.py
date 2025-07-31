@@ -15,7 +15,7 @@ from __future__ import annotations
 from scapy.layers.l2 import Ether, ARP
 from scapy.layers.inet import IP, TCP, UDP, ICMP  
 from scapy.packet import Raw, Packet, fuzz
-from scapy.sendrecv import send
+from scapy.sendrecv import send, sendp
 from typing import Dict, List, Union, Any, Optional, Callable, Protocol
 from enum import Enum
 import os
@@ -877,9 +877,23 @@ class FuzzingCampaign:
                     if network_enabled:
                         if self.verbose:
                             logger.info(f"[SEND] Sending: {fuzzed_packets[itteration].summary()}")
-                        # TODO: Implement actual packet sending with response capture
-                        # response = send(fuzzed_packets[itteration]) or sendp(fuzzed_packets[itteration])
-                        pass
+                        
+                        # Send using appropriate Scapy function based on layer
+                        try:
+                            packet = fuzzed_packets[itteration]
+                            if packet is None:
+                                continue
+                                
+                            if self.layer == 2:
+                                # Layer 2: Use sendp() for raw Ethernet frames  
+                                response = sendp(packet, verbose=0, return_packets=True)
+                            else:
+                                # Layer 3: Use send() for IP packets (respects user's layer choice)
+                                response = send(packet, verbose=0, return_packets=True)
+                        except Exception as e:
+                            if self.verbose:
+                                logger.error(f"[SEND] Failed to send packet: {e}")
+                            response = None
                     
                 # Execute post-send callback
                 if self.post_send_callback and self.context:
