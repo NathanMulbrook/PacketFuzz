@@ -60,11 +60,36 @@ class BasicTCPCampaign(FuzzingCampaign):
         TCP(dport=FuzzField(values=list(range(1, 1025)), description="TCP ports"))
     )
 
+class MalformedPacketCampaign(FuzzingCampaign):
+    """Malformed packet campaign with interface offload management."""
+    name = "Malformed Packet Test"
+    target = "192.168.1.100"
+    iterations = 5
+    output_network = False  # Keep disabled for safety in examples
+    output_pcap = "malformed_packets.pcap"
+    verbose = True
+    
+    # Enable interface offload management for malformed packets
+    # (Only takes effect when output_network=True and running as root)
+    disable_interface_offload = True
+    interface = "eth0"
+    
+    packet = (
+        IP(dst="192.168.1.100") /
+        TCP(
+            dport=80,
+            chksum=0x0000,  # Intentionally invalid checksum
+            window=FuzzField(values=[0, 1, 65535], description="Edge case TCP windows")
+        ) /
+        Raw(load=b"GET / HTTP/1.1\r\n\r\n")
+    )
+
 # List of campaigns to run
 campaigns = [
     BasicHTTPCampaign,
     BasicDNSCampaign,
-    BasicTCPCampaign
+    BasicTCPCampaign,
+    MalformedPacketCampaign
 ]
 
 def main():
@@ -75,6 +100,7 @@ def main():
     print("1. Different types of campaigns (HTTP, DNS, TCP)")
     print("2. Using FuzzField with different value lists")
     print("3. Campaign configuration options")
+    print("4. Interface offload management for malformed packets")
     print()
     
     results = []

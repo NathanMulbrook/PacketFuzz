@@ -26,6 +26,8 @@ import logging
 import copy
 import json
 import threading
+import subprocess
+import shutil
 from datetime import datetime
 from scapy.utils import wrpcap
 from mutator_manager import MutatorManager, FuzzConfig, FuzzMode
@@ -45,6 +47,16 @@ DEFAULT_STATS_INTERVAL = 10.0
 DEFAULT_PCAP_DIR = "pcaps"
 DEFAULT_LOG_DIR = "logs"
 DEFAULT_CRASH_LOG_DIR = "crash_logs"
+
+# Default interface offload features to disable for malformed packet fuzzing
+DEFAULT_OFFLOAD_FEATURES = [
+    "tx-checksumming",      # Transmit checksum offloading
+    "rx-checksumming",      # Receive checksum offloading  
+    "tcp-segmentation-offload",  # TCP segmentation offload (TSO)
+    "generic-segmentation-offload",  # Generic segmentation offload (GSO)
+    "generic-receive-offload",   # Generic receive offload (GRO)
+    "large-receive-offload"      # Large receive offload (LRO)
+]
 
 # Configure logging with default log directory
 log_dir = Path(DEFAULT_LOG_DIR)
@@ -319,6 +331,143 @@ class FuzzField:
         return f"FuzzField(values={self.values})"
 
 
+    pass
+
+
+def configure_interface_offload(interface: str, features: List[str], disable: bool = True) -> tuple[bool, dict]:
+    """
+    Configure network interface offload features using ethtool.
+    
+    Args:
+        interface: Network interface name (e.g., 'eth0')
+        features: List of offload features to configure
+        disable: If True, disable features; if False, enable features
+        
+    Returns:
+        Tuple of (success: bool, original_settings: dict)
+        original_settings contains the previous state for restoration
+        
+    Raises:
+        PermissionError: If not running as root
+        FileNotFoundError: If ethtool is not available
+        RuntimeError: If interface configuration fails
+    """
+    # Check for root privileges
+    if os.geteuid() != 0:
+        raise PermissionError("Root privileges required for interface configuration")
+    
+    # Check if ethtool is available
+    if not shutil.which("ethtool"):
+        raise FileNotFoundError("ethtool command not found - install ethtool package")
+    
+    # Validate interface exists
+    if not os.path.exists(f"/sys/class/net/{interface}"):
+        raise RuntimeError(f"Network interface '{interface}' not found")
+    
+    original_settings = {}
+    action = "off" if disable else "on"
+    action_desc = "Disabling" if disable else "Enabling"
+    
+    try:
+        # Get current settings for restoration later
+        for feature in features:
+            try:
+                # Query current feature state
+                result = subprocess.run(
+                    ["ethtool", "-k", interface],
+                    capture_output=True,
+                    text=True,
+                    check=True
+                )
+                
+                # Parse ethtool output to find current state
+                for line in result.stdout.split('\n'):
+                    if feature in line and ':' in line:
+                        current_state = line.split(':')[1].strip().split()[0]
+                        original_settings[feature] = current_state
+                        break
+                else:
+                    # Feature not found in output, skip it
+                    logger.warning(f"Feature '{feature}' not found on interface '{interface}'")
+                    
+            except subprocess.CalledProcessError as e:
+                logger.warning(f"Failed to query feature '{feature}': {e}")
+        
+        # Apply new settings
+        success_count = 0
+        for feature in features:
+            if feature not in original_settings:
+                continue  # Skip features we couldn't query
+                
+            try:
+                # Apply configuration
+                subprocess.run(
+                    ["ethtool", "-K", interface, feature, action],
+                    capture_output=True,
+                    text=True,
+                    check=True
+                )
+                success_count += 1
+                logger.info(f"{action_desc} {feature} on {interface}")
+                
+            except subprocess.CalledProcessError as e:
+                logger.error(f"Failed to configure {feature} on {interface}: {e}")
+                # Continue with other features rather than failing completely
+        
+        if success_count == 0:
+            raise RuntimeError(f"Failed to configure any offload features on {interface}")
+        
+        logger.info(f"Successfully configured {success_count}/{len(features)} offload features on {interface}")
+        return True, original_settings
+        
+    except Exception as e:
+        logger.error(f"Interface configuration failed: {e}")
+        return False, original_settings
+
+
+def restore_interface_offload(interface: str, original_settings: dict) -> bool:
+    """
+    Restore network interface offload features to their original state.
+    
+    Args:
+        interface: Network interface name
+        original_settings: Dictionary of feature -> original_state mappings
+        
+    Returns:
+        bool: True if restoration was successful
+    """
+    if not original_settings:
+        return True  # Nothing to restore
+    
+    if os.geteuid() != 0:
+        logger.warning("Cannot restore interface settings: root privileges required")
+        return False
+    
+    if not shutil.which("ethtool"):
+        logger.warning("Cannot restore interface settings: ethtool not available")
+        return False
+    
+    success_count = 0
+    for feature, original_state in original_settings.items():
+        try:
+            subprocess.run(
+                ["ethtool", "-K", interface, feature, original_state],
+                capture_output=True,
+                text=True,
+                check=True
+            )
+            success_count += 1
+            logger.info(f"Restored {feature} to {original_state} on {interface}")
+            
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Failed to restore {feature} on {interface}: {e}")
+    
+    if success_count > 0:
+        logger.info(f"Restored {success_count}/{len(original_settings)} interface settings on {interface}")
+    
+    return success_count == len(original_settings)
+
+
 # Fuzz config inheritance mode: 'nearest' (default, inherited) or 'explicit' (only direct config)
 FUZZ_CONFIG_INHERITANCE_MODE = "nearest"
 
@@ -343,6 +492,9 @@ class FuzzingCampaign:
         - capture_responses: Whether to capture responses (default False)
         - global_dict_config_path: Path to global dictionary configuration file
         - dictionary_config_file: Path to user dictionary configuration file (overrides defaults)
+        - disable_interface_offload: Disable network interface hardware offload features (default False)
+        - interface_offload_features: List of specific offload features to disable (None = use defaults)
+        - interface_offload_restore: Restore original interface settings after campaign (default True)
     
     Packet-level configuration is now embedded in the packet object itself using:
         packet[Layer].field_fuzz('fieldname').dictionary = ["dict1.txt", "dict2.txt"]
@@ -394,12 +546,22 @@ class FuzzingCampaign:
     excluded_layers: Optional[List[str]] = None
     fuzz_start_layer: Optional[str] = None  # Layer name to attach PacketFuzzConfig to (default: base layer)
 
+    # Network interface offload management for malformed packet fuzzing
+    disable_interface_offload: bool = False                    # Enable/disable interface offload management
+    interface_offload_features: Optional[List[str]] = None     # Specific features to disable (None = use defaults)
+    interface_offload_restore: bool = True                     # Restore original settings after campaign
+
     def __init__(self):
         """Initialize campaign with callback manager and handle excluded_layers."""
         self.callback_manager = CallbackManager(self)
         self.context: Optional[CampaignContext] = None
         self.monitor_thread: Optional[threading.Thread] = None
         self.mutator_preference = list(getattr(self, 'mutator_preference', None) or ["libfuzzer"])
+        
+        # Initialize interface offload management
+        self._original_offload_settings: dict = {}
+        self._interface_configured: bool = False
+        
         # Handle excluded_layers by adding advanced mapping entries
         if isinstance(self.excluded_layers, list) and self.excluded_layers:
             exclude_entries = [
@@ -613,6 +775,8 @@ class FuzzingCampaign:
             logger.error(f"Monitor thread failed: {e}")
             self.callback_manager.handle_crash("monitor", None, context, e)
 
+
+
     def _run_fuzzing_loop(self, fuzzer: 'MutatorManager', packet: Packet) -> bool:
         """
         Run the main fuzzing loop with callback integration.
@@ -625,7 +789,30 @@ class FuzzingCampaign:
         start_time = time.time()
         pcap_writer = None
         merged_field_mapping = self._load_merged_field_mapping()
+        
         try:
+            # Configure network interface offload settings if enabled
+            if self.disable_interface_offload and self.output_network:
+                features_to_disable = self.interface_offload_features or DEFAULT_OFFLOAD_FEATURES
+                
+                if self.verbose:
+                    logger.info(f"Configuring interface {self.interface} for malformed packet fuzzing")
+                    logger.info(f"Disabling features: {', '.join(features_to_disable)}")
+                
+                success, original_settings = configure_interface_offload(
+                    self.interface, 
+                    features_to_disable, 
+                    disable=True
+                )
+                
+                if success:
+                    self._original_offload_settings = original_settings
+                    self._interface_configured = True
+                    if self.verbose:
+                        logger.info(f"Interface {self.interface} configured successfully")
+                else:
+                    raise RuntimeError(f"Failed to configure interface {self.interface}")
+            
             # Initialize PCAP writer if PCAP output is enabled
             pcap_path = self.get_pcap_path()
             if pcap_path:
@@ -690,7 +877,9 @@ class FuzzingCampaign:
                     if network_enabled:
                         if self.verbose:
                             logger.info(f"[SEND] Sending: {fuzzed_packets[itteration].summary()}")
-                        # TODO In real implementation: response = send(fuzzed_packet) or sendp(fuzzed_packet)
+                        # TODO: Implement actual packet sending with response capture
+                        # response = send(fuzzed_packets[itteration]) or sendp(fuzzed_packets[itteration])
+                        pass
                     
                 # Execute post-send callback
                 if self.post_send_callback and self.context:
@@ -810,6 +999,26 @@ class FuzzingCampaign:
             if self.verbose:
                 logger.error(f"Fuzzing loop failed: {e}")
             return False
+        finally:
+            # Always restore interface settings regardless of how we exit
+            if self._interface_configured and self.interface_offload_restore and self._original_offload_settings:
+                try:
+                    if self.verbose:
+                        logger.info(f"Restoring interface {self.interface} to original settings")
+                    
+                    success = restore_interface_offload(self.interface, self._original_offload_settings)
+                    
+                    if success:
+                        if self.verbose:
+                            logger.info(f"Interface {self.interface} restored successfully")
+                    else:
+                        logger.warning(f"Failed to fully restore interface {self.interface} settings")
+                        
+                except Exception as e:
+                    logger.error(f"Error restoring interface {self.interface}: {e}")
+                finally:
+                    self._interface_configured = False
+                    self._original_offload_settings = {}
 
     def _load_merged_field_mapping(self) -> list:
         """

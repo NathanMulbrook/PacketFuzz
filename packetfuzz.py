@@ -153,6 +153,13 @@ def apply_cli_overrides(campaign, args):
     # Dictionary
     if args.dictionary_config:
         campaign.dictionary_config_file = str(args.dictionary_config)
+    
+    # Interface offload control
+    if args.disable_offload:
+        campaign.disable_interface_offload = True
+    elif args.enable_offload:
+        campaign.disable_interface_offload = False
+    
     # Verbose
     if hasattr(campaign, 'verbose'):
         campaign.verbose = args.verbose
@@ -236,6 +243,19 @@ def main():
         "--dictionary-config",
         type=Path,
         help="Path to user dictionary configuration file (overrides campaign settings)."
+    )
+    
+    # Network interface offload control flags (mutually exclusive group)
+    offload_group = parser.add_mutually_exclusive_group()
+    offload_group.add_argument(
+        "--disable-offload",
+        action="store_true",
+        help="Disable network interface hardware offload features for malformed packet fuzzing."
+    )
+    offload_group.add_argument(
+        "--enable-offload", 
+        action="store_true",
+        help="Keep network interface hardware offload features enabled (default)."
     )
     
     args = parser.parse_args()
