@@ -57,26 +57,6 @@ class SQLInjectionCampaign(FuzzingCampaign):
         ))
     )
 
-class XSSTestingCampaign(FuzzingCampaign):
-    """XSS testing with multiple dictionary sources."""
-    name = "XSS Testing"
-    target = "192.168.1.100"
-    iterations = 18
-    output_pcap = "intermediate_dict_xss.pcap"
-    
-    packet = (
-        IP() / 
-        TCP() /
-        Raw(load=FuzzField(
-            values=[b"GET /?search=test HTTP/1.1\r\n\r\n"],
-            dictionaries=[
-                "fuzzdb/attack/xss/xss-rsnake.txt",
-                "fuzzdb/attack/xss/xss-naughty-strings.txt"
-            ],
-            description="XSS test vectors"
-        ))
-    )
-
 class MixedDictionaryCampaign(FuzzingCampaign):
     """Campaign mixing inline values with dictionary sources."""
     name = "Mixed Dictionary Sources"
@@ -101,6 +81,5 @@ class MixedDictionaryCampaign(FuzzingCampaign):
 CAMPAIGNS = [
     WebFuzzWithDictionaryCampaign,
     SQLInjectionCampaign,
-    XSSTestingCampaign,
     MixedDictionaryCampaign
 ]
