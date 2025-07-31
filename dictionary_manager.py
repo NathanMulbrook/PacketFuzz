@@ -136,26 +136,33 @@ class DictionaryManager:
         context = properties.get("context")
         matches = []
         modes = []
+        
+        # Scan all mapping entries to find matches based on field criteria
         for adv in mapping_list:
             match = adv.get("match", {})
+            # Multi-criteria matching: all specified criteria must pass
             if (
                 ("name" not in match or match["name"] == field_name) and
                 ("type" not in match or match["type"] == field_type) and
+                # Handle length comparison with optional '>' prefix for ranges
                 ("length" not in match or (length is not None and str(length) == str(match["length"]).replace('>', ''))) and
                 ("context" not in match or match["context"] == context)
             ):
                 if "dictionaries" in adv:
+                    # Expand macro placeholders to actual dictionary file paths
                     expanded = []
                     for d in adv["dictionaries"]:
                         expanded.extend(DictionaryManager.expand_macro(d))
                     matches.append(expanded)
                     modes.append(adv.get("mode"))
+        
         if not matches:
             return []
-        # Determine mode: per-entry mode takes precedence, else use global_mode
+            
+        # Resolution mode precedence: per-entry mode > global_mode
         mode = next((m for m in modes if m), global_mode)
         if mode == "merge":
-            # Flatten and deduplicate
+            # Combine all matches and remove duplicates while preserving order
             return list(dict.fromkeys([v for sublist in matches for v in sublist]))
         # Default: override (last match wins)
         return matches[-1]

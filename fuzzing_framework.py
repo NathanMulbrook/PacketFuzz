@@ -650,32 +650,34 @@ class FuzzingCampaign:
                 if self.duration and (time.time() - start_time) >= self.duration:
                     break
                 
-                # Execute pre-send callback
+                # Execute pre-send callback with error handling
                 if self.pre_send_callback and self.context:
                     result = self.callback_manager.execute_callback(
                         self.pre_send_callback, "pre_send", self.context, fuzzed_packets[itteration]
                     )
                     
+                    # Handle callback result - determine if execution should continue
                     if result == CallbackResult.FAIL_CRASH:
                         self.callback_manager.handle_crash("pre_send", fuzzed_packets[itteration], self.context)
                         return False
                     elif result == CallbackResult.NO_SUCCESS:
                         self.callback_manager.handle_no_success("pre_send", self.context, fuzzed_packets[itteration])
                 
-                # execute custom send callback TODO: The crash handler currently will not reveive the packet or any information from the custom send fucntion
+                # Execute custom send callback (replaces default packet sending behavior)
                 if self.custom_send_callback and self.context:
                     result = self.callback_manager.execute_callback(
                         self.custom_send_callback, "custom_send", self.context, fuzzed_packets[itteration]
                     )
                     
+                    # Custom send callback error handling
                     if result == CallbackResult.FAIL_CRASH:
                         self.callback_manager.handle_crash("custom_send", fuzzed_packets[itteration], self.context)
                         return False
                     elif result == CallbackResult.NO_SUCCESS:
                         self.callback_manager.handle_no_success("custom_send", self.context, fuzzed_packets[itteration]) 
-                # send the packets defined in the campaign if they exist
+                # Default packet sending behavior (if no custom send callback)
                 elif fuzzed_packets[itteration] is not None:
-                    # Apply target TODO maybe update it to support multiple targets, but that is hard right now
+                    # Apply campaign target addressing based on network layer
                     if self.layer == 3 and fuzzed_packets[itteration].haslayer(IP):
                         fuzzed_packets[itteration][IP].dst = self.target
                     elif self.layer == 2 and fuzzed_packets[itteration].haslayer(Ether):
@@ -722,28 +724,28 @@ class FuzzingCampaign:
                 if self.verbose:
                     logger.info(f"[PCAP] Writing {len(collected_packets)} packets to PCAP file: {pcap_path}")
                 
-                # Filter out packets that can't be serialized, try to fix some if possible
+                # Packet validation and recovery process for PCAP compatibility
                 valid_packets = []
                 for i, packet in enumerate(collected_packets):
                     try:
-                        # Test serialization
+                        # Test if packet can be serialized (some fuzzed packets may be malformed)
                         bytes(packet)
                         valid_packets.append(packet)
                     except Exception as e:
                         if self.verbose:
                             logger.debug(f"[PCAP] Packet {i} serialization failed: {e}")
-                        # Try to create a basic packet from the original template for PCAP compatibility
+                        # Recovery attempt: create template-based packet for PCAP compatibility
                         try:
-                            # Create a new packet based on the campaign packet template
+                            # Use campaign packet as template for reconstruction
                             base_packet = self.get_packet_with_embedded_config()
                             if base_packet and hasattr(base_packet, '__class__'):
-                                # Create a copy of the base packet for PCAP output
+                                # Create clean copy and apply target addressing
                                 pcap_packet = base_packet.__class__()
                                 if self.layer == 3 and pcap_packet.haslayer(IP):
                                     pcap_packet[IP].dst = self.target
                                 elif self.layer == 2 and pcap_packet.haslayer(Ether):
                                     pcap_packet[Ether].dst = self.target
-                                # Test if this works
+                                # Verify template packet is serializable before adding
                                 bytes(pcap_packet)
                                 valid_packets.append(pcap_packet)
                                 if self.verbose:
@@ -824,12 +826,14 @@ class FuzzingCampaign:
         import os
 
         def load_mapping_file(path):
+            """Load mapping configuration from JSON or Python file."""
             if not os.path.isfile(path):
                 raise FileNotFoundError(f"Mapping file not found: {path}")
             if path.endswith('.json'):
                 with open(path, 'r') as f:
                     return json.load(f)
             elif path.endswith('.py'):
+                # Dynamically load Python module and extract configuration
                 spec = importlib.util.spec_from_file_location("user_mapping", path)
                 if spec is None or spec.loader is None:
                     raise ImportError(f"Could not load Python mapping file: {path}")
@@ -839,22 +843,26 @@ class FuzzingCampaign:
             else:
                 raise ValueError(f"Unsupported mapping file type: {path}")
 
-        # 1. Start with default mapping
+        # Start with framework defaults as base configuration
         merged = list(FIELD_ADVANCED_WEIGHTS)
 
-        # 2. If user mapping file is provided, load and merge/override
+        # Layer 2: Apply user mapping file if provided
         if self.user_mapping_file:
             user_map = load_mapping_file(self.user_mapping_file)
             if self.mapping_merge_mode == 'override':
+                # Replace entire default configuration
                 merged = list(user_map)
             else:  # merge
+                # Combine with defaults, avoiding duplicates
                 merged = merged + [m for m in user_map if m not in merged]
 
-        # 3. If inline overrides are provided, merge/override
+        # Layer 3: Apply inline campaign overrides (highest priority)
         if self.advanced_field_mapping_overrides:
             if self.mapping_merge_mode == 'override':
+                # Replace all previous configuration
                 merged = list(self.advanced_field_mapping_overrides)
             else:  # merge
+                # Add to existing configuration, avoiding duplicates
                 merged = merged + [m for m in self.advanced_field_mapping_overrides if m not in merged]
 
         return merged

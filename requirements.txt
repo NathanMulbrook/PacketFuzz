@@ -1,5 +1,5 @@
-# Scapy Fuzzer - Class-Based Fuzzing Framework Requirements  
-# Core dependencies for the modern object-oriented fuzzing framework
+# PacketFuzz - Advanced Network Protocol Fuzzing Framework Requirements
+# Core dependencies for the modern class-based fuzzing framework
 # Requires Python 3.10+
 
 # === Core Dependencies ===

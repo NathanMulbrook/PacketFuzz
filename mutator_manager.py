@@ -247,50 +247,51 @@ class MutatorManager:
     # =========================
     # Field/Packet Fuzzing Internals
     # =========================
-    def _fuzz_field_in_layer(self, layer: Packet, field_desc: Union[Field, AnyField], fname: str, merged_field_mapping: Optional[list] = None) -> bool:
+    def _fuzz_field_in_layer(self, layer, field_desc, fname: str, merged_field_mapping: Optional[List[dict]] = None) -> bool:
         """
-        Fuzz a single field in a layer, mutating the layer in place.
-
+        Fuzz a specific field in a layer with dictionary and mutation support.
+        
         Args:
-            layer (Packet): The Scapy packet layer (protocol layer) to fuzz.
-            field_desc (Field | AnyField): The Scapy field descriptor.
-            fname (str): The name of the field.
-            merged_field_mapping (Optional[list]): Optional advanced field mapping overrides.
-
-        This function mutates the field in place and returns true if the field was fuzzed.
+            layer: The packet layer containing the field
+            field_desc: Scapy field descriptor object
+            fname: Name of the field to fuzz
+            merged_field_mapping: Advanced field mapping configuration
+            
+        Returns:
+            True if field was fuzzed, False if skipped
         """
+        # Extract FuzzField configuration if present in the field value
         raw_field_value = getattr(layer, fname, None)
         fuzzfield_config = self._extract_fuzzfield_config(raw_field_value)
 
-        # If it's a FuzzField, clear the field so Scapy can resolve it if not set by fuzzing
+        # Clear FuzzField from layer so Scapy can resolve it properly if not set by fuzzing
         if fuzzfield_config['is_fuzzfield']:
             try:
                 delattr(layer, fname)
             except Exception:
                 setattr(layer, fname, None)
 
-        # Skip the field if fuzz weighting or logic says to skip.
-        # Value selection priority:
-        # 1. Campaign/dictionary values (highest priority if present)
-        # 2. FuzzField values (if present)
-        # 3. Leave empty so Scapy resolves it (if both above are missing)
+        # Apply field weighting and exclusion logic
+        # Priority order: 1) Campaign/dictionary values 2) FuzzField values 3) Let Scapy resolve
         if self._should_skip_field(layer, field_desc, fname):
+            # Get dictionary values first (highest priority)
             merged_values = self.dictionary_manager.get_field_values(layer, fname)
             if merged_values:
                 skip_value = random.choice(merged_values)
                 setattr(layer, fname, skip_value)
             elif fuzzfield_config['values']:
+                # Fallback to FuzzField values if no dictionary entries
                 skip_value = random.choice(fuzzfield_config['values'])
                 setattr(layer, fname, skip_value)
             else:
-                # Remove the field so Scapy resolves it
+                # No values available - remove field to let Scapy auto-resolve
                 try:
                     delattr(layer, fname)
                 except Exception:
                     setattr(layer, fname, None)
             return False
 
-        # Fuzz the field in place
+        # Perform actual field mutation using selected mutator
         else:
             mutated_value = self._mutate_field_value(
                 None,  # No default_value

@@ -61,18 +61,7 @@ def load_campaigns_from_file(config_file: Path) -> List[Type[FuzzingCampaign]]:
 
 
 def check_components():
-    """
-    Check if all required components are available.
-    
-    Returns:
-        int: 0 if all components available, 1 if LibFuzzer missing
-        
-    This function verifies the availability of:
-    - LibFuzzer C extension for high-performance mutations
-    - Dictionary manager for payload management  
-    - FuzzDB dictionary database
-    - Native dictionary support integration
-    """
+    """Check if all required components are available."""
     from mutators.libfuzzer_mutator import LibFuzzerMutator
     from dictionary_manager import DictionaryManager
     import os
@@ -123,14 +112,6 @@ def check_components():
 def apply_cli_overrides(campaign, args):
     """
     Apply CLI flag overrides to a campaign instance.
-    
-    Args:
-        campaign: FuzzingCampaign instance to modify
-        args: Parsed CLI arguments from argparse
-        
-    This function applies command-line flag overrides to campaign attributes,
-    allowing CLI flags to override campaign class defaults for network output,
-    PCAP output, dictionary configuration, and verbose logging.
     """
     # Network
     if args.enable_network:
