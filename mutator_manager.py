@@ -221,20 +221,25 @@ class MutatorManager:
                     layer = layer.payload
             # Fuzz all candidate fields, but always ensure at least one is fuzzed
             fuzzed_any = False
-            for idx, (layer, field_desc, fname) in enumerate(candidate_fields):
-                # Only force fuzz the first field if none have been fuzzed yet
-                if not fuzzed_any or idx == 0:
-                    fuzzed = self._fuzz_field_in_layer(layer, field_desc, fname, merged_field_mapping)
-                    fuzzed_any = True if fuzzed else fuzzed_any
-                else:
-                    fuzzed = self._fuzz_field_in_layer(layer, field_desc, fname, merged_field_mapping)
-                    fuzzed_any = True if fuzzed else fuzzed_any
-            if FORCE_FUZZ:
-                while not fuzzed_any:
-                    # If no field has been fuzzed, randomly select one and force fuzz it
-                    random_idx = random.randint(0, len(candidate_fields) - 1)
-                    layer, field_desc, fname = candidate_fields[random_idx]
-                    fuzzed_any = self._fuzz_field_in_layer(layer, field_desc, fname, merged_field_mapping)
+            attempt_no = 0
+            # attempt to ensure that at least one field is fuzze, but if all layers have weights set to 0 we dont want to fuzz
+            # Rather than checking all the weights to see if if they are 0, we just try a few times if nothing is fuzzed
+            # The assumption is that if any field is allowed to be fuzzed then at least one will be after a few attempts
+            # 4 attempts was chosen as a good default, this may need adjusted later
+            # with the way this is now handled we can probably remove the FORCE_FUZZ constant, but for now its fine to leave
+            while not fuzzed_any and attempt_no < 4:
+                for idx, (layer, field_desc, fname) in enumerate(candidate_fields):
+                    # Only force fuzz the first field if none have been fuzzed yet
+                    if not fuzzed_any or idx == 0:
+                        fuzzed = self._fuzz_field_in_layer(layer, field_desc, fname, merged_field_mapping)
+                        fuzzed_any = True if fuzzed else fuzzed_any
+                    else:
+                        fuzzed = self._fuzz_field_in_layer(layer, field_desc, fname, merged_field_mapping)
+                        fuzzed_any = True if fuzzed else fuzzed_any
+                if not FORCE_FUZZ:
+                    # Only attempt to fuzz the packet once if force fuzz is not set
+                    break
+                attempt_no += 1
             results.append(fuzzed_packet)
         # Write report of all fuzzed packets
         try:
