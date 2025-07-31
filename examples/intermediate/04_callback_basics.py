@@ -13,6 +13,7 @@ import random
 from scapy.layers.inet import IP, TCP, UDP
 from scapy.layers.dns import DNS, DNSQR
 from scapy.packet import Raw
+from scapy.layers.http import HTTP, HTTPRequest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from fuzzing_framework import FuzzingCampaign, FuzzField, CallbackResult
@@ -72,7 +73,7 @@ class TCPCallbackCampaign(FuzzingCampaign):
     iterations = 8
     output_pcap = "intermediate_tcp_callback.pcap"
     
-    packet = IP(dst="192.168.1.100") / TCP(dport=80) / b"GET / HTTP/1.1\r\nHost: test.com\r\n\r\n"
+    packet = IP() / TCP() / HTTP() / HTTPRequest(Path=b"/", Method=b"GET", Host=b"test.com")
     pre_send_callback = tcp_pre_send_callback
 
 class HTTPInjectionCampaign(FuzzingCampaign):
@@ -82,7 +83,7 @@ class HTTPInjectionCampaign(FuzzingCampaign):
     iterations = 6
     output_pcap = "intermediate_http_injection.pcap"
     
-    packet = IP(dst="192.168.1.100") / TCP(dport=80) / b"GET /search?q=test HTTP/1.1\r\nHost: target.com\r\n\r\n"
+    packet = IP() / TCP() / HTTP() / HTTPRequest(Path=b"/search", Method=b"GET", Host=b"target.com", Query_String=b"q=test")
     pre_send_callback = payload_injection_callback
 
 # Define a post-send callback to analyze responses and track history
@@ -139,7 +140,7 @@ class ResponseTrackingCampaign(FuzzingCampaign):
     # Set to true to enable response capture
     capture_responses = True
     
-    packet = IP(dst="192.168.1.100") / TCP(dport=80) / b"GET / HTTP/1.1\r\nHost: target.com\r\n\r\n"
+    packet = IP() / TCP() / HTTP() / HTTPRequest(Path=b"/", Method=b"GET", Host=b"target.com")
     post_send_callback = response_capture_callback
 
 class DNSMalformCampaign(FuzzingCampaign):
@@ -163,7 +164,7 @@ class DNSMalformCampaign(FuzzingCampaign):
     iterations = 5
     output_pcap = "intermediate_dns_malform.pcap"
     
-    packet = IP(dst="8.8.8.8") / UDP(dport=53) / DNS(rd=1, qd=DNSQR(qname="example.com"))
+    packet = IP() / UDP() / DNS(rd=1, qd=DNSQR(qname="example.com"))
     pre_send_callback = dns_malform_callback
 
 def response_analysis_callback(context, packet, response=None):
@@ -191,7 +192,7 @@ class ResponseAnalysisCampaign(FuzzingCampaign):
     output_pcap = "intermediate_response_analysis.pcap"
     capture_responses = True
     
-    packet = IP(dst="192.168.1.100") / TCP(dport=80) / b"GET / HTTP/1.1\r\nHost: test.com\r\n\r\n"
+    packet = IP() / TCP() / HTTP() / HTTPRequest(Path=b"/", Method=b"GET", Host=b"test.com")
     post_send_callback = response_analysis_callback
 
 def packet_preprocessing_callback(context, packet):
@@ -222,7 +223,7 @@ class PreprocessingCampaign(FuzzingCampaign):
     iterations = 3
     output_pcap = "intermediate_preprocessing.pcap"
     
-    packet = IP(dst="192.168.1.100") / TCP(dport=80) / b"GET /api/data HTTP/1.1\r\nHost: api.com\r\n\r\n"
+    packet = IP() / TCP() / HTTP() / HTTPRequest(Path=b"/api/data", Method=b"GET", Host=b"api.com")
     pre_send_callback = packet_preprocessing_callback
 
 # Campaign registry

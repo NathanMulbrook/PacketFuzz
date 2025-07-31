@@ -169,11 +169,12 @@ packetfuzz
 ```python
 from fuzzing_framework import FuzzingCampaign, FuzzField
 from scapy.layers.inet import IP, TCP
+from scapy.layers.http import HTTP, HTTPRequest
 
 class MyCampaign(FuzzingCampaign):
     name = "My Test Campaign"
     target = "192.168.1.1"
-    packet = IP(dst="192.168.1.1") / TCP(dport=FuzzField(values=[80, 443, 8080]))
+    packet = IP() / TCP() / HTTP() / HTTPRequest(Path=b"/", Method=b"GET")
     iterations = 100
 
 campaign = MyCampaign()
@@ -215,7 +216,7 @@ class MalformedPacketCampaign(FuzzingCampaign):
     # Optional: specify which features to disable (None = use defaults)
     # interface_offload_features = ["tx-checksumming", "tcp-segmentation-offload"]
     
-    packet = IP(dst="192.168.1.100") / TCP(dport=80, chksum=0x0000)  # Invalid checksum
+    packet = IP() / TCP(chksum=0x0000)  # Invalid checksum
 ```
 
 ### CLI Usage
@@ -306,12 +307,12 @@ class HttpPayloadFuzz(PcapFuzzCampaign):
 
 ## Campaign-Based Fuzzing
 
-Create campaigns using class inheritance with embedded packet configuration. 
+Create campaigns using class inheritance with embedded packet configuration. The user adds all campaigns to a `CAMPAIGNS` list, this list is then read when you pass a file with campaigns in it to the CLI.
 
 ```python
 from fuzzing_framework import FuzzingCampaign, FuzzField
 from scapy.layers.inet import IP, TCP
-from scapy.packet import Raw
+from scapy.layers.http import HTTP, HTTPRequest
 
 class WebAppFuzzCampaign(FuzzingCampaign):
     name = "Web Application Fuzzing"
@@ -321,10 +322,10 @@ class WebAppFuzzCampaign(FuzzingCampaign):
     output_pcap = "webapp_fuzz.pcap"
     
     packet = (
-        IP(dst="192.168.1.100") / 
-        TCP(dport=FuzzField(values=[80, 443, 8080, 8443], description="Web ports")) /
-        Raw(load=FuzzField(values=[b"GET / HTTP/1.1\r\n\r\n", 
-                                  b"GET /admin HTTP/1.1\r\n\r\n"]))
+        IP() /
+        TCP() /
+        HTTP() /
+        HTTPRequest(Path=b"/", Method=b"GET")
     )
 ```
 
@@ -371,10 +372,11 @@ class WebAppCampaign(FuzzingCampaign):
     target = "192.168.1.100"
     dictionary_config_file = "examples/user_dictionary_config.py"  # Campaign-specific
     
-    packet = IP(dst="192.168.1.100") / TCP(dport=FuzzField(
-        values=[80, 443],
+    packet = IP() / TCP() / HTTP() / HTTPRequest(
+        Path=b"/",
+        Method=b"GET",
         dictionaries=["custom/web-ports.txt"]  # Highest priority - field-specific
-    ))
+    )
 ```
 
 ### Dictionary Override Controls
@@ -508,7 +510,7 @@ class MalformedPacketCampaign(FuzzingCampaign):
     # Optional: specify which features to disable (None = use defaults)
     # interface_offload_features = ["tx-checksumming", "tcp-segmentation-offload"]
     
-    packet = IP(dst="192.168.1.100") / TCP(dport=80, chksum=0x0000)  # Invalid checksum
+    packet = IP() / TCP(chksum=0x0000)  # Invalid checksum
 ```
 
 ## Weight & Priority Resolution

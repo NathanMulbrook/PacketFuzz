@@ -10,6 +10,7 @@ import sys
 import os
 from scapy.layers.inet import IP, TCP, UDP
 from scapy.layers.dns import DNS, DNSQR
+from scapy.layers.http import HTTP, HTTPRequest
 from scapy.packet import Raw
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -26,12 +27,13 @@ class WebAppFuzzCampaign(FuzzingCampaign):
     output_pcap = "webapp_fuzz.pcap"
     
     packet = (
-        IP(dst="192.168.1.100") / 
-        TCP(dport=FuzzField(values=[80, 443, 8080, 8443, 3000], description="Web server ports")) /
-        Raw(load=FuzzField(values=[b"GET / HTTP/1.1\r\n\r\n", 
-                                  b"GET /admin HTTP/1.1\r\n\r\n",
-                                  b"POST /login HTTP/1.1\r\n\r\n"],
-                          description="HTTP requests"))
+        IP() / 
+        TCP() /
+        HTTP() /
+        HTTPRequest(
+            Path=FuzzField(values=[b"/", b"/admin", b"/login"]),
+            Method=FuzzField(values=[b"GET", b"POST"])
+        )
     )
 
 
@@ -45,8 +47,8 @@ class DNSInfrastructureFuzzCampaign(FuzzingCampaign):
     output_pcap = "dns_infrastructure_fuzz.pcap"
     
     packet = (
-        IP(dst="8.8.8.8") /
-        UDP(dport=53) /
+        IP() /
+        UDP() /
         DNS(qd=DNSQR(qname=FuzzField(values=["example.com", "test.local", "fuzz.domain"],
                                    description="Domain names")))
     )
@@ -62,7 +64,7 @@ class NetworkConnectivityFuzzCampaign(FuzzingCampaign):
     output_pcap = "network_connectivity_fuzz.pcap"
     
     packet = (
-        IP(dst="192.168.1.1") /
+        IP() /
         TCP(dport=FuzzField(values=list(range(1, 1025)), description="TCP ports"))
     )
 

@@ -29,6 +29,7 @@ python examples/basic/01_quick_start.py
 ```python
 from fuzzing_framework import FuzzingCampaign, FuzzField
 from scapy.layers.inet import IP, TCP
+from scapy.layers.http import HTTP, HTTPRequest
 
 class MyCampaign(FuzzingCampaign):
     name = "My Test Campaign"
@@ -37,8 +38,10 @@ class MyCampaign(FuzzingCampaign):
     output_pcap = "test.pcap"
     
     packet = (
-        IP(dst="192.168.1.1") / 
-        TCP(dport=FuzzField(values=[80, 443, 8080], description="Web ports"))
+        IP() /
+        TCP() /
+        HTTP() /
+        HTTPRequest(Path=b"/", Method=b"GET")
     )
 
 campaign = MyCampaign()
@@ -90,7 +93,7 @@ class BasicCampaign(FuzzingCampaign):
     name = "Basic Test"
     target = "192.168.1.1"
     iterations = 100
-    packet = IP(dst="192.168.1.1") / TCP(dport=80)
+    packet = IP() / TCP() / HTTP() / HTTPRequest(Path=b"/", Method=b"GET")
 ```
 
 #### PCAP-Based Campaign
@@ -580,7 +583,7 @@ class CustomProtocolCampaign(FuzzingCampaign):
     target = "192.168.1.1"
     
     packet = (
-        IP(dst="192.168.1.1") / 
+        IP() /
         UDP(dport=9999) /
         MyCustomProtocol(
             version=FuzzField(values=[1, 2, 255], description="Protocol version"),
@@ -692,7 +695,7 @@ python tests/run_all_tests.py
 ```python
 from fuzzing_framework import FuzzingCampaign, FuzzField
 from scapy.layers.inet import IP, TCP
-from scapy.packet import Raw
+from scapy.layers.http import HTTP, HTTPRequest
 
 class HTTPCampaign(FuzzingCampaign):
     name = "HTTP Comprehensive Test"
@@ -704,25 +707,15 @@ class HTTPCampaign(FuzzingCampaign):
     
     # Multi-field fuzzing with different strategies
     packet = (
-        IP(dst="192.168.1.100") / 
-        TCP(dport=FuzzField(
-            values=[80, 443, 8080, 8443],
-            dictionaries=["fuzzdb/wordlists-misc/common-http-ports.txt"],
-            mutators=["libfuzzer", "dictionary"],
-            description="HTTP/HTTPS ports with mutations"
-        )) /
-        Raw(load=FuzzField(
-            values=[
-                b"GET / HTTP/1.1\r\nHost: test\r\n\r\n",
-                b"POST / HTTP/1.1\r\nContent-Length: 4\r\n\r\ntest"
-            ],
-            dictionaries=[
-                "fuzzdb/attack-payloads/http-protocol-attacks/http-injection.txt",
-                "fuzzdb/attack-payloads/sql-injection/generic-sqli.txt"
-            ],
+        IP() /
+        TCP() /
+        HTTP() /
+        HTTPRequest(Path=FuzzField(
+            values=[b"/", b"/admin", b"/login"],
+            dictionaries=["fuzzdb/attack-payloads/http-protocol-attacks/http-injection.txt"],
             mutators=["dictionary", "libfuzzer"],
-            description="HTTP requests with injection payloads"
-        ))
+            description="HTTP paths with injection payloads"
+        ), Method=FuzzField(values=[b"GET", b"POST"]))
     )
     
     # Custom callback for response analysis

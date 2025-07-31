@@ -11,6 +11,7 @@ import os
 from scapy.layers.inet import IP, TCP, UDP
 from scapy.layers.dns import DNS, DNSQR
 from scapy.packet import Raw
+from scapy.layers.http import HTTP, HTTPRequest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from fuzzing_framework import FuzzingCampaign, FuzzField
@@ -25,9 +26,10 @@ class BasicHTTPCampaign(FuzzingCampaign):
     verbose = True
     
     packet = (
-        IP(dst="192.168.1.100") /
-        TCP(dport=FuzzField(values=[80, 8080, 443], description="HTTP ports")) /
-        Raw(load=b"GET / HTTP/1.1\r\nHost: target.com\r\n\r\n")
+        IP() /
+        TCP() /
+        HTTP() /
+        HTTPRequest(Path=b"/", Method=b"GET", Host=b"target.com")
     )
 
 class BasicDNSCampaign(FuzzingCampaign):
@@ -40,8 +42,8 @@ class BasicDNSCampaign(FuzzingCampaign):
     verbose = True
     
     packet = (
-        IP(dst="8.8.8.8") /
-        UDP(dport=53) /
+        IP() /
+        UDP() /
         DNS(qd=DNSQR(qname=FuzzField(values=["example.com", "test.org", "fuzz.local"],
                                      description="Domain names")))
     )
@@ -56,8 +58,8 @@ class BasicTCPCampaign(FuzzingCampaign):
     verbose = True
     
     packet = (
-        IP(dst="192.168.1.100") /
-        TCP(dport=FuzzField(values=list(range(1, 1025)), description="TCP ports"))
+        IP() /
+        TCP()
     )
 
 class MalformedPacketCampaign(FuzzingCampaign):
@@ -75,13 +77,12 @@ class MalformedPacketCampaign(FuzzingCampaign):
     interface = "eth0"
     
     packet = (
-        IP(dst="192.168.1.100") /
+        IP() /
         TCP(
-            dport=80,
-            chksum=0x0000,  # Intentionally invalid checksum
             window=FuzzField(values=[0, 1, 65535], description="Edge case TCP windows")
         ) /
-        Raw(load=b"GET / HTTP/1.1\r\n\r\n")
+        HTTP() /
+        HTTPRequest(Path=b"/", Method=b"GET")
     )
 
 # List of campaigns to run
@@ -91,37 +92,3 @@ campaigns = [
     BasicTCPCampaign,
     MalformedPacketCampaign
 ]
-
-def main():
-    """Run all basic campaign examples."""
-    print("=== Basic Campaign Examples ===")
-    print()
-    print("This example demonstrates:")
-    print("1. Different types of campaigns (HTTP, DNS, TCP)")
-    print("2. Using FuzzField with different value lists")
-    print("3. Campaign configuration options")
-    print("4. Interface offload management for malformed packets")
-    print()
-    
-    results = []
-    
-    for campaign_class in campaigns:
-        campaign = campaign_class()
-        print(f"\n--- Running {campaign.name} ---")
-        result = campaign.execute()
-        results.append(result)
-        
-        if result:
-            print(f"{campaign.name} completed successfully")
-        else:
-            print(f"{campaign.name} failed")
-    
-    print(f"\n=== Summary ===")
-    print(f"Campaigns run: {len(campaigns)}")
-    print(f"Successful: {sum(results)}")
-    print(f"Failed: {len(results) - sum(results)}")
-    
-    return all(results)
-
-if __name__ == "__main__":
-    main()
