@@ -580,21 +580,39 @@ class FuzzingCampaign:
 
     def __init__(self):
         """Initialize campaign with callback manager and handle excluded_layers."""
-        self.callback_manager = CallbackManager(self)
-        self.context: Optional[CampaignContext] = None
-        self.monitor_thread: Optional[threading.Thread] = None
-        self.mutator_preference = list(getattr(self, 'mutator_preference', None) or ["libfuzzer"])
+        import copy
         
-        # Initialize interface offload management
-        self._original_offload_settings: dict = {}
-        self._interface_configured: bool = False
+        # Deep copy all mutable class attributes to instance attributes
+        for attr_name in dir(self.__class__):
+            # Skip magic methods, private attrs, and methods
+            if (not attr_name.startswith('__') and 
+                not callable(getattr(self.__class__, attr_name))):
+                
+                # Get class attribute value
+                class_value = getattr(self.__class__, attr_name)
+                
+                # Only deep copy mutable types (list, dict, set)
+                if isinstance(class_value, (list, dict, set)):
+                    instance_value = copy.deepcopy(class_value)
+                    setattr(self, attr_name, instance_value)
+        
+        # Set default for mutator_preference if None
+        if getattr(self, 'mutator_preference', None) is None:
+            self.mutator_preference = ["libfuzzer"]
+        
+        # Initialize instance-specific objects
+        self.callback_manager = CallbackManager(self)
+        self.context = None
+        self.monitor_thread = None
+        self._original_offload_settings = {}
+        self._interface_configured = False
         
         # Handle excluded_layers by adding advanced mapping entries
-        if isinstance(self.excluded_layers, list) and self.excluded_layers:
+        if isinstance(getattr(self, 'excluded_layers', None), list) and self.excluded_layers:
             exclude_entries = [
                 {"layer": lname, "fuzz_weight": 0.0} for lname in self.excluded_layers
             ]
-            if self.advanced_field_mapping_overrides is None:
+            if not hasattr(self, 'advanced_field_mapping_overrides') or self.advanced_field_mapping_overrides is None:
                 self.advanced_field_mapping_overrides = []
             self.advanced_field_mapping_overrides.extend(exclude_entries)
 
