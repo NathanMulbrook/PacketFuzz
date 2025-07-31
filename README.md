@@ -156,23 +156,11 @@ packetfuzz examples/campaign_examples.py --list-campaigns
 # Execute campaigns
 packetfuzz examples/campaign_examples.py
 
-# Validate campaigns (no packets sent)
-packetfuzz examples/campaign_examples.py --dry-run
-
 # Use a custom dictionary config
 packetfuzz examples/campaign_examples.py --dictionary-config examples/user_dictionary_config.py
 
 # Enable PCAP output to a specific file
 packetfuzz examples/campaign_examples.py --pcap-file output.pcap
-
-# Disable network output
-packetfuzz examples/campaign_examples.py --disable-network
-
-# Disable interface hardware offloading for malformed packet fuzzing
-sudo packetfuzz examples/campaign_examples.py --disable-offload
-
-# Keep interface offloading enabled (default)
-packetfuzz examples/campaign_examples.py --enable-offload
 
 # Check component availability
 packetfuzz
@@ -196,11 +184,10 @@ campaign.execute()
 
 ## Network Interface Offload Management
 
-When fuzzing with malformed packets, network interface hardware offload features can interfere by automatically "fixing" corrupted checksums, segmentation, and other intentionally malformed packet attributes before transmission. PacketFuzz provides automatic interface configuration to disable these features during fuzzing campaigns.
+When fuzzing with malformed packets, network interface offload features, both those implemented in drivers, firmware and hardware can interfere by automatically "fixing" corrupted checksums, segmentation, and other intentionally malformed packet attributes before transmission. PacketFuzz provides automatic netowork interface configuration to disable these features during fuzzing campaigns. By default it will restore the previous settings when it exits.
 
-### Why Interface Offload Management?
-
-Modern network interfaces perform several optimizations that can interfere with fuzzing:
+### Included disabled offload features
+Note that this can be changed or expanded by the user if needed.
 
 | Feature | Purpose | Fuzzing Impact |
 |---------|---------|----------------|
@@ -210,7 +197,7 @@ Modern network interfaces perform several optimizations that can interfere with 
 | **Generic Receive Offload (GRO)** | Packet aggregation on receive | Affects response packet analysis |
 | **Large Receive Offload (LRO)** | Large packet reassembly | Changes received packet structure |
 
-### Campaign Configuration
+### Configuration in a Campaign 
 
 ```python
 from fuzzing_framework import FuzzingCampaign
@@ -222,7 +209,7 @@ class MalformedPacketCampaign(FuzzingCampaign):
     
     # Enable interface offload management
     disable_interface_offload = True
-    interface = "eth0"  # Network interface to configure
+    interface = "eth0"
     interface_offload_restore = True  # Restore settings when done (default)
     
     # Optional: specify which features to disable (None = use defaults)
@@ -319,7 +306,7 @@ class HttpPayloadFuzz(PcapFuzzCampaign):
 
 ## Campaign-Based Fuzzing
 
-Create campaigns using class inheritance with embedded packet configuration:
+Create campaigns using class inheritance with embedded packet configuration. 
 
 ```python
 from fuzzing_framework import FuzzingCampaign, FuzzField
@@ -408,7 +395,7 @@ USER_DICTIONARY_CONFIG = {
 
 ## Callback System
 
-The framework provides 6 callback types for comprehensive monitoring and custom logic integration.
+The framework provides 6 callback types for comprehensive monitoring and custom logic integration. These callbacks can be optionally implemented in a campaign by the user. When provided they are caled at various points throughout the fuzz campaing execution.
 
 ### Callback Types & Execution Flow
 
@@ -487,55 +474,46 @@ class CallbackDemoCampaign(FuzzingCampaign):
 | `NO_SUCCESS` | This indicates that the callback did not execute correctly, but that it does not indicate a crash or target failure
 | `FAIL_CRASH` | This indicates a target failure, when this is returned the crash callback handler will be executed
 
-## Quick Reference
 
-### Essential Commands
+## Network Interface Offload Management
 
-```bash
-# Installation
-pip install -r requirements.txt
+When fuzzing with malformed packets, network interface offload features, both those implemented in drivers, firmware and hardware can interfere by automatically "fixing" corrupted checksums, segmentation, and other intentionally malformed packet attributes before transmission. PacketFuzz provides automatic netowork interface configuration to disable these features during fuzzing campaigns. By default it will restore the previous settings when it exits.
 
-# Run tests  
-python tests/run_all_tests.py
+### Included disabled offload features
+Note that this can be changed or expanded by the user if needed.
 
-# List campaigns
-packetfuzz examples/campaign_examples.py --list-campaigns
+| Feature | Purpose | Fuzzing Impact |
+|---------|---------|----------------|
+| **TX Checksumming** | Hardware calculates checksums | Overwrites intentionally invalid checksums |
+| **TCP Segmentation Offload (TSO)** | Hardware handles large packet segmentation | Modifies packet structure during transmission |
+| **Generic Segmentation Offload (GSO)** | Generic packet segmentation | Alters packet boundaries and headers |
+| **Generic Receive Offload (GRO)** | Packet aggregation on receive | Affects response packet analysis |
+| **Large Receive Offload (LRO)** | Large packet reassembly | Changes received packet structure |
 
-# Execute with validation
-packetfuzz examples/campaign_examples.py --dry-run --verbose
+### Configuration in a Campaign 
 
-# Execute campaigns
-packetfuzz examples/campaign_examples.py --verbose
+```python
+from fuzzing_framework import FuzzingCampaign
+from scapy.layers.inet import IP, TCP
+
+class MalformedPacketCampaign(FuzzingCampaign):
+    name = "Malformed Packet Test"
+    target = "192.168.1.100"
+    
+    # Enable interface offload management
+    disable_interface_offload = True
+    interface = "eth0"
+    interface_offload_restore = True  # Restore settings when done (default)
+    
+    # Optional: specify which features to disable (None = use defaults)
+    # interface_offload_features = ["tx-checksumming", "tcp-segmentation-offload"]
+    
+    packet = IP(dst="192.168.1.100") / TCP(dport=80, chksum=0x0000)  # Invalid checksum
 ```
-
-### Key Files
-
-| File | Purpose |
-|------|---------|
-| `examples/campaign_examples.py` | Standard campaign configurations |
-| `examples/basic/01_quick_start.py` | Beginner examples |
-| `FRAMEWORK_DOCUMENTATION.md` | Complete API documentation |
-| `default_mappings.py` | Field-to-dictionary mappings |
-| `tests/run_all_tests.py` | Test suite runner |
-
-### Core Classes
-
-| Class | Purpose | Example Usage |
-|-------|---------|---------------|
-| `FuzzingCampaign` | Base campaign class | `class MyCampaign(FuzzingCampaign):` |
-| `PcapFuzzCampaign` | PCAP-based fuzzing | `class Regression(PcapFuzzCampaign):` |
-| `FuzzField` | Field configuration | `TCP(dport=FuzzField(values=[80, 443]))` |
-| `CallbackResult` | Callback return values | `return CallbackResult.CONTINUE` |
-
-## Documentation
-
-- `FRAMEWORK_DOCUMENTATION.md` - Complete API documentation  
-- `examples/` - Working code examples
-- `tests/` - Test suite
 
 ## Weight & Priority Resolution
 
-The framework uses sophisticated weight resolution for field prioritization and dictionary selection.
+The framework uses sophisticated weight resolution for field prioritization and dictionary selection. The applicaiton comes with a basic set of weights and dictionaries that should work for most or at least be a good starting point, these can be extended or overridden by the user depending on there needs
 
 ### Weight Resolution Priority Table
 
@@ -568,7 +546,7 @@ USER_DICTIONARY_CONFIG = {
 }
 ```
 
-### Dictionary Resolution Logic
+### Dictionary Resolution Logic Example
 
 ```
 For field "TCP.dport":
@@ -585,18 +563,27 @@ Final: ["custom/ports.txt", "campaign/web-ports.txt",
 
 
 
+## Quick Reference
+
+### Core Classes
+
+| Class | Purpose | Example Usage |
+|-------|---------|---------------|
+| `FuzzingCampaign` | Base campaign class | `class MyCampaign(FuzzingCampaign):` |
+| `PcapFuzzCampaign` | PCAP-based fuzzing | `class Regression(PcapFuzzCampaign):` |
+| `FuzzField` | Field configuration | `TCP(dport=FuzzField(values=[80, 443]))` |
+| `CallbackResult` | Callback return values | `return CallbackResult.CONTINUE` |
+
+## Documentation
+
+- `FRAMEWORK_DOCUMENTATION.md` - Complete API documentation  
+- `examples/` - Working code examples
+- `tests/` - Test suite
+
+
+
+
 ## Troubleshooting
-
-### Common Issues & Solutions
-
-| Issue | Symptom | Solution |
-|-------|---------|----------|
-| **No mutations** | All packets identical | Check field weights, verify dictionaries exist |
-| **Import errors** | ModuleNotFoundError | Run `pip install -r requirements.txt` |
-| **Permission denied** | Socket errors | Run with sudo or check network permissions |
-| **libFuzzer not working** | Fallback to Python mutator | Install build tools, check `build/` directory |
-| **Dictionary not found** | File not found errors | Verify FuzzDB installation, check paths |
-| **Callback errors** | Callback exceptions | Check return values (CONTINUE/SKIP/ABORT) |
 
 ### Debug Mode
 
