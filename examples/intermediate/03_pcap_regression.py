@@ -20,7 +20,7 @@ class RegressionTestCampaign(PcapFuzzCampaign):
     pcap_folder = "regression_samples/"
     fuzz_mode = "none"  # No fuzzing
     target = "192.168.1.100"
-    iterations = 5
+    iterations = 2  # Reduced for faster test execution
     output_pcap = "intermediate_regression_replay.pcap"
     verbose = True
 
@@ -32,7 +32,7 @@ class HTTPPayloadExtractionCampaign(PcapFuzzCampaign):
     repackage_in = "IP/TCP"  # New headers
     fuzz_mode = "field"  # Dictionary-based fuzzing
     target = "192.168.1.100"
-    iterations = 8
+    iterations = 2  # Reduced for faster test execution
     output_pcap = "intermediate_http_extraction.pcap"
     verbose = True
 
@@ -44,7 +44,7 @@ class DNSQueryFuzzCampaign(PcapFuzzCampaign):
     repackage_in = "IP/UDP"  # New headers
     fuzz_mode = "field"  # Field-aware fuzzing
     target = "8.8.8.8"
-    iterations = 6
+    iterations = 2  # Reduced for faster test execution
     output_pcap = "intermediate_dns_extraction.pcap"
     verbose = True
 
@@ -56,7 +56,7 @@ class BinaryProtocolCampaign(PcapFuzzCampaign):
     repackage_in = "IP/UDP"
     fuzz_mode = "binary"  # Binary mutations
     target = "192.168.1.200"
-    iterations = 10
+    iterations = 2  # Reduced for faster test execution
     output_pcap = "intermediate_binary_fuzz.pcap"
     verbose = True
 

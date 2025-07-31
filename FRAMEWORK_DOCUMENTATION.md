@@ -12,6 +12,7 @@ A network protocol fuzzing framework built on Scapy with embedded packet configu
 - **PCAP Support**: Load existing captures for regression testing and analysis
 - **Callback System**: Hooks for progress monitoring and response analysis
 - **Protocol-Agnostic**: Works with any Scapy packet type
+- **Response Capture**: Track sent packets, responses, and timing information
 
 ## Quick Start
 
@@ -98,6 +99,88 @@ from fuzzing_framework import PcapFuzzCampaign
 
 class RegressionCampaign(PcapFuzzCampaign):
     name = "PCAP Regression"
+    target = "192.168.1.1"
+    pcap_file = "regression_samples/example.pcap"
+    layer = 3  # IP layer packets
+    fuzz_fields = {
+        "TCP": {
+            "dport": {"values": [80, 443, 8080]}
+        }
+    }
+```
+
+## Response Tracking System
+
+### FuzzHistoryEntry
+
+The framework automatically tracks sent packets, responses, and timing information using `FuzzHistoryEntry` objects:
+
+```python
+@dataclass
+class FuzzHistoryEntry:
+    """Tracks a single fuzzing iteration with sent packet, response, and crash info"""
+    packet: Optional[Packet] = None
+    timestamp_sent: Optional[datetime] = None
+    timestamp_received: Optional[datetime] = None
+    response: Optional[Any] = None
+    crashed: bool = False
+    crash_info: Optional[CrashInfo] = None
+    iteration: int = -1
+    
+    def get_response_time(self) -> Optional[float]:
+        """Calculate response time in milliseconds if both timestamps are available"""
+        if self.timestamp_sent and self.timestamp_received:
+            delta = self.timestamp_received - self.timestamp_sent
+            return delta.total_seconds() * 1000
+        return None
+```
+
+History entries are stored in the campaign context and accessible in callbacks:
+
+```python
+def post_send_callback(self, packet, response, context):
+    """Access history after packet is sent"""
+    if context.fuzz_history:
+        # Get the most recent history entry
+        entry = context.fuzz_history[-1]
+        
+        # Access timing information
+        response_time = entry.get_response_time()
+        if response_time:
+            print(f"Response time: {response_time:.2f} ms")
+        
+        # Process response packet
+        if entry.response:
+            print(f"Got response: {entry.response.summary()}")
+```
+
+### History Size Management
+
+By default, the campaign context stores up to 1000 history entries to prevent memory issues. You can configure this limit:
+
+```python
+class MyFuzzingCampaign(FuzzingCampaign):
+    # ... other configuration ...
+    
+    def pre_launch_callback(self, context):
+        # Configure history size based on your needs
+        context.max_history_size = 500
+        return True
+```
+
+### Crash Correlation
+
+When a crash occurs, the framework automatically associates it with the history entry that caused it:
+
+```python
+def crash_callback(self, crash_info, context):
+    """Handle crashes with full history context"""
+    if context.fuzz_history:
+        for entry in context.fuzz_history:
+            if entry.crashed and entry.crash_info == crash_info:
+                print(f"Found crash in history for packet {entry.packet.summary()}")
+                print(f"Response time before crash: {entry.get_response_time()} ms")
+```
     pcap_file = "samples/traffic.pcap"
     target = "192.168.1.100"
     iterations = 200

@@ -121,6 +121,59 @@ class CallbackTest(unittest.TestCase):
         self.assertEqual(len(context.shared_data['packet_types']), 5)
         self.assertEqual(context.shared_data['packet_types'], ['TCP', 'UDP', 'TCP', 'UDP', 'TCP'])
         self.assertIn('last_packet', context.shared_data)
+        
+    def test_response_capture_with_history(self):
+        """Test response capture functionality using fuzz history"""
+        from datetime import datetime
+        from fuzzing_framework import FuzzHistoryEntry
+        
+        # Create campaign and context
+        campaign = FuzzingCampaign()
+        context = CampaignContext(campaign)
+        
+        # Create a test packet and mock response
+        test_packet = IP(dst="192.168.1.1")/TCP(dport=80)/Raw(load=b"GET / HTTP/1.1\r\n\r\n")
+        mock_response = IP(src="192.168.1.1", dst="192.168.1.2")/TCP(sport=80)/Raw(load=b"HTTP/1.1 200 OK\r\n\r\n")
+        
+        # Create history entry and add to context
+        history_entry = FuzzHistoryEntry(
+            packet=test_packet,
+            timestamp_sent=datetime.now(),
+            iteration=0
+        )
+        context.fuzz_history.append(history_entry)
+        
+        # Update history entry with response
+        context.fuzz_history[-1].timestamp_received = datetime.now()
+        context.fuzz_history[-1].response = mock_response
+        
+        # Verify the history entry
+        self.assertEqual(len(context.fuzz_history), 1)
+        self.assertEqual(context.fuzz_history[0].packet, test_packet)
+        self.assertEqual(context.fuzz_history[0].response, mock_response)
+        self.assertIsNotNone(context.fuzz_history[0].timestamp_sent)
+        self.assertIsNotNone(context.fuzz_history[0].timestamp_received)
+        self.assertIsNotNone(context.fuzz_history[0].get_response_time())
+        self.assertFalse(context.fuzz_history[0].crashed)
+        
+        # Test max_history_size by adding more entries
+        context.max_history_size = 3
+        for i in range(1, 5):
+            history_entry = FuzzHistoryEntry(
+                packet=test_packet,
+                timestamp_sent=datetime.now(),
+                iteration=i
+            )
+            # Maintain history size limit
+            if len(context.fuzz_history) >= context.max_history_size:
+                context.fuzz_history.pop(0)  # Remove oldest entry
+            context.fuzz_history.append(history_entry)
+        
+        # Verify history size and contents
+        self.assertEqual(len(context.fuzz_history), 3)
+        self.assertEqual(context.fuzz_history[0].iteration, 2)
+        self.assertEqual(context.fuzz_history[1].iteration, 3)
+        self.assertEqual(context.fuzz_history[2].iteration, 4)
 
 if __name__ == '__main__':
     unittest.main()

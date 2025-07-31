@@ -20,11 +20,14 @@ class PCAPOutputCampaign(FuzzingCampaign):
     iterations = 10
     output_pcap = "basic_pcap_demo.pcap"
     verbose = True
+    output_network = False  # No packet sending, PCAP-only mode
     
-    packet = (
-        IP(dst="192.168.1.100") / 
-        ICMP(type=FuzzField(values=[8, 0, 3, 11]))  # Different ICMP types
-    )
+    def get_packet(self):
+        # Define the packet with proper integer values for ICMP type
+        pkt = IP(dst="192.168.1.100") / ICMP()
+        # Configure field after packet creation
+        pkt[ICMP].field_fuzz("type").default_values = [8, 0, 3, 11]  # Different ICMP types
+        return pkt
 
 def analyze_pcap(filename):
     """Simple PCAP analysis function."""
@@ -65,10 +68,14 @@ def main():
         print()
         
         # Analyze the generated PCAP
-        if campaign.output_pcap and os.path.exists(campaign.output_pcap):
-            analyze_pcap(campaign.output_pcap)
+        if campaign.output_pcap:
+            pcap_path = os.path.join("pcaps", campaign.output_pcap)
+            if os.path.exists(pcap_path):
+                analyze_pcap(pcap_path)
+            else:
+                print(f"⚠️  PCAP file not found for analysis at {pcap_path}")
         else:
-            print("⚠️  PCAP file not found for analysis")
+            print("⚠️  No PCAP output path specified")
     else:
         print("✗ Campaign failed")
     

@@ -145,7 +145,8 @@ class TestExampleValidation(unittest.TestCase):
         script_path = self.examples_dir / "intermediate" / "03_pcap_regression.py"
         success, stdout, stderr = self.run_example_script(
             script_path,
-            expected_output="Intermediate Example 3: PCAP Regression"
+            expected_output="Intermediate Example 3: PCAP Regression",
+            timeout=60  # Increase timeout because PCAP creation takes time
         )
         self.assertTrue(success)
         

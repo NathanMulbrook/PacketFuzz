@@ -1,5 +1,5 @@
 
-This is currently a work in progress, it cuirrently does not send packets on the network to prevent issues with accidentally transmitting.
+This is currently a work in progress, it currently does not send packets on the network to prevent issues with accidentally transmitting.
 
 # PacketFuzz - Advanced Network Protocol Fuzzing Framework
 
@@ -48,9 +48,11 @@ The goal of this project is to combine the mutation capabilities of libfuzzer wi
 | **Campaign Architecture** | Class-based inheritance system | Reusable configurations, organized testing |
 | **FuzzField Configuration** | Embed fuzzing params in packet constructors | Clean code, field-level precision |
 | **Dictionary Integration** | Hierarchical FuzzDB + custom dictionaries | High-quality payloads, extensible |
+| **Interface Offload Management** | Disable network hardware offloading | Ensures malformed packets reach targets |
 | **Multiple Mutation Modes** | LibFuzzer, Scapy, Dictionary-only, Combined | Comprehensive coverage, flexibility |
 | **PCAP Integration** | Load/replay captures with fuzzing | Regression testing, real-world scenarios |
 | **Callback System** | 5 callback types with full context | Custom logic, monitoring, crash handling |
+| **Response Capture** | Track packets, responses and timing | Analysis of network behavior, debugging |
 | **Rate Limiting** | Network-safe packet transmission | Responsible testing, DoS prevention |
 | **Protocol Agnostic** | Works with any Scapy packet type | Universal applicability |
 
@@ -169,6 +171,12 @@ packetfuzz examples/campaign_examples.py --pcap-file output.pcap
 # Disable network output
 packetfuzz examples/campaign_examples.py --disable-network
 
+# Disable interface hardware offloading for malformed packet fuzzing
+sudo packetfuzz examples/campaign_examples.py --disable-offload
+
+# Keep interface offloading enabled (default)
+packetfuzz examples/campaign_examples.py --enable-offload
+
 # Check component availability
 packetfuzz
 
@@ -186,6 +194,82 @@ class MyCampaign(FuzzingCampaign):
 campaign = MyCampaign()
 campaign.execute()
 ```
+
+---
+
+## Network Interface Offload Management
+
+When fuzzing with malformed packets, network interface hardware offload features can interfere by automatically "fixing" corrupted checksums, segmentation, and other intentionally malformed packet attributes before transmission. PacketFuzz provides automatic interface configuration to disable these features during fuzzing campaigns.
+
+### Why Interface Offload Management?
+
+Modern network interfaces perform several optimizations that can interfere with fuzzing:
+
+| Feature | Purpose | Fuzzing Impact |
+|---------|---------|----------------|
+| **TX Checksumming** | Hardware calculates checksums | Overwrites intentionally invalid checksums |
+| **TCP Segmentation Offload (TSO)** | Hardware handles large packet segmentation | Modifies packet structure during transmission |
+| **Generic Segmentation Offload (GSO)** | Generic packet segmentation | Alters packet boundaries and headers |
+| **Generic Receive Offload (GRO)** | Packet aggregation on receive | Affects response packet analysis |
+| **Large Receive Offload (LRO)** | Large packet reassembly | Changes received packet structure |
+
+### Campaign Configuration
+
+```python
+from fuzzing_framework import FuzzingCampaign
+from scapy.layers.inet import IP, TCP
+
+class MalformedPacketCampaign(FuzzingCampaign):
+    name = "Malformed Packet Test"
+    target = "192.168.1.100"
+    
+    # Enable interface offload management
+    disable_interface_offload = True
+    interface = "eth0"  # Network interface to configure
+    interface_offload_restore = True  # Restore settings when done (default)
+    
+    # Optional: specify which features to disable (None = use defaults)
+    # interface_offload_features = ["tx-checksumming", "tcp-segmentation-offload"]
+    
+    packet = IP(dst="192.168.1.100") / TCP(dport=80, chksum=0x0000)  # Invalid checksum
+```
+
+### CLI Usage
+
+```bash
+# Enable interface offload management for all campaigns
+sudo packetfuzz --disable-offload campaign_config.py
+
+# Disable interface offload management (keep hardware features enabled)
+packetfuzz --enable-offload campaign_config.py
+
+# Root privileges required for interface configuration
+sudo python packetfuzz.py --disable-offload examples/malformed_packets.py
+```
+
+### Default Offload Features
+
+When `disable_interface_offload = True`, the following features are disabled by default:
+
+- `tx-checksumming` - Transmit checksum offloading
+- `rx-checksumming` - Receive checksum offloading  
+- `tcp-segmentation-offload` - TCP segmentation offload (TSO)
+- `generic-segmentation-offload` - Generic segmentation offload (GSO)
+- `generic-receive-offload` - Generic receive offload (GRO)
+- `large-receive-offload` - Large receive offload (LRO)
+
+### Requirements
+
+- **Root privileges**: Interface configuration requires administrator access
+- **ethtool**: System must have `ethtool` command available
+- **Valid interface**: Specified network interface must exist
+
+### Error Handling
+
+The framework uses **hard fail** behavior by default:
+- If interface configuration fails, the campaign stops with an error
+- Use CLI flags to override campaign settings if needed
+- Original interface settings are automatically restored after campaign completion
 
 ---
 

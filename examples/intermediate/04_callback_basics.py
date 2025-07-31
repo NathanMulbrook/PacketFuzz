@@ -85,6 +85,77 @@ class HTTPInjectionCampaign(FuzzingCampaign):
     packet = IP(dst="192.168.1.100") / TCP(dport=80) / b"GET /search?q=test HTTP/1.1\r\nHost: target.com\r\n\r\n"
     pre_send_callback = payload_injection_callback
 
+# Define a post-send callback to analyze responses and track history
+
+def response_capture_callback(context, packet, response):
+    """
+    Analyze responses and demonstrate the history tracking functionality.
+    This callback shows how to use the fuzz_history feature to analyze
+    response patterns over time.
+    """
+    # Check if we got a response
+    if response:
+        print(f"📥 Response received: {len(response)} bytes")
+        
+        # Get the latest history entry
+        if context.fuzz_history:
+            history_entry = context.fuzz_history[-1]
+            response_time = history_entry.get_response_time()
+            
+            # Log the response time
+            if response_time:
+                print(f"⏱️ Response time: {response_time:.2f} ms")
+                
+                # Track minimum and maximum response times
+                if 'min_response_time' not in context.shared_data or response_time < context.shared_data['min_response_time']:
+                    context.shared_data['min_response_time'] = response_time
+                if 'max_response_time' not in context.shared_data or response_time > context.shared_data['max_response_time']:
+                    context.shared_data['max_response_time'] = response_time
+                
+                # Calculate average response time
+                if 'total_response_time' not in context.shared_data:
+                    context.shared_data['total_response_time'] = 0
+                    context.shared_data['response_count'] = 0
+                
+                context.shared_data['total_response_time'] += response_time
+                context.shared_data['response_count'] += 1
+                avg_time = context.shared_data['total_response_time'] / context.shared_data['response_count']
+                
+                print(f"📊 Stats: min={context.shared_data.get('min_response_time', 0):.2f}ms, " + 
+                      f"avg={avg_time:.2f}ms, " + 
+                      f"max={context.shared_data.get('max_response_time', 0):.2f}ms")
+    else:
+        print("❌ No response received")
+    
+    return CallbackResult.SUCCESS
+
+class ResponseTrackingCampaign(FuzzingCampaign):
+    """Campaign demonstrating response capture and history tracking."""
+    name = "Response Tracking Callback"
+    target = "192.168.1.100"
+    iterations = 10
+    output_pcap = "intermediate_response_tracking.pcap"
+    
+    # Set to true to enable response capture
+    capture_responses = True
+    
+    packet = IP(dst="192.168.1.100") / TCP(dport=80) / b"GET / HTTP/1.1\r\nHost: target.com\r\n\r\n"
+    post_send_callback = response_capture_callback
+
+class DNSMalformCampaign(FuzzingCampaign):
+    """DNS fuzzing with DNS protocol-aware callback."""
+    name = "DNS Malformation Callback"
+    target = "192.168.1.100"
+    iterations = 5
+    output_pcap = "intermediate_dns_malform.pcap"
+    
+    def get_packet(self):
+        return IP(dst="192.168.1.100") / UDP(dport=53) / DNS(
+            rd=1, qd=DNSQR(qname="example.com", qtype="A")
+        )
+    
+    pre_send_callback = dns_malform_callback
+
 class DNSMalformCampaign(FuzzingCampaign):
     """DNS fuzzing with malformed name callbacks."""
     name = "DNS Malform Callback"
@@ -158,6 +229,7 @@ class PreprocessingCampaign(FuzzingCampaign):
 CAMPAIGNS = [
     TCPCallbackCampaign,
     HTTPInjectionCampaign,
+    ResponseTrackingCampaign,  # New response tracking campaign
     DNSMalformCampaign,
     ResponseAnalysisCampaign,
     PreprocessingCampaign
