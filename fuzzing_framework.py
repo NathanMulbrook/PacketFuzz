@@ -102,6 +102,25 @@ class CrashInfo:
 
 
 @dataclass
+class FuzzHistoryEntry:
+    """Tracks a single fuzzing iteration with sent packet, response, and crash info"""
+    packet: Optional[Packet] = None
+    timestamp_sent: Optional[datetime] = None
+    timestamp_received: Optional[datetime] = None
+    response: Optional[Any] = None
+    crashed: bool = False
+    crash_info: Optional[CrashInfo] = None
+    iteration: int = -1
+    
+    def get_response_time(self) -> Optional[float]:
+        """Calculate response time in milliseconds if both timestamps are available"""
+        if self.timestamp_sent and self.timestamp_received:
+            delta = self.timestamp_received - self.timestamp_sent
+            return delta.total_seconds() * 1000
+        return None
+
+
+@dataclass
 class CampaignContext:
     """Shared context passed to all callbacks"""
     campaign: 'FuzzingCampaign'
@@ -114,6 +133,8 @@ class CampaignContext:
     })
     shared_data: dict = field(default_factory=dict)  # User data sharing between callbacks
     start_time: float = field(default_factory=time.time)
+    fuzz_history: List[FuzzHistoryEntry] = field(default_factory=list)
+    max_history_size: int = 1000  # Limit history size to prevent memory issues
 
 
 class CallbackManager:
@@ -190,7 +211,13 @@ class CallbackManager:
             except Exception as e:
                 logger.error(f"User crash callback failed: {e}")
         
-        # 3. Stop campaign execution
+        # 3. Store crash in most recent history entry if available
+        if context.fuzz_history:
+            latest_entry = context.fuzz_history[-1]
+            latest_entry.crashed = True
+            latest_entry.crash_info = crash_info
+        
+        # 4. Stop campaign execution
         context.is_running = False
     
     def handle_no_success(self, callback_type: str, context: CampaignContext, *args) -> None:
@@ -864,6 +891,21 @@ class FuzzingCampaign:
                         self.callback_manager.handle_no_success("custom_send", self.context, fuzzed_packets[itteration]) 
                 # Default packet sending behavior (if no custom send callback)
                 elif fuzzed_packets[itteration] is not None:
+                    # Create history entry for this iteration
+                    history_entry = FuzzHistoryEntry(
+                        packet=fuzzed_packets[itteration],
+                        timestamp_sent=datetime.now(),
+                        iteration=itteration
+                    )
+                    
+                    # Manage history size limit
+                    if self.context and len(self.context.fuzz_history) >= self.context.max_history_size:
+                        self.context.fuzz_history.pop(0)  # Remove oldest entry
+                    
+                    # Add entry to history
+                    if self.context:
+                        self.context.fuzz_history.append(history_entry)
+                    
                     # Apply campaign target addressing based on network layer
                     if self.layer == 3 and fuzzed_packets[itteration].haslayer(IP):
                         fuzzed_packets[itteration][IP].dst = self.target
@@ -890,6 +932,11 @@ class FuzzingCampaign:
                             else:
                                 # Layer 3: Use send() for IP packets (respects user's layer choice)
                                 response = send(packet, verbose=0, return_packets=True)
+                            
+                            # Update history entry with response information
+                            if self.context and self.context.fuzz_history:
+                                self.context.fuzz_history[-1].timestamp_received = datetime.now()
+                                self.context.fuzz_history[-1].response = response
                         except Exception as e:
                             if self.verbose:
                                 logger.error(f"[SEND] Failed to send packet: {e}")

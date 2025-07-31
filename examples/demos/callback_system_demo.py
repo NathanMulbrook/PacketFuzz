@@ -146,9 +146,53 @@ def interactive_demo():
             
             # Simulate response (sometimes none)
             if i % 2 == 0:
+                # Create history entry for this iteration
+            if hasattr(campaign, 'context') and campaign.context:
+                from datetime import datetime
+                from fuzzing_framework import FuzzHistoryEntry
+                
+                # Create and add history entry
+                history_entry = FuzzHistoryEntry(
+                    packet=packet,
+                    timestamp_sent=datetime.now(),
+                    iteration=i
+                )
+                
+                # Manage history size
+                if len(campaign.context.fuzz_history) >= campaign.context.max_history_size:
+                    campaign.context.fuzz_history.pop(0)  # Remove oldest entry
+                campaign.context.fuzz_history.append(history_entry)
+            
+            # Simulate response (sometimes none)
+            if i % 2 == 0:
                 # Create a mock response
                 response = IP(src="127.0.0.1", dst="127.0.0.1")/TCP(sport=80, dport=12345)/Raw(load="HTTP/1.1 200 OK\r\n\r\n")
+                
+                # Update history with response
+                if hasattr(campaign, 'context') and campaign.context and campaign.context.fuzz_history:
+                    campaign.context.fuzz_history[-1].timestamp_received = datetime.now()
+                    campaign.context.fuzz_history[-1].response = response
+                    
+                    # Show response time if available
+                    resp_time = campaign.context.fuzz_history[-1].get_response_time()
+                    if resp_time is not None:
+                        print(f"   [TIMING] Response time: {resp_time:.2f} ms")
+                
                 response_analyzer(packet, response, i)
+            else:
+                response_analyzer(packet, None, i)
+            
+            # Simulate error (rare)
+            if i == 3:
+                error = Exception("Simulated error for demo purposes")
+                error_handler(packet, error, i)
+                
+                # Mark history entry as crashed if available
+                if hasattr(campaign, 'context') and campaign.context and campaign.context.fuzz_history:
+                    campaign.context.fuzz_history[-1].crashed = True
+            
+            # Simulate rate limiting
+            time.sleep(0.05)
             else:
                 response_analyzer(packet, None, i)
             

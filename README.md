@@ -52,6 +52,7 @@ The goal of this project is to combine the mutation capabilities of libfuzzer wi
 | **Multiple Mutation Modes** | LibFuzzer, Scapy, Dictionary-only, Combined | Comprehensive coverage, flexibility |
 | **PCAP Integration** | Load/replay captures with fuzzing | Regression testing, real-world scenarios |
 | **Callback System** | 5 callback types with full context | Custom logic, monitoring, crash handling |
+| **Response Capture** | Track packets, responses and timing | Analysis of network behavior, debugging |
 | **Rate Limiting** | Network-safe packet transmission | Responsible testing, DoS prevention |
 | **Protocol Agnostic** | Works with any Scapy packet type | Universal applicability |
 

@@ -320,6 +320,39 @@ class TestConfigurationPersistence(unittest.TestCase):
         
         assert config1.default_values == [80, 443]
         assert config2.default_values == [22, 23]
+        
+    def test_fuzz_history_entry(self):
+        """Test FuzzHistoryEntry class for response capture"""
+        from fuzzing_framework import FuzzHistoryEntry
+        from datetime import datetime, timedelta
+        
+        # Create a test packet
+        test_packet = create_test_packet("tcp")
+        
+        # Create a history entry with the test packet
+        history_entry = FuzzHistoryEntry(
+            packet=test_packet,
+            timestamp_sent=datetime.now(),
+            iteration=42
+        )
+        
+        # Verify initial state
+        assert history_entry.packet == test_packet
+        assert history_entry.iteration == 42
+        assert history_entry.crashed is False
+        assert history_entry.response is None
+        assert history_entry.timestamp_received is None
+        assert history_entry.crash_info is None
+        assert history_entry.get_response_time() is None
+        
+        # Update with response information
+        history_entry.timestamp_received = history_entry.timestamp_sent + timedelta(milliseconds=15)
+        history_entry.response = "Mock Response"
+        
+        # Verify response time calculation
+        response_time = history_entry.get_response_time()
+        assert response_time is not None
+        assert 14.0 <= response_time <= 16.0  # Allow small floating point variance
 
 
 if __name__ == '__main__':
