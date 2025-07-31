@@ -1,0 +1,43 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+*.manifest
+*.spec
+
+.pytest_cache/
+
+# pyenv
+.python-version
+
+old_files/
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+*.json
+*.pcap
+pcaps/
+logs/
+crash_logs/*
+*.log
+fuzzed_packets_report.txt
+fuzz_fields_input_report.txt
+fuzz_fields_output_report.txt
+
+# Temporary test and debug files in root directory
+/test_*.py
+/debug_*.py
