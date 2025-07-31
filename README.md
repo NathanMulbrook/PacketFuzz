@@ -1,3 +1,6 @@
+
+This is currently a work in progress, it cuirrently does not send packets on the network to prevent issues with accidentally transmitting.
+
 # PacketFuzz - Advanced Network Protocol Fuzzing Framework
 
 The goal of this project is to combine the mutation capabilities of libfuzzer with the predefined protocols and ease of implenting new protocols in scapy. fuzzdb was added to provide a dictionary dataset to be used murring mutation. This project provides a framework that allows the user to very quickly create high quality protocol fuzzers, but also has the flexability to implement custom protocols, and fuzz stategies when needed. The design of this application attempts to replicate some of the user facing configuration ideas present in scapy.
