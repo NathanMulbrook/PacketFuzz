@@ -10,7 +10,7 @@ The goal of this project is to combine the mutation capabilities of libfuzzer wi
 ┌─────────────────────────────────────────────────────────────────┐
 │                      SCAPY FUZZING FRAMEWORK                    │
 ├─────────────────────────────────────────────────────────────────┤
-│  CLI Interface (scapy_fuzzer_cli.py)                          │
+│  CLI Interface (packetfuzz.py)                               │
 │  ├─ Campaign Discovery & Execution                             │
 │  └─ Dictionary Configuration Overrides                        │
 ├─────────────────────────────────────────────────────────────────┤
@@ -72,7 +72,7 @@ PacketFuzz/
 ├── default_mappings.py         # Default field-to-dictionary mappings
 ├── dictionary_manager.py       # Dictionary management and overrides
 ├── mutator_manager.py          # Core fuzzing engine and Scapy integration
-├── scapy_fuzzer_cli.py         # Command-line interface
+├── packetfuzz.py               # Command-line interface
 ├── FRAMEWORK_DOCUMENTATION.md  # API and usage documentation
 ├── requirements.txt            # Python dependencies
 └── setup.py                    # Package setup
@@ -92,7 +92,7 @@ pip install -r requirements.txt
 pip install -e .
 ```
 
-This installs the `scapy-fuzzer` command-line tool.
+This installs the `packetfuzz` command-line tool.
 
 ---
 
@@ -126,7 +126,7 @@ This installs the `scapy-fuzzer` command-line tool.
 ### Command-Line Usage
 
 ```text
-scapy-fuzzer [OPTIONS] <campaign_config.py>
+packetfuzz [OPTIONS] <campaign_config.py>
 ```
 
 **Arguments:**
@@ -149,25 +149,25 @@ scapy-fuzzer [OPTIONS] <campaign_config.py>
 **Examples:**
 ```bash
 # List campaigns
-scapy-fuzzer examples/campaign_examples.py --list-campaigns
+packetfuzz examples/campaign_examples.py --list-campaigns
 
 # Execute campaigns
-scapy-fuzzer examples/campaign_examples.py
+packetfuzz examples/campaign_examples.py
 
 # Validate campaigns (no packets sent)
-scapy-fuzzer examples/campaign_examples.py --dry-run
+packetfuzz examples/campaign_examples.py --dry-run
 
 # Use a custom dictionary config
-scapy-fuzzer examples/campaign_examples.py --dictionary-config examples/user_dictionary_config.py
+packetfuzz examples/campaign_examples.py --dictionary-config examples/user_dictionary_config.py
 
 # Enable PCAP output to a specific file
-scapy-fuzzer examples/campaign_examples.py --pcap-file output.pcap
+packetfuzz examples/campaign_examples.py --pcap-file output.pcap
 
 # Disable network output
-scapy-fuzzer examples/campaign_examples.py --disable-network
+packetfuzz examples/campaign_examples.py --disable-network
 
 # Check component availability
-scapy-fuzzer
+packetfuzz
 
 ### Programmatic Usage
 ```python
@@ -290,7 +290,7 @@ Priority: HIGH ←────────────────────�
 
 ```bash
 # CLI dictionary override (affects all campaigns)
-scapy-fuzzer examples/campaign_examples.py --dictionary-config examples/user_dictionary_config.py
+packetfuzz examples/campaign_examples.py --dictionary-config examples/user_dictionary_config.py
 ```
 
 ```python
@@ -415,13 +415,13 @@ pip install -r requirements.txt
 python tests/run_all_tests.py
 
 # List campaigns
-scapy-fuzzer examples/campaign_examples.py --list-campaigns
+packetfuzz examples/campaign_examples.py --list-campaigns
 
 # Execute with validation
-scapy-fuzzer examples/campaign_examples.py --dry-run --verbose
+packetfuzz examples/campaign_examples.py --dry-run --verbose
 
 # Execute campaigns
-scapy-fuzzer examples/campaign_examples.py --verbose
+packetfuzz examples/campaign_examples.py --verbose
 ```
 
 ### Key Files
@@ -518,10 +518,10 @@ Final: ["custom/ports.txt", "campaign/web-ports.txt",
 
 ```bash
 # Enable verbose logging
-scapy-fuzzer examples/campaign_examples.py --verbose
+packetfuzz examples/campaign_examples.py --verbose
 
 # Dry run for validation
-scapy-fuzzer examples/campaign_examples.py --dry-run --verbose
+packetfuzz examples/campaign_examples.py --dry-run --verbose
 
 # Test with minimal iterations
 python -c "

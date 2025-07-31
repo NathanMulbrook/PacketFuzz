@@ -54,7 +54,7 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler(log_dir / 'scapy_fuzzer.log'),
+        logging.FileHandler(log_dir / 'packetfuzz.log'),
         logging.StreamHandler()  # Also log to console
     ]
 )
@@ -113,7 +113,6 @@ class CallbackManager:
     
     def __init__(self, campaign: 'FuzzingCampaign'):
         self.campaign = campaign
-        self.logger = logging.getLogger(f"{__name__}.{campaign.__class__.__name__}")
     
     def execute_callback(self, callback_func: Optional[Callable], callback_type: str, 
                         context: CampaignContext, *args) -> CallbackResult:
@@ -150,7 +149,7 @@ class CallbackManager:
                 return CallbackResult.SUCCESS
                 
         except Exception as e:
-            self.logger.error(f"Callback {callback_type} failed with exception: {e}")
+            logger.error(f"Callback {callback_type} failed with exception: {e}")
             # Treat exceptions as crashes
             return CallbackResult.FAIL_CRASH
     
@@ -177,7 +176,7 @@ class CallbackManager:
             try:
                 self.campaign.crash_callback(crash_info, context)
             except Exception as e:
-                self.logger.error(f"User crash callback failed: {e}")
+                logger.error(f"User crash callback failed: {e}")
         
         # 3. Stop campaign execution
         context.is_running = False
@@ -197,10 +196,10 @@ class CallbackManager:
             try:
                 self.campaign.no_success_callback(callback_type, context, *args)
             except Exception as e:
-                self.logger.error(f"No-success callback failed: {e}")
+                logger.error(f"No-success callback failed: {e}")
         else:
             # Default logging if no user callback
-            self.logger.warning(f"Callback {callback_type} returned no-success")
+            logger.warning(f"Callback {callback_type} returned no-success")
     
     def _internal_crash_logger(self, crash_info: CrashInfo, context: CampaignContext) -> None:
         """
@@ -246,10 +245,10 @@ class CallbackManager:
             # JSON metadata (always created)
             with (crash_dir / f"{crash_id}_metadata.json").open("w") as f:
                 json.dump(metadata, f, indent=2, default=str)
-            self.logger.error(f"Crash logged: {crash_id} in {crash_dir}/")
+            logger.error(f"Crash logged: {crash_id} in {crash_dir}/")
 
         except Exception as e:
-            self.logger.error(f"Failed to log crash packet: {e}")
+            logger.error(f"Failed to log crash packet: {e}")
 
 
 class FuzzMutator(Enum):

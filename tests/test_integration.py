@@ -600,7 +600,7 @@ CAMPAIGNS = [CLITestCampaign]
             
             # Test CLI execution with PCAP
             try:
-                script_path = Path(__file__).parent.parent / "scapy_fuzzer_cli.py"
+                script_path = Path(__file__).parent.parent / "packetfuzz.py"
                 result = subprocess.run([
                     sys.executable, str(script_path),
                     str(campaign_file),

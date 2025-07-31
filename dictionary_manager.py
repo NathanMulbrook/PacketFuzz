@@ -35,16 +35,6 @@ INCLUDE_DEFAULT_VALUES = False
 
 logger = logging.getLogger(__name__)
 
-@dataclass
-class FuzzConfig:
-    fuzzdb_path: Optional[str] = None
-    field_values: Dict[str, List[Any]] = field(default_factory=dict)
-    field_type_weights: Dict[str, float] = field(default_factory=dict)
-    field_name_weights: Dict[str, float] = field(default_factory=dict)
-    field_advanced_weights: List[dict] = field(default_factory=list)
-    # Add more config fields as needed
-
-
 
 class DictionaryManager:
     """

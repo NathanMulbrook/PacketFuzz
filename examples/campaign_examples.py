@@ -88,6 +88,6 @@ if __name__ == "__main__":
         print()
     
     print("Usage:")
-    print("  scapy-fuzzer examples/campaign_examples.py")
-    print("  scapy-fuzzer examples/campaign_examples.py --list-campaigns")
-    print("  scapy-fuzzer examples/campaign_examples.py --dry-run")
+    print("  packetfuzz examples/campaign_examples.py")
+    print("  packetfuzz examples/campaign_examples.py --list-campaigns")
+    print("  packetfuzz examples/campaign_examples.py --dry-run")

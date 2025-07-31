@@ -144,7 +144,7 @@ def apply_cli_overrides(campaign, args):
 # ===========================
 
 def main():
-    """Main entry point for the scapy-fuzzer CLI."""
+    """Main entry point for the packetfuzz CLI."""
     parser = argparse.ArgumentParser(
         description="Scapy Fuzzer - Advanced Network Protocol Fuzzing Framework"
     )
@@ -157,18 +157,18 @@ def main():
     parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="Validate campaigns without executing them"
+        help="Validate campaigns without executing them."
     )
     parser.add_argument(
         "--verbose",
         "-v",
         action="store_true",
-        help="Enable verbose output"
+        help="Enable verbose output."
     )
     parser.add_argument(
         "--list-campaigns",
         action="store_true",
-        help="List available campaigns and exit"
+        help="List available campaigns and exit."
     )
     
     # Output control flags (mutually exclusive groups)
@@ -176,47 +176,47 @@ def main():
     pcap_group.add_argument(
         "--enable-pcap",
         action="store_true",
-        help="Enable PCAP output (uses campaign default filename or fuzzing_session.pcap)"
+        help="Enable PCAP output (uses campaign default filename or fuzzing_session.pcap)."
     )
     pcap_group.add_argument(
         "--disable-pcap",
         action="store_true",
-        help="Disable PCAP output (overrides campaign configuration)"
+        help="Disable PCAP output (overrides campaign configuration)."
     )
     
     network_group = parser.add_mutually_exclusive_group()
     network_group.add_argument(
         "--enable-network",
         action="store_true",
-        help="Enable network transmission (overrides campaign configuration)"
+        help="Enable network transmission (overrides campaign configuration)."
     )
     network_group.add_argument(
         "--disable-network",
         action="store_true",
-        help="Disable network transmission (overrides campaign configuration)"
+        help="Disable network transmission (overrides campaign configuration)."
     )
     
     output_group = parser.add_argument_group("Output Control")
     output_group.add_argument(
         "--pcap-file",
         type=Path,
-        help="PCAP output file path (enables PCAP output if specified)"
+        help="PCAP output file path (enables PCAP output if specified)."
     )
     
     parser.add_argument(
         "--check-components",
         action="store_true",
-        help="Check if all required components (libFuzzer, dictionaries) are available and exit"
+        help="Check if all required components (libFuzzer, dictionaries) are available and exit."
     )
     parser.add_argument(
         "--require-libfuzzer",
         action="store_true",
-        help="Require libFuzzer extension to be available (fail if not)"
+        help="Require libFuzzer extension to be available (fail if not)."
     )
     parser.add_argument(
         "--dictionary-config",
         type=Path,
-        help="Path to user dictionary configuration file (overrides campaign settings)"
+        help="Path to user dictionary configuration file (overrides campaign settings)."
     )
     
     args = parser.parse_args()

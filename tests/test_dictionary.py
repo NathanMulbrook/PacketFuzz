@@ -320,7 +320,7 @@ class TestCLIDictionaryConfiguration(unittest.TestCase):
         """Helper to run CLI commands"""
         try:
             result = subprocess.run(
-                ["python", "scapy_fuzzer_cli.py"] + args,
+                ["python", "packetfuzz.py"] + args,
                 capture_output=True,
                 text=True,
                 timeout=10,

@@ -16,7 +16,7 @@ setup(
     packages=find_packages(),
     entry_points={
         "console_scripts": [
-            "scapy-fuzzer=scapy_fuzzer_cli:main",
+            "packetfuzz=packetfuzz:main",
         ],
     },
 )

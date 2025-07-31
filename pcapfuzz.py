@@ -45,6 +45,8 @@ import os
 import logging
 from pathlib import Path
 
+logger = logging.getLogger(__name__)
+
 class PcapFuzzCampaign(FuzzingCampaign):
     """
     PCAP-based fuzzing campaign with multiple mutation strategies.
@@ -62,7 +64,6 @@ class PcapFuzzCampaign(FuzzingCampaign):
     
     def __init__(self):
         super().__init__()
-        self.logger = logging.getLogger(__name__)
         # Override default target and packet since we'll get them from PCAP
         self.target = "192.168.1.100"  # Default target, can be overridden
         self.packet = None  # Will be set dynamically from PCAP files
@@ -181,14 +182,14 @@ class PcapFuzzCampaign(FuzzingCampaign):
             fuzzer = self.create_fuzzer()
             pcap_folder = Path(self.pcap_folder)
             if not pcap_folder.exists():
-                self.logger.warning(f"PCAP folder not found: {self.pcap_folder}")
+                logger.warning(f"PCAP folder not found: {self.pcap_folder}")
                 return False
             # Gather all processed packets from all pcaps (no fuzzing here)
             all_processed_packets = []
             for fname in sorted(pcap_folder.iterdir()):
                 if fname.suffix != ".pcap":
                     continue  # Skip non-PCAP files
-                self.logger.info(f"Processing PCAP file: {fname.name}")
+                logger.info(f"Processing PCAP file: {fname.name}")
                 packets = rdpcap(str(fname))
                 for original_pkt in packets:
                     processed_packet = self._process_packet(original_pkt)
@@ -196,7 +197,7 @@ class PcapFuzzCampaign(FuzzingCampaign):
                         continue  # Skip packets that fail processing
                     all_processed_packets.append(processed_packet)
             if not all_processed_packets:
-                self.logger.warning("No packets found in PCAP(s) after processing.")
+                logger.warning("No packets found in PCAP(s) after processing.")
                 return False
             total_to_send = self.iterations or 0  # 0 means single pass
             any_success = False
@@ -215,7 +216,7 @@ class PcapFuzzCampaign(FuzzingCampaign):
                 any_success = any_success or success
             return any_success
         except Exception as e:
-            self.logger.error(f"PCAP campaign execution failed: {e}")
+            logger.error(f"PCAP campaign execution failed: {e}")
             return False
 
 # Standalone utility function for backwards compatibility

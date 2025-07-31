@@ -297,16 +297,16 @@ If override=True for user config:
 
 ```bash
 # List campaigns
-scapy-fuzzer examples/campaign_examples.py --list-campaigns
+packetfuzz examples/campaign_examples.py --list-campaigns
 
 # Run campaign
-scapy-fuzzer examples/campaign_examples.py --campaign WebAppFuzzCampaign
+packetfuzz examples/campaign_examples.py --campaign WebAppFuzzCampaign
 
 # Dry run
-scapy-fuzzer examples/campaign_examples.py --campaign DNSInfrastructureFuzzCampaign --dry-run
+packetfuzz examples/campaign_examples.py --campaign DNSInfrastructureFuzzCampaign --dry-run
 
 # Verbose mode
-scapy-fuzzer examples/campaign_examples.py --campaign NetworkConnectivityFuzzCampaign --verbose
+packetfuzz examples/campaign_examples.py --campaign NetworkConnectivityFuzzCampaign --verbose
 ```
 
 ## Advanced Features

@@ -7,6 +7,7 @@ Delegates all actual mutation logic to specialized mutators in the mutators/ dir
 
 # Standard library imports
 import copy
+import logging
 import os
 import random
 import sys
@@ -31,6 +32,8 @@ except ImportError:
     # Fallback if circular import - define locally
     DEFAULT_LOG_DIR = "logs"
 from utils.packet_report import write_packet_report
+
+logger = logging.getLogger(__name__)
 
 # Import FuzzField for direct handling
 try:
@@ -116,8 +119,6 @@ class MutatorManager:
     # Initialization & Configuration
     # =========================
     def __init__(self, config: Optional[FuzzConfig] = None):
-        import logging
-        self.logger = logging.getLogger(__name__)
         self.config = config or FuzzConfig()
         
         # Initialize packet extensions (monkey patching)
@@ -137,19 +138,19 @@ class MutatorManager:
             from mutators.libfuzzer_mutator import LibFuzzerMutator
             self.libfuzzer_mutator = LibFuzzerMutator()
         except Exception as e:
-            self.logger.error(f"Failed to initialize LibFuzzerMutator: {e}")
+            logger.error(f"Failed to initialize LibFuzzerMutator: {e}")
             self.libfuzzer_mutator = None
         try:
             from mutators.dictionary_only_mutator import DictionaryOnlyMutator
             self.dictionary_only_mutator = DictionaryOnlyMutator()
         except Exception as e:
-            self.logger.error(f"Failed to initialize DictionaryOnlyMutator: {e}")
+            logger.error(f"Failed to initialize DictionaryOnlyMutator: {e}")
             self.dictionary_only_mutator = None
         try:
             from mutators.scapy_mutator import ScapyMutator
             self.scapy_mutator = ScapyMutator()
         except Exception as e:
-            self.logger.error(f"Failed to initialize ScapyMutator: {e}")
+            logger.error(f"Failed to initialize ScapyMutator: {e}")
             self.scapy_mutator = None
 
     
@@ -158,7 +159,7 @@ class MutatorManager:
         config_path_obj = Path(config_path)
         user_config_file = str(config_path_obj) if config_path_obj.exists() else None
         if not config_path_obj.exists():
-            self.logger.warning(f"Global dictionary config file not found: {config_path}")
+            logger.warning(f"Global dictionary config file not found: {config_path}")
         self.dictionary_manager = DictionaryManager(user_config_file)
 
     def set_mutator(self, mutator: Any) -> None:
@@ -239,7 +240,7 @@ class MutatorManager:
         try:
             write_packet_report(results, file_path=get_log_file_path("fuzz_fields_output_report.txt"))
         except Exception as e:
-            self.logger.debug(f"Failed to write packet report: {e}")
+            logger.debug(f"Failed to write packet report: {e}")
             # Continue execution even if report writing fails
         return results
 
@@ -313,10 +314,10 @@ class MutatorManager:
                     "ValueError",
                     "TypeError"
                 ]):
-                    self.logger.debug(f"Field assignment error for field {fname} with value '{mutated_value}': {error_msg}")
+                    logger.debug(f"Field assignment error for field {fname} with value '{mutated_value}': {error_msg}")
                     return False
                 else:
-                    self.logger.debug(f"Unexpected error setting field {fname} to value '{mutated_value}': {setattr_error}")
+                    logger.debug(f"Unexpected error setting field {fname} to value '{mutated_value}': {setattr_error}")
                     return False
 
     def _fuzz_packet_level(self, packet: Packet, iterations: int) -> List[Packet]:
