@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 from scapy.layers.inet import IP, TCP, UDP
 from scapy.layers.dns import DNS, DNSQR
 from scapy.packet import Raw
+from scapy.layers.http import HTTP, HTTPRequest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from fuzzing_framework import FuzzingCampaign, FuzzField, CallbackResult, CampaignContext
@@ -28,7 +29,7 @@ class AdvancedHTTPCampaign(FuzzingCampaign):
     verbose = True
     
     # Base packet for transformation
-    packet = IP(dst="192.168.1.100") / TCP(dport=80) / Raw(load=b"GET / HTTP/1.1\r\nHost: target.com\r\n\r\n")
+    packet = IP() / TCP() / HTTP() / HTTPRequest(Path=b"/", Method=b"GET", Host=b"target.com")
     
     def __init__(self):
         super().__init__()
@@ -47,7 +48,7 @@ class AdvancedHTTPCampaign(FuzzingCampaign):
             # Port scanning phase
             port = random.choice([80, 443, 8080, 8443, 3000, 9000, 9090, 8888])
             packet[TCP].dport = port
-            packet[Raw].load = f"GET / HTTP/1.1\r\nHost: target.com:{port}\r\nUser-Agent: Scanner/1.0\r\n\r\n".encode()
+            packet[HTTPRequest].Host = f"target.com:{port}".encode()
             print(f"Reconnaissance: scanning port {port}")
             
         elif stage == "injection":
@@ -65,7 +66,12 @@ class AdvancedHTTPCampaign(FuzzingCampaign):
             # Exploitation phase
             buffer_sizes = [500, 1000, 2000, 4000, 8000]
             size = random.choice(buffer_sizes)
-            packet[Raw].load = f"POST /upload HTTP/1.1\r\nHost: target.com\r\nContent-Length: {size}\r\n\r\n".encode() + b"A" * size
+            packet[HTTPRequest].Path = b"/upload"
+            packet[HTTPRequest].Method = b"POST"
+            packet[HTTPRequest].Host = b"target.com"
+            packet[Raw].load = b"A" * size
+            packet[TCP].dport = 80
+            packet[HTTPRequest].Content_Length = str(size).encode()
             print(f"Exploitation: buffer overflow test ({size} bytes)")
         
         self.stage_packet_count += 1
@@ -125,7 +131,7 @@ class AdvancedDNSCampaign(FuzzingCampaign):
     capture_responses = True
     verbose = True
     
-    packet = IP(dst="8.8.8.8") / UDP(dport=53) / DNS(rd=1, qd=DNSQR(qname="example.com"))
+    packet = IP() / UDP() / DNS(rd=1, qd=DNSQR(qname="example.com"))
     
     def __init__(self):
         super().__init__()
@@ -185,7 +191,7 @@ class AdvancedMultiProtocolCampaign(FuzzingCampaign):
     output_pcap = "advanced_multiprotocol.pcap"
     verbose = True
     
-    packet = IP(dst="192.168.1.100") / TCP(dport=80) / Raw(load=b"GET / HTTP/1.1\r\n\r\n")
+    packet = IP() / TCP() / HTTP() / HTTPRequest(Path=b"/", Method=b"GET")
     
     def __init__(self):
         super().__init__()
@@ -200,7 +206,9 @@ class AdvancedMultiProtocolCampaign(FuzzingCampaign):
         
         if protocol == "HTTP":
             packet[TCP].dport = 80
-            packet[Raw].load = b"GET /api/v1/users HTTP/1.1\r\nHost: target.com\r\n\r\n"
+            packet[HTTPRequest].Path = b"/api/v1/users"
+            packet[HTTPRequest].Method = b"GET"
+            packet[HTTPRequest].Host = b"target.com"
             
         elif protocol == "HTTPS":
             packet[TCP].dport = 443

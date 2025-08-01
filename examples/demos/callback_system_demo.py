@@ -134,7 +134,7 @@ def interactive_demo():
     try:
         # This would normally run the campaign
         # For demo purposes, we'll simulate it
-        print("🔄 Running campaign (simulated)...")
+        print("Running campaign (simulated)...")
         
         # Simulate campaign lifecycle
         campaign_start_callback(campaign)

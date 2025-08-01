@@ -101,7 +101,7 @@ def main():
         create_sample_pcaps()
         print()
     
-    print("📁 PCAP Fuzzing Modes:")
+    print("PCAP Fuzzing Modes:")
     print("   • none: Pure regression replay")
     print("   • field: Dictionary-based field fuzzing")
     print("   • binary: Binary-level mutations")
@@ -112,7 +112,7 @@ def main():
     for campaign_class in CAMPAIGNS:
         campaign = campaign_class()
         
-        print(f"📼 Running {campaign.name}")
+        print(f"Running {campaign.name}")
         print(f"   Mode: {campaign.fuzz_mode}")
         print(f"   Target: {campaign.target}")
         
@@ -129,9 +129,9 @@ def main():
         print()
     
     success_count = sum(results)
-    print(f"📊 Summary: {success_count}/{len(CAMPAIGNS)} campaigns successful")
+    print(f"Summary: {success_count}/{len(CAMPAIGNS)} campaigns successful")
     
-    print("\n🔍 Layer Extraction Process:")
+    print("\nLayer Extraction Process:")
     print("   Original PCAP → Extract Layer → Repackage → Fuzz → Output")
     print("   Example: Ethernet/IP/TCP/HTTP → TCP → IP/TCP → Field Fuzz → PCAP")
     

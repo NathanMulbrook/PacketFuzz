@@ -98,6 +98,30 @@ campaign = QuickStartCampaign()
 campaign.execute()
 ```
 
+## Creating Your Own Campaigns
+
+1. Create a new Python file
+2. Import `FuzzingCampaign` from `fuzzing_framework`
+3. Define your campaign class by inheriting from `FuzzingCampaign`
+4. Configure packet, target, and other attributes
+5. Add to `CAMPAIGNS` list at the end of your file
+
+Example:
+
+```python
+from fuzzing_framework import FuzzingCampaign, FuzzField
+from scapy.layers.inet import IP, TCP
+from scapy.layers.http import HTTP, HTTPRequest
+
+class MyCampaign(FuzzingCampaign):
+    name = "My Test Campaign"
+    target = "192.168.1.1"
+    packet = IP() / TCP() / HTTP() / HTTPRequest(Path=b"/", Method=b"GET")
+    iterations = 100
+
+CAMPAIGNS = [MyCampaign]
+```
+
 ## Feature Coverage
 
 | Feature | Basic | Intermediate | Advanced |
@@ -248,11 +272,12 @@ Example:
 ```python
 from fuzzing_framework import FuzzingCampaign, FuzzField
 from scapy.layers.inet import IP, TCP
+from scapy.layers.http import HTTP, HTTPRequest
 
 class MyCampaign(FuzzingCampaign):
     name = "My Test Campaign"
     target = "192.168.1.1"
-    packet = IP(dst="192.168.1.1") / TCP(dport=FuzzField(80, values=[80, 443, 8080]))
+    packet = IP() / TCP() / HTTP() / HTTPRequest(Path=b"/", Method=b"GET")
     iterations = 100
 
 CAMPAIGNS = [MyCampaign]
