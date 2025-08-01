@@ -75,8 +75,7 @@ def main():
         categories = [
             ("Basic", "basic"),
             ("Intermediate", "intermediate"),
-            ("Advanced", "advanced"),
-            ("Configuration", "config")
+            ("Advanced", "advanced")
         ]
         for category_name, directory in categories:
             successes, failures = run_example_category_cli(category_name, directory)

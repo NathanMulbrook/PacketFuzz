@@ -24,7 +24,7 @@ def tcp_pre_send_callback(context, packet):
         # Generate realistic sequence numbers
         packet[TCP].seq = random.randint(1000000, 4000000000)
         packet[TCP].ack = random.randint(1000000, 4000000000)
-        print(f"🔧 Modified TCP seq={packet[TCP].seq}, ack={packet[TCP].ack}")
+        print(f"Modified TCP seq={packet[TCP].seq}, ack={packet[TCP].ack}")
     
     return CallbackResult.SUCCESS
 
@@ -44,7 +44,7 @@ def payload_injection_callback(context, packet):
             payload = random.choice(sql_payloads)
             new_load = original_load.replace('test', payload)
             packet[TCP].load = new_load.encode()
-            print(f"💉 Injected payload: {payload}")
+            print(f"Injected payload: {payload}")
     
     return CallbackResult.SUCCESS
 
@@ -62,7 +62,7 @@ def dns_malform_callback(context, packet):
         original_name = packet[DNS].qd.qname
         malformed_name = random.choice(malformed_names)
         packet[DNS].qd.qname = malformed_name
-        print(f"🚨 Malformed DNS: {original_name} → {malformed_name[:50]}...")
+        print(f"Malformed DNS: {original_name}  {malformed_name[:50]}...")
     
     return CallbackResult.SUCCESS
 
@@ -83,7 +83,7 @@ class HTTPInjectionCampaign(FuzzingCampaign):
     iterations = 6
     output_pcap = "intermediate_http_injection.pcap"
     
-    packet = IP() / TCP() / HTTP() / HTTPRequest(Path=b"/search", Method=b"GET", Host=b"target.com", Query_String=b"q=test")
+    packet = IP() / TCP() / HTTP() / HTTPRequest(Path=b"/search", Method=b"GET", Host=b"target.com", data=b"q=test")
     pre_send_callback = payload_injection_callback
 
 # Define a post-send callback to analyze responses and track history
@@ -96,7 +96,7 @@ def response_capture_callback(context, packet, response):
     """
     # Check if we got a response
     if response:
-        print(f"📥 Response received: {len(response)} bytes")
+        print(f"Response received: {len(response)} bytes")
         
         # Get the latest history entry
         if context.fuzz_history:
@@ -105,7 +105,7 @@ def response_capture_callback(context, packet, response):
             
             # Log the response time
             if response_time:
-                print(f"⏱️ Response time: {response_time:.2f} ms")
+                print(f"Response time: {response_time:.2f} ms")
                 
                 # Track minimum and maximum response times
                 if 'min_response_time' not in context.shared_data or response_time < context.shared_data['min_response_time']:
@@ -122,11 +122,11 @@ def response_capture_callback(context, packet, response):
                 context.shared_data['response_count'] += 1
                 avg_time = context.shared_data['total_response_time'] / context.shared_data['response_count']
                 
-                print(f"📊 Stats: min={context.shared_data.get('min_response_time', 0):.2f}ms, " + 
+                print(f"Stats: min={context.shared_data.get('min_response_time', 0):.2f}ms, " + 
                       f"avg={avg_time:.2f}ms, " + 
                       f"max={context.shared_data.get('max_response_time', 0):.2f}ms")
     else:
-        print("❌ No response received")
+        print("No response received")
     
     return CallbackResult.SUCCESS
 
@@ -172,13 +172,13 @@ def response_analysis_callback(context, packet, response=None):
     if response:
         # Check for error responses
         if TCP in response and response[TCP].flags & 0x04:  # RST flag
-            print(f"🚨 TCP RST received - potential filtering detected")
+            print(f"TCP RST received - potential filtering detected")
             context.shared_data['interesting_responses'] = context.shared_data.get('interesting_responses', 0) + 1
             return CallbackResult.SUCCESS
         
         # Check payload size
         if hasattr(response, 'load') and len(response.load) > 1000:
-            print(f"📊 Large response ({len(response.load)} bytes) - potential buffer issue")
+            print(f"Large response ({len(response.load)} bytes) - potential buffer issue")
             context.shared_data['large_responses'] = context.shared_data.get('large_responses', 0) + 1
             return CallbackResult.SUCCESS
     
@@ -206,7 +206,7 @@ def packet_preprocessing_callback(context, packet):
         if len(lines) > 0:
             lines.insert(1, timestamp.strip())
             packet[TCP].load = '\r\n'.join(lines).encode()
-            print(f"⏰ Added timestamp header")
+            print(f"Added timestamp header")
     
     # Recalculate checksums
     if IP in packet:
@@ -241,7 +241,7 @@ def main():
     print("Demonstrates callback functions for custom fuzzing logic")
     print()
     
-    print("🔧 Callback Types:")
+    print("Callback Types:")
     print("   • Pre-send Callbacks: Modify packets before transmission")
     print("   • Post-send Callbacks: Analyze responses and results")
     print("   • Campaign-level: Applied to all packets in the campaign")
@@ -251,7 +251,7 @@ def main():
     for campaign_class in CAMPAIGNS:
         campaign = campaign_class()
         
-        print(f"🎯 Running {campaign.name}")
+        print(f"Running {campaign.name}")
         print(f"   Target: {campaign.target}")
         
         # Show callback types
@@ -268,15 +268,15 @@ def main():
         results.append(result)
         
         if result:
-            print(f"   ✓ Success - {campaign.output_pcap}")
+            print(f"   Success - {campaign.output_pcap}")
         else:
-            print(f"   ✗ Failed")
+            print(f"   Failed")
         print()
     
     success_count = sum(results)
-    print(f"📊 Summary: {success_count}/{len(CAMPAIGNS)} campaigns successful")
+    print(f"Summary: {success_count}/{len(CAMPAIGNS)} campaigns successful")
     
-    print("\n💡 Callback Best Practices:")
+    print("\nCallback Best Practices:")
     print("   • Return CallbackResult.SUCCESS for normal operation")
     print("   • Use context.shared_data for state between callbacks")
     print("   • Pre-send callbacks can modify packets in-place")
