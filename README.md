@@ -43,23 +43,6 @@ For detailed usage information, please see the [framework documentation](FRAMEWO
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-## Key Features
-
-| Feature | Description | Benefits |
-|---------|-------------|----------|
-| **Campaign Architecture** | Class-based inheritance system | Reusable configurations, organized testing |
-| **FuzzField Configuration** | Embed fuzzing params in packet constructors | Clean code, field-level precision |
-| **Dictionary Integration** | Hierarchical FuzzDB + custom dictionaries | High-quality payloads, extensible |
-| **Interface Offload Management** | Disable network hardware offloading | Ensures malformed packets reach targets |
-| **Multiple Mutation Modes** | LibFuzzer, Scapy, Dictionary-only, Combined | Comprehensive coverage, flexibility |
-| **PCAP Integration** | Load/replay captures with fuzzing | Regression testing, real-world scenarios |
-| **Callback System** | 5 callback types with full context | Custom logic, monitoring, crash handling |
-| **Response Capture** | Track packets, responses and timing | Analysis of network behavior, debugging |
-| **Rate Limiting** | Network-safe packet transmission | Responsible testing, DoS prevention |
-| **Protocol Agnostic** | Works with any Scapy packet type | Universal applicability |
-
----
-
 ## Project Structure
 
 ```
@@ -67,7 +50,7 @@ PacketFuzz/
 ├── examples/                   # Example scripts and campaign configs
 │   ├── basic/                  # Basic examples for simple settup
 │   ├── advanced/               # Advanced features and patterns
-│   ├── intermediate/           # Intermediate features
+│   └── intermediate/           # Intermediate features
 ├── tests/                      # Test suite (unit, integration, example validation)
 │   └── run_all_tests.py        # Main test runner
 ├── fuzzdb/                     # FuzzDB dictionary database
@@ -84,28 +67,10 @@ PacketFuzz/
 └── setup.py                    # Package setup
 ```
 
----
-
-## Installation
-Instalation is not necessarily required, the application can be executed from the application source, but the libfuzzer componenets must be built.
-
-### Quick Install
-```bash
-pip install -r requirements.txt
-```
-
-### Development Install
-```bash
-pip install -e .
-```
-
-This installs the `packetfuzz` command-line tool.
-
----
-
 ## Quick Start
 
 1. **Install dependencies:**
+Instalation is not necessarily required, the application can be executed from the application source, but the libfuzzer componenets must be built.
    ```bash
    pip install -r requirements.txt
    ```

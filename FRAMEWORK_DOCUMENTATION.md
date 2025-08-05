@@ -1,4 +1,4 @@
-# PacketFuzz Framework Documentation`
+# PacketFuzz Framework Documentation
 
 ## Campaign Configuration
 Create campaigns using class inheritance with embedded packet configuration. The user adds all campaigns to a `CAMPAIGNS` list, this list is then read when you pass a file with campaigns in it to the CLI.
