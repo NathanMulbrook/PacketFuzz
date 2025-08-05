@@ -121,6 +121,7 @@ class PcapFuzzCampaign(FuzzingCampaign):
     def _convert_to_scapy(self, data: bytes) -> Packet:
         """Convert raw bytes back to Scapy packet for field-aware fuzzing."""
         try:
+            #TODO Update this to be more extensive and attempt to parse more protocols, this should attempt to return as much as possible in a capy packet
             # Try to parse as common packet types
             pkt = IP(data)  # Most common case
             return pkt

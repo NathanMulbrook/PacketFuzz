@@ -1,28 +1,7 @@
 # PacketFuzz Framework Documentation
 
-## Overview
-
-A network protocol fuzzing framework built on Scapy with embedded packet configuration capabilities and campaign management.
-
-### Key Features
-- **Campaign-Based Architecture**: Class inheritance for campaign configuration  
-- **Field-Level Control**: Embed fuzzing parameters directly in packet constructors
-- **Dictionary Management**: Hierarchical dictionary support with overrides
-- **Multiple Fuzzing Modes**: Dictionary-based, binary mutation, and combined approaches
-- **PCAP Support**: Load existing captures for regression testing and analysis
-- **Callback System**: Hooks for progress monitoring and response analysis
-- **Protocol-Agnostic**: Works with any Scapy packet type
-- **Response Capture**: Track sent packets, responses, and timing information
-
-## Quick Start
-
-```bash
-pip install -r requirements.txt
-python tests/run_all_tests.py
-python examples/basic/01_quick_start.py
-```
-
 ## Campaign Configuration
+Create campaigns using class inheritance with embedded packet configuration. The user adds all campaigns to a `CAMPAIGNS` list, this list is then read when you pass a file with campaigns in it to the CLI.
 
 ### Basic Campaign Structure
 
@@ -66,6 +45,15 @@ campaign.execute()
 | `"dictionary"` | Dictionary-based mutations | Known attack patterns | Medium |
 | `"python"` | Pure Python mutations | Fallback when libFuzzer unavailable | Slow |
 
+### Fuzzing Modes
+
+| Mode | Description | Use Case | Example |
+|------|-------------|----------|---------|
+| `"none"` | Replay packets without fuzzing | Regression testing | Validate against known-good traffic |
+| `"field"` | Dictionary-based field fuzzing | Protocol fuzzing | HTTP header/payload fuzzing |
+| `"binary"` | Binary mutation with libFuzzer | Low-level protocol testing | Custom protocol analysis |
+| `"both"` | Combined field + binary fuzzing | Comprehensive testing | Maximum coverage scenarios |
+
 ```python
 # Basic FuzzField with values
 FuzzField(values=[80, 443, 8080], description="Web ports")
@@ -85,31 +73,44 @@ FuzzField(values=[80, 443, 8080],
           description="Comprehensive port fuzzing")
 ```
 
-### Campaign Types
 
-#### Basic Campaign
-```python
-class BasicCampaign(FuzzingCampaign):
-    name = "Basic Test"
-    target = "192.168.1.1"
-    iterations = 100
-    packet = IP() / TCP() / HTTP() / HTTPRequest(Path=b"/", Method=b"GET")
+## PCAP-Based Fuzzing
+
+PCAP-based fuzzing supports layer extraction, payload repackaging, and multiple fuzzing modes for regression testing and real-world traffic analysis. The fuzzer will read the packet and first attempt to convert the entire packet into scapy objects, if that fails it will fall back to treating the payload as binary data.
+
+
+### Layer Extraction & Repackaging
+
+```
+Original PCAP Packet Flow:
+┌──────────┬──────────┬──────────┬──────────────┐
+│ Ethernet │    IP    │   TCP    │ HTTP Payload │
+└──────────┴──────────┴──────────┴──────────────┘
+
+Extract "TCP" → Repackage "IP/TCP":
+┌─────────────┬─────────────┬──────────────┐
+│  New IP     │  New TCP    │ HTTP Payload │
+│ (to target) │ (to target) │   (fuzzed)   │
+└─────────────┴─────────────┴──────────────┘
 ```
 
-#### PCAP-Based Campaign
 ```python
-from fuzzing_framework import PcapFuzzCampaign
+from pcapfuzz import PcapFuzzCampaign
 
-class RegressionCampaign(PcapFuzzCampaign):
-    name = "PCAP Regression"
-    target = "192.168.1.1"
-    pcap_file = "regression_samples/example.pcap"
-    layer = 3  # IP layer packets
-    fuzz_fields = {
-        "TCP": {
-            "dport": {"values": [80, 443, 8080]}
-        }
-    }
+# Regression testing - replay without fuzzing
+class RegressionTest(PcapFuzzCampaign):
+    pcap_folder = "regression_samples/"
+    fuzz_mode = "none"
+    target = "192.168.1.100"
+
+#TODO add support for providing a packet structure to package it in
+# Extract and fuzz HTTP payloads  
+class HttpPayloadFuzz(PcapFuzzCampaign):
+    pcap_folder = "regression_samples/"
+    extract_layer = "TCP"  # Extract TCP payload  #TODO not implemented yet
+    repackage_in = "IP/TCP"  # New headers #TODO replace this with a provided scapy packet to repackage in.
+    fuzz_mode = "field" 
+    target = "192.168.1.100"
 ```
 
 ## Response Tracking System
@@ -183,7 +184,7 @@ def crash_callback(self, crash_info, context):
             if entry.crashed and entry.crash_info == crash_info:
                 print(f"Found crash in history for packet {entry.packet.summary()}")
                 print(f"Response time before crash: {entry.get_response_time()} ms")
-```
+
     pcap_file = "samples/traffic.pcap"
     target = "192.168.1.100"
     iterations = 200
@@ -307,6 +308,24 @@ Dictionary Resolution Flow:
 └──────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
+### Dictionary Resolution Hierarchy
+
+```
+Priority: HIGH ←────────────────────────────────────→ LOW
+┌─────────────────┬─────────────────┬──────────────────┐
+│  FuzzField      │  Campaign       │    Default       │
+│  Dictionaries   │  Overrides      │   Mappings       │
+├─────────────────┼─────────────────┼──────────────────┤
+│ Inline in       │ User config     │ Built-in field   │
+│ packet def      │ files           │ mappings         │
+│                 │                 │                  │
+│ Highest         │ Medium          │ Lowest           │
+│ Priority        │ Priority        │ Priority         │
+└─────────────────┴─────────────────┴──────────────────┘
+```
+
+
+
 ### Dictionary Sources & Priority
 
 | Priority | Source | Scope | Override Control | Example |
@@ -316,17 +335,22 @@ Dictionary Resolution Flow:
 | **3** | CLI Override | Global | Command-line flag | `--dictionary-config config.py` |
 | **4** | Default Mappings | Framework | Built-in rules | Automatic field associations |
 
-### Configuration Examples
+- All dictionaries are merged unless `dictionary_override=True` is set for a field in user/campaign/CLI config.
+- Inline FuzzField dictionaries always take precedence and are never overridden.
 
+### Configuration Examples
+#### Default mappings provided with the application
+The default_mappings.py file contains the default dictionary and weights, these should be halfway sane defaults that work for most fuzzing.
 ```python
-# default_mappings.py - Framework defaults
 default_field_mappings = {
     "TCP.dport": ["fuzzdb/wordlists-misc/common-ports.txt"],
     "Raw.load": ["fuzzdb/attack-payloads/all-attacks/all-attacks-unix.txt"],
     "DNS.qname": ["fuzzdb/discovery/dns/dns-names.txt"]
 }
-
-# user_dictionary_config.py - User overrides
+```
+#### User provided mappings file
+Anything set within a campaing effects only that campaing, unless a child campaign is created from it.
+```python
 USER_DICTIONARY_CONFIG = {
     "field_mappings": {
         "TCP.dport": ["custom/ports.txt"],          # Replaces default
@@ -337,8 +361,21 @@ USER_DICTIONARY_CONFIG = {
         "Raw.load": False    # Merge with lower priority
     }
 }
-
-# Campaign override example
+```
+```python
+class WebAppCampaign(FuzzingCampaign):
+    name = "Custom Dictionary Campaign"
+    target = "192.168.1.100"
+    dictionary_config_file = "examples/user_dictionary_config.py"  # Campaign-specific
+    
+    packet = IP() / TCP() / HTTP() / HTTPRequest(
+        Path=b"/",
+        Method=b"GET",
+        dictionaries=["custom/web-ports.txt"]  # Highest priority - field-specific
+    )
+```
+#### Override in campaign defniition
+```python
 class MyCampaign(FuzzingCampaign):
     dictionary_overrides = {
         "TCP.dport": ["campaign/specific-ports.txt"]
@@ -353,53 +390,118 @@ class MyCampaign(FuzzingCampaign):
     )
 ```
 
-### Dictionary Merging Logic
-
-```
-Example Resolution for "TCP.dport":
-
-1. FuzzField dictionaries:     ["inline/priority-ports.txt"]        
-2. Campaign overrides:         ["campaign/specific-ports.txt"]      
-3. User config (override=False): ["custom/ports.txt"]               
-4. Default mappings:           ["fuzzdb/wordlists-misc/common-ports.txt"] 
-
-Final Result: 
-[
-  "inline/priority-ports.txt",           # Priority 1
-  "campaign/specific-ports.txt",         # Priority 2  
-  "custom/ports.txt",                    # Priority 3
-  "fuzzdb/wordlists-misc/common-ports.txt" # Priority 4
-]
-
-If override=True for user config:
-[
-  "inline/priority-ports.txt",           # Priority 1
-  "campaign/specific-ports.txt",         # Priority 2
-  "custom/ports.txt"                     # Priority 3 (stops here)
-]
+#### User provided dicitonary on commandline
+This applies to all campaings that are ran
+```bash
+packetfuzz examples/campaign_examples.py --dictionary-config examples/user_dictionary_config.py
 ```
 
-## CLI Interface
+## Weight & Priority Resolution
+
+The framework uses sophisticated weight resolution for field prioritization and dictionary selection. The applicaiton comes with a basic set of weights and dictionaries that should work for most or at least be a good starting point, these can be extended or overridden by the user depending on there needs
+
+### Weight Resolution Priority Table
+
+| Priority | Source | Example | Weight Range |
+|----------|--------|---------|--------------|
+| **1 (Highest)** | User-provided in config | `field_weights: {"TCP.dport": 0.95}` | 0.0 - 1.0 |
+| **2** | Advanced field mappings | Property-based rules | 0.7 - 0.9 |
+| **3** | Name-based patterns | Field name matching | 0.6 - 0.8 |
+| **4** | Type-based defaults | Scapy field type | 0.5 - 0.7 |
+| **5 (Lowest)** | Framework default | All unmatched fields | 0.5 |
+
+### Advanced Weight Examples
+
+```python
+# In user_dictionary_config.py
+USER_DICTIONARY_CONFIG = {
+    "field_weights": {
+        # Explicit field weights (highest priority)
+        "TCP.dport": 0.95,        # Very high - critical attack surface
+        "Raw.load": 0.90,         # High - payload content
+        "IP.dst": 0.30,           # Low - usually fixed target
+    },
+    
+    "property_weights": {
+        # Pattern-based weights (medium priority)
+        ".*port.*": 0.85,         # Any field with 'port' in name
+        ".*addr.*": 0.40,         # Any field with 'addr' in name
+        ".*id$": 0.60,            # Fields ending in 'id'
+    }
+}
+```
+
+
+## Network Interface Offload Management
+
+When fuzzing with malformed packets, network interface offload features, both those implemented in drivers, firmware and hardware can interfere by automatically "fixing" corrupted checksums, segmentation, and other intentionally malformed packet attributes before transmission. PacketFuzz provides automatic netowork interface configuration to disable these features during fuzzing campaigns. By default it will restore the previous settings when it exits.
+
+### Configuration in a Campaign 
+
+```python
+from fuzzing_framework import FuzzingCampaign
+from scapy.layers.inet import IP, TCP
+
+class MalformedPacketCampaign(FuzzingCampaign):
+    name = "Malformed Packet Test"
+    target = "192.168.1.100"
+    
+    # Enable interface offload management
+    disable_interface_offload = True
+    interface = "eth0"
+    interface_offload_restore = True  # Restore settings when done (default)
+    
+    # Optional: specify which features to disable (None = use defaults)
+    # interface_offload_features = ["tx-checksumming", "tcp-segmentation-offload"]
+    
+    packet = IP() / TCP(chksum=0x0000)  # Invalid checksum
+```
+
+### CLI Usage
 
 ```bash
-# List campaigns
-packetfuzz examples/campaign_examples.py --list-campaigns
+# Enable interface offload management for all campaigns
+sudo packetfuzz --disable-offload campaign_config.py
 
-# Run campaign
-packetfuzz examples/campaign_examples.py --campaign WebAppFuzzCampaign
+# Disable interface offload management (keep hardware features enabled)
+packetfuzz --enable-offload campaign_config.py
 
-# Dry run
-packetfuzz examples/campaign_examples.py --campaign DNSInfrastructureFuzzCampaign --dry-run
-
-# Verbose mode
-packetfuzz examples/campaign_examples.py --campaign NetworkConnectivityFuzzCampaign --verbose
+# Root privileges required for interface configuration
+sudo python packetfuzz.py --disable-offload examples/malformed_packets.py
 ```
+
+### Default Offload Features
+
+When `disable_interface_offload = True`, the following features are disabled by default:
+
+- `tx-checksumming` - Transmit checksum offloading
+- `rx-checksumming` - Receive checksum offloading  
+- `tcp-segmentation-offload` - TCP segmentation offload (TSO)
+- `generic-segmentation-offload` - Generic segmentation offload (GSO)
+- `generic-receive-offload` - Generic receive offload (GRO)
+- `large-receive-offload` - Large receive offload (LRO)
+
+### Requirements
+
+- **Root privileges**: Interface configuration requires administrator access
+- **ethtool**: System must have `ethtool` command available
+- **Valid interface**: Specified network interface must exist
+
+### Error Handling
+
+The framework uses **hard fail** behavior by default:
+- If interface configuration fails, the campaign stops with an error
+- Use CLI flags to override campaign settings if needed
+- Original interface settings are automatically restored after campaign completion
+
+---
+
 
 ## Advanced Features
 
 ### Callback System Architecture
 
-The framework provides 5 callback types for comprehensive campaign control and monitoring.
+The framework provides 6 callback types for comprehensive monitoring and custom logic integration. These callbacks can be optionally implemented in a campaign by the user. When provided they are caled at various points throughout the fuzz campaing execution.
 
 #### Callback Types & Context
 
@@ -413,93 +515,80 @@ The framework provides 5 callback types for comprehensive campaign control and m
 | `no_success_callback` | On no_success | Packet, error, context | `CallbackResult` | Error handling, crash logging |
 | `monitor_callback` | Periodic intervals | Progress, statistics | `CallbackResult` | Progress monitoring, alerts |
 
+
+```
+Campaign Execution Flow with Callbacks:
+┌─────────────────────────────────────────────────────────────────┐
+│                      CAMPAIGN EXECUTION                         │
+│                                                                 │
+│  1. pre_launch_callback()     ← Validate targets, setup        │
+│           │                                                     │
+│           ▼                                                     │
+│  ┌─────────────────┐                                           │
+│  │  For each packet iteration:                                 │
+│  │                                                             │
+│  │  2. pre_send_callback()    ← Modify packet, log            │
+│  │           │                                                 │
+│  │           ▼                                                 │
+│  │  [ SEND PACKET ]           ← Send packet or execute         │
+│  │           │                      custom send callback       │
+│  │           ▼                                                 │
+│  │  3. post_send_callback()   ← Analyze response              │
+│  │           │                                                 │
+│  │           ▼                                                 │
+│  │  4. crash_callback()       ← Handle crashes/errors         │
+│  │     (if crash detected)                                     │
+│  │                                                             │
+│  │  5. monitor_callback()     ← Continuous monitoring         │
+│  │     (every N iterations)                                    │
+│  └─────────────────┘                                           │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+#### Callback Return Values
+
+| Return Value | Description | Effect |
+|--------------|-------------|--------|
+| `SUCCESS` | Normal execution | Continue to next step |
+| `NO_SUCCESS` | This indicates that the callback did not execute correctly, but that it does not indicate a crash or target failure
+| `FAIL_CRASH` | This indicates a target failure, when this is returned the crash callback handler will be executed
+
 #### Callback Implementation Pattern
 
 ```python
-from fuzzing_framework import CallbackResult
+from fuzzing_framework import FuzzingCampaign, CallbackResult
 
-class AdvancedCampaign(FuzzingCampaign):
+class CallbackDemoCampaign(FuzzingCampaign):
+    name = "Callback Demo"
+    target = "192.168.1.100"
     
     def my_pre_launch_callback(self, context):
-        """Validate target accessibility before starting"""
-        try:
-            # Ping target, check ports, validate config
-            response = ping(self.target)
-            if not response:
-                print(f"Target {self.target} not reachable")
-                return CallbackResult.ABORT
-        except Exception as e:
-            print(f"Pre-launch validation failed: {e}")
-            return CallbackResult.ABORT
-        return CallbackResult.CONTINUE
+        """Validate target before starting campaign"""
+        print(f"Validating target: {self.target}")
+        # Return CONTINUE, SKIP, or ABORT
+        return CallbackResult.SUCCESS
     
     def my_pre_send_callback(self, packet, context):
-        """Modify packet based on previous responses"""
-        iteration = context.get('iteration', 0)
-        
-        # Dynamic packet modification based on iteration
-        if iteration > 100:
-            # Increase aggressiveness after initial probing
-            if hasattr(packet, 'payload') and packet.payload:
-                packet.payload = b"AGGRESSIVE_PAYLOAD_" + packet.payload
-        
-        return CallbackResult.CONTINUE, packet
+        """Modify packet before sending"""
+        print(f"Sending: {packet.summary()}")
+        return CallbackResult.SUCCESS, packet  # Modified packet
     
     def my_post_send_callback(self, packet, response, context):
-        """Analyze responses for interesting behaviors"""
+        """Analyze response after sending"""
         if response:
-            response_time = context.get('response_time', 0)
-            
-            # Detect slow responses (potential DoS)
-            if response_time > 5.0:
-                print(f"Slow response detected: {response_time}s")
-                self._log_slow_response(packet, response, response_time)
-            
-            # Detect large responses (potential information disclosure)
-            if len(response) > 10000:
-                print(f"Large response: {len(response)} bytes")
-                self._log_large_response(packet, response)
-                
-        return CallbackResult.CONTINUE
+            print(f"Response: {response.summary()}")
+        return CallbackResult.SUCCESS
     
     def my_crash_callback(self, packet, error, context):
-        """Comprehensive crash handling and logging"""
-        timestamp = datetime.now().isoformat()
-        
-        # Save crash artifacts
-        crash_data = {
-            'timestamp': timestamp,
-            'packet_summary': packet.summary(),
-            'packet_hex': packet.build().hex(),
-            'error': str(error),
-            'context': context
-        }
-        
-        # Write to crash log
-        with open(f"crash_logs/crash_{timestamp}.json", "w") as f:
-            json.dump(crash_data, f, indent=2)
-        
-        # Save packet to PCAP
-        wrpcap(f"crash_logs/crash_{timestamp}.pcap", packet)
-        
-        return CallbackResult.CONTINUE  # Continue despite crash
+        """Handle crashes and errors"""
+        print(f"Crash detected: {error}")
+        # Log to file, save packet, etc.
+        return CallbackResult.SUCCESS
     
     def my_monitor_callback(self, context):
-        """Continuous monitoring and statistics"""
-        sent = context.get('packets_sent', 0)
-        total = context.get('total_iterations', 0)
-        
-        # Progress reporting
-        if sent % 100 == 0:
-            print(f"Progress: {sent}/{total} ({sent/total*100:.1f}%)")
-        
-        # Resource monitoring
-        memory_usage = self._get_memory_usage()
-        if memory_usage > 5000 * 1024 * 1024:  # 5000MB
-            print(f"High memory usage: {memory_usage/1024/1024:.1f}MB")
-            return CallbackResult.ABORT  # Stop if memory too high
-            
-        return CallbackResult.CONTINUE
+        """Continuous monitoring during campaign"""
+        print(f"Progress: {context.get('packets_sent', 0)} packets sent")
+        return CallbackResult.SUCCESS
 ```
 
 ### Field Resolution & Discovery
@@ -599,68 +688,7 @@ class CustomProtocolCampaign(FuzzingCampaign):
     )
 ```
 
-### Performance Optimization
 
-#### LibFuzzer Integration
-
-The framework integrates with libFuzzer's high-performance mutation engine through a C extension.
-
-```
-LibFuzzer Integration Architecture:
-┌──────────────────────────────────────────────────────────────────────────────────────────────┐
-│                    LIBFUZZER INTEGRATION                                                    │
-│                                                                                              │
-│  ┌──────────────┐    ┌──────────────┐    ┌──────────┐ │
-│  │PYTHON LAYER  │ ─▶ │ C EXTENSION  │ ─▶ │LIBFUZZER │ │
-│  │              │    │              │    │          │ │
-│  │ • Field data │    │ • Data       │    │ • Coverage│ │
-│  │ • Dictionary │    │   conversion │    │   guided │ │
-│  │ • Configuration│  │ • libFuzzer  │    │   mutations│ │
-│  │              │    │   interface  │    │          │ │
-│  └──────────────┘    └──────────────┘    └──────────┘ │
-│                                                                                              │
-│  Fallback Path (if libFuzzer unavailable):                                                   │
-│  ┌──────────────┐    ┌──────────────┐                                                       │
-│  │PYTHON LAYER  │ ─▶ │PYTHON MUTATOR│                                                       │
-│  │              │    │              │                                                       │
-│  │ • Same interface│ │ • Pure Python│                                                       │
-│  │ • Same API   │    │ • Compatible │                                                       │
-│  └──────────────┘    └──────────────┘                                                       │
-└──────────────────────────────────────────────────────────────────────────────────────────────┘
-```
-
-#### Performance Comparison
-
-| Mutator | Speed | Coverage | Memory | Use Case |
-|---------|-------|----------|--------|----------|
-| LibFuzzer | Very Fast | Excellent | Low | Production fuzzing |
-| Scapy Native | Fast | Good | Medium | Protocol-aware testing |
-| Dictionary | Medium | Targeted | Low | Known attack patterns |
-| Python | Slow | Good | Medium | Development/Fallback |
-
-### Corpus Management
-
-LibFuzzer uses corpus directories for seed management and coverage tracking.
-
-```python
-# The framework automatically manages corpus directories per field
-# No user intervention required - handled internally
-
-# Internal process (for reference):
-with tempfile.TemporaryDirectory(prefix=f"corpus_{field_name}_") as corpus_dir:
-    # Write dictionary entries as seed files
-    for i, entry in enumerate(dictionary_entries):
-        with open(f"{corpus_dir}/seed_{i}", "wb") as f:
-            f.write(entry)
-    
-    # Set environment for C extension
-    os.environ["SCAPY_LIBFUZZER_CORPUS"] = corpus_dir
-    
-    # Perform mutation
-    result = libfuzzer_mutate(data, max_size)
-    
-    # Cleanup automatic - temp directory deleted
-```
 
 ## Testing
 
@@ -688,151 +716,3 @@ python tests/run_all_tests.py
 - `campaign.execute()` - Run the campaign
 - `campaign.dry_run()` - Validate without execution
 
-## Examples
-
-### Comprehensive HTTP Fuzzing
-
-```python
-from fuzzing_framework import FuzzingCampaign, FuzzField
-from scapy.layers.inet import IP, TCP
-from scapy.layers.http import HTTP, HTTPRequest
-
-class HTTPCampaign(FuzzingCampaign):
-    name = "HTTP Comprehensive Test"
-    target = "192.168.1.100" 
-    iterations = 500
-    rate_limit = 10  # Safe rate limiting
-    output_pcap = "http_comprehensive.pcap"
-    verbose = True
-    
-    # Multi-field fuzzing with different strategies
-    packet = (
-        IP() /
-        TCP() /
-        HTTP() /
-        HTTPRequest(Path=FuzzField(
-            values=[b"/", b"/admin", b"/login"],
-            dictionaries=["fuzzdb/attack-payloads/http-protocol-attacks/http-injection.txt"],
-            mutators=["dictionary", "libfuzzer"],
-            description="HTTP paths with injection payloads"
-        ), Method=FuzzField(values=[b"GET", b"POST"]))
-    )
-    
-    # Custom callback for response analysis
-    def my_post_send_callback(self, packet, response, context):
-        if response and hasattr(response, 'show'):
-            # Log interesting responses
-            if len(response) > 100:  # Large response
-                print(f"Large response detected: {len(response)} bytes")
-        return CallbackResult.CONTINUE
-```
-
-### DNS Infrastructure Testing
-
-```python
-from scapy.layers.dns import DNS, DNSQR
-from scapy.layers.inet import UDP
-
-class DNSCampaign(FuzzingCampaign):
-    name = "DNS Infrastructure Test"
-    target = "8.8.8.8"
-    iterations = 200
-    
-    packet = (
-        IP(dst="8.8.8.8") / 
-        UDP(dport=53) /
-        DNS(
-            id=FuzzField(
-                values=[0x1234, 0x5678],
-                mutators=["libfuzzer"],
-                description="DNS transaction ID"
-            ),
-            qd=DNSQR(
-                qname=FuzzField(
-                    values=["example.com", "test.org"],
-                    dictionaries=[
-                        "fuzzdb/discovery/dns/dns-names.txt",
-                        "fuzzdb/attack/file-path-traversal/file-path-traversal-8.txt"
-                    ],
-                    description="DNS query names with traversal attempts"
-                )
-            )
-        )
-    )
-```
-
-### PCAP Regression Testing
-
-```python
-from fuzzing_framework import PcapFuzzCampaign
-
-class HTTPRegressionCampaign(PcapFuzzCampaign):
-    name = "HTTP PCAP Regression"
-    pcap_file = "samples/http_traffic.pcap"
-    target = "192.168.1.100"
-    
-    # Extract HTTP payloads and repackage
-    extract_layer = "TCP"        # Extract TCP payload (HTTP data)
-    repackage_in = "IP/TCP"      # Wrap in new IP/TCP headers
-    fuzz_mode = "field"          # Use field-aware fuzzing
-    
-    iterations = 100
-    output_pcap = "regression_fuzzed.pcap"
-
-class BinaryProtocolRegression(PcapFuzzCampaign):
-    name = "Binary Protocol Regression"  
-    pcap_file = "samples/custom_protocol.pcap"
-    target = "10.0.0.1"
-    
-    # Binary-level mutations for unknown protocols
-    extract_layer = "UDP"        # Extract UDP payload
-    repackage_in = "IP/UDP"      # Repackage with new headers
-    fuzz_mode = "binary"         # Pure binary mutations
-    
-    iterations = 300
-```
-
-### Multi-Protocol Campaign with Callbacks
-
-```python
-class NetworkReconCampaign(FuzzingCampaign):
-    name = "Network Reconnaissance"
-    target = "192.168.1.0/24"  # Network range
-    iterations = 1000
-    
-    # Combine multiple protocols
-    packets = [
-        # ICMP ping variations
-        IP(dst="192.168.1.1") / ICMP(
-            type=FuzzField(values=[8, 13, 15], description="ICMP types")
-        ),
-        
-        # ARP requests  
-        Ether(dst="ff:ff:ff:ff:ff:ff") / ARP(
-            pdst=FuzzField(
-                values=["192.168.1.1", "192.168.1.2"],
-                description="ARP targets"
-            )
-        ),
-        
-        # TCP SYN scan
-        IP(dst="192.168.1.1") / TCP(
-            dport=FuzzField(
-                dictionaries=["fuzzdb/wordlists-misc/common-ports.txt"],
-                description="Common service ports"
-            ),
-            flags="S"
-        )
-    ]
-    
-    def my_pre_launch_callback(self, context):
-        print("Starting network reconnaissance...")
-        # Could validate network access, setup monitoring, etc.
-        return CallbackResult.CONTINUE
-    
-    def my_crash_callback(self, packet, error, context):
-        # Log network errors, connection issues, etc.
-        with open("network_errors.log", "a") as f:
-            f.write(f"{datetime.now()}: {packet.summary()} - {error}\n")
-        return CallbackResult.CONTINUE
-```
