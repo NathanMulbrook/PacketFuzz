@@ -7,6 +7,7 @@ Many of the features and ideas are inspired by boofuzz and similar fuzzers. Once
 The structure of this project consistes of 3 main components, a libfuzzer interface for fuzzing individual fields without needing a astandard libfuzz harness, a mutator manager that accepts scapy packets for fuzzing, and a fuzzing framework that allows the suer to define fuzz campaings. For more advanced usage the fuzzer can be used without the campaign framework.
 
 For detailed usage information, please see the [framework documentation](FRAMEWORK_DOCUMENTATION.md).
+
 ---
 
 ## Architecture Overview
