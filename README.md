@@ -2,6 +2,9 @@
 
 The goal of this project is to combine the mutation capabilities of libfuzzer with the predefined protocols and ease of implenting new protocols in scapy. fuzzdb was added to provide a dictionary dataset to be used murring mutation. This project provides a framework that allows the user to very quickly create high quality protocol fuzzers, but also has the flexability to implement custom protocols, and fuzz stategies when needed. The design of this application attempts to replicate some of the user facing configuration ideas present in scapy.
 
+Many of the features and ideas are inspired by boofuzz and similar fuzzers. Once complete this project should have all the features and abilities that boofuzz has with the added advantage of greater flexability and less time to develop a fuzzer by using scapy's extensive protocol definitions.
+
+The structure of this project consistes of 3 main components, a libfuzzer interface for fuzzing individual fields without needing a astandard libfuzz harness, a mutator manager that accepts scapy packets for fuzzing, and a fuzzing framework that allows the suer to define fuzz campaings. For more advanced usage the fuzzer can be used without the campaign framework.
 ---
 
 ## Architecture Overview
@@ -28,8 +31,7 @@ The goal of this project is to combine the mutation capabilities of libfuzzer wi
 │  Mutation Engines                                             │
 │  ├─ LibFuzzer (C-based binary mutations)                      │
 │  ├─ Scapy Native (Built-in fuzz() function)                   │
-│  ├─ Dictionary-Only (Exact dictionary values)                 │
-│  └─ Python Mutator (Pure Python fallback)                    │
+│  └─ Dictionary-Only (Exact dictionary values)                 │
 ├─────────────────────────────────────────────────────────────────┤
 │  Dictionary System                                            │
 │  ├─ Default Mappings (Field-to-dictionary mapping)            │
@@ -60,10 +62,9 @@ The goal of this project is to combine the mutation capabilities of libfuzzer wi
 ```
 PacketFuzz/
 ├── examples/                   # Example scripts and campaign configs
-│   ├── basic/                  # Basic examples for beginners
+│   ├── basic/                  # Basic examples for simple settup
 │   ├── advanced/               # Advanced features and patterns
-│   ├── demos/                  # Interactive demonstrations
-│   └── campaign_examples.py    # Standard campaign configurations
+│   ├── intermediate/           # Intermediate features
 ├── tests/                      # Test suite (unit, integration, example validation)
 │   └── run_all_tests.py        # Main test runner
 ├── fuzzdb/                     # FuzzDB dictionary database
@@ -83,6 +84,7 @@ PacketFuzz/
 ---
 
 ## Installation
+Instalation is not necessarily required, the application can be executed from the application source, but the libfuzzer componenets must be built.
 
 ### Quick Install
 ```bash
