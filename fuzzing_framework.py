@@ -119,7 +119,7 @@ class FuzzHistoryEntry:
             return delta.total_seconds() * 1000
         return None
 
-
+#TODO evaluate if this is needed
 @dataclass
 class CampaignContext:
     """Shared context passed to all callbacks"""
@@ -135,6 +135,7 @@ class CampaignContext:
     start_time: float = field(default_factory=time.time)
     fuzz_history: List[FuzzHistoryEntry] = field(default_factory=list)
     max_history_size: int = 1000  # Limit history size to prevent memory issues
+    socket: Optional[Any] = None  # Placeholder for socket object if needed
 
 
 class CallbackManager:
@@ -178,8 +179,8 @@ class CallbackManager:
             elif result == "fail_crash" or result == "crash":
                 return CallbackResult.FAIL_CRASH
             else:
-                # Default to success for unknown return values
-                return CallbackResult.SUCCESS
+                # Default to success for unknown return values this may be a bad assumption
+                 return CallbackResult.SUCCESS
                 
         except Exception as e:
             logger.error(f"Callback {callback_type} failed with exception: {e}")
@@ -536,8 +537,8 @@ class FuzzingCampaign:
     duration = None
     rate_limit = DEFAULT_RATE_LIMIT
     response_timeout = DEFAULT_RESPONSE_TIMEOUT
-    interface = DEFAULT_INTERFACE
-    verbose = True
+    interface = DEFAULT_INTERFACE   #TODO this is a string, should it get converted to a scapy interface object
+    verbose = True   #TODO implement conf.verb
     output_network = True
     output_pcap: Optional[str] = None  # PCAP output file path (None = disabled)
     stats_interval = DEFAULT_STATS_INTERVAL
@@ -577,6 +578,11 @@ class FuzzingCampaign:
     disable_interface_offload: bool = False                    # Enable/disable interface offload management
     interface_offload_features: Optional[List[str]] = None     # Specific features to disable (None = use defaults)
     interface_offload_restore: bool = True                     # Restore original settings after campaign
+
+    # --- Socket logic additions ---
+    socket_type: str = None    # User can specify: 'l2', 'l3', 'tcp', 'udp', or None for auto
+
+
 
     def __init__(self):
         """Initialize campaign with callback manager and handle excluded_layers."""
@@ -882,6 +888,32 @@ class FuzzingCampaign:
                 if self.duration and (time.time() - start_time) >= self.duration:
                     break
                 
+                # Auto-detect socket type from packet if not specified
+                if not self.socket_type:
+                    if self.layer == 2 or (packet and packet.haslayer(Ether)):
+                        socket_type = 'l2'
+                    elif packet and packet.haslayer(TCP):
+                        socket_type 'tcp'
+                    elif packet and packet.haslayer(UDP):
+                        socket_type 'udp'
+                    else:
+                        socket_type = 'l3'  #Default
+
+                # open sockets for sending
+                import socket
+                if self.socket_type == 'l2':
+                    s = socket.socket(socket.AF_PACKET, socket.SOCK_RAW)
+                    s.bind((self.interface, 0))
+                elif self.socket_type == 'tcp':
+                    s = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_TCP)
+                elif self.socket_type == 'udp':
+                    s = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_UDP)
+                elif self.socket_type == 'l3' or self.socket_type == 'raw':
+                    s = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_RAW)
+                else:
+                    raise ValueError(f"Unknown socket_type: {socket_type}")
+                self.context.socket = s  # Store socket in context for custom send callback
+
                 # Execute pre-send callback with error handling
                 if self.pre_send_callback and self.context:
                     result = self.callback_manager.execute_callback(
@@ -938,27 +970,63 @@ class FuzzingCampaign:
                         if self.verbose:
                             logger.info(f"[SEND] Sending: {fuzzed_packets[itteration].summary()}")
                         
-                        # Send using appropriate Scapy function based on layer
+                        # Send using Python socket instead of Scapy send/sendp
+                        #TODO fix this code
                         try:
-                            packet = fuzzed_packets[itteration]
-                            if packet is None:
+                            if fuzzed_packets[itteration] is None:
                                 continue
-                                
+                            # Serialize packet to bytes
+                            pkt_bytes = bytes(fuzzed_packets[itteration])
+                            if not self.context.socket:
+                                raise RuntimeError("No socket available for sending packets.")
                             if self.layer == 2:
-                                # Layer 2: Use sendp() for raw Ethernet frames  
-                                response = sendp(packet, verbose=0, return_packets=True)
+                                # Layer 2: send raw Ethernet frame
+                                self.context.socket.send(pkt_bytes)
                             else:
-                                # Layer 3: Use send() for IP packets (respects user's layer choice)
-                                response = send(packet, verbose=0, return_packets=True)
-                            
-                            # Update history entry with response information
+                                # Layer 3: send raw IP packet
+                                # For AF_INET/SOCK_RAW, need to provide destination address
+                                self.context.socket.sendto(pkt_bytes, (self.target, 0))
+                            sent_packet = [fuzzed_packets[itteration]]  # For history update compatibility
                             if self.context and self.context.fuzz_history:
                                 self.context.fuzz_history[-1].timestamp_received = datetime.now()
-                                self.context.fuzz_history[-1].response = response
+                                self.context.fuzz_history[-1].packet = sent_packet[0]
                         except Exception as e:
                             if self.verbose:
                                 logger.error(f"[SEND] Failed to send packet: {e}")
-                            response = None
+                            sent_packet = None
+
+                        # Receive a response if capture_responses is enabled
+                        if self.capture_responses and sent_packet:
+                            try:
+                                if self.layer == 2:
+                                    # Layer 2: Use sniff() with a filter for Ethernet frames
+                                    response = sniff(
+                                        iface=self.interface,
+                                        timeout=self.response_timeout,
+                                        count=1,
+                                        lfilter=lambda x: x.haslayer(Ether) and x[Ether].src == self.target
+                                    )
+                                else:
+                                    # Layer 3: Use sr1() for IP packets with timeout
+                                    #TODO this should not send but it does
+                                    response = sr1(
+                                        packet,
+                                        iface=self.interface,
+                                        timeout=self.response_timeout,
+                                        verbose=self.verbose
+                                    )
+                                
+                                if self.verbose and response:
+                                    logger.info(f"[RECV] Response: {response.summary()}")
+                                
+                                # Update history entry with response information
+                                if self.context and self.context.fuzz_history:
+                                    self.context.fuzz_history[-1].response = response
+                                    self.context.fuzz_history[-1].timestamp_received = datetime.now()
+                            except Exception as e:
+                                if self.verbose:
+                                    logger.error(f"[RECV] Failed to capture response: {e}")
+                                response = None
                     
                 # Execute post-send callback
                 if self.post_send_callback and self.context:
