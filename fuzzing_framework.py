@@ -893,9 +893,9 @@ class FuzzingCampaign:
                     if self.layer == 2 or (packet and packet.haslayer(Ether)):
                         socket_type = 'l2'
                     elif packet and packet.haslayer(TCP):
-                        socket_type 'tcp'
+                        socket_type = 'tcp'
                     elif packet and packet.haslayer(UDP):
-                        socket_type 'udp'
+                        socket_type = 'udp'
                     else:
                         socket_type = 'l3'  #Default
 
