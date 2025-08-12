@@ -970,8 +970,7 @@ class FuzzingCampaign:
                         if self.verbose:
                             logger.info(f"[SEND] Sending: {fuzzed_packets[itteration].summary()}")
                         
-                        # Send using Python socket instead of Scapy send/sendp
-                        #TODO fix this code
+                        # Send using Python socket
                         try:
                             if fuzzed_packets[itteration] is None:
                                 continue
@@ -981,22 +980,21 @@ class FuzzingCampaign:
                                 raise RuntimeError("No socket available for sending packets.")
                             if self.layer == 2:
                                 # Layer 2: send raw Ethernet frame
-                                self.context.socket.send(pkt_bytes)
+                                send_success = self.context.socket.send(pkt_bytes)
                             else:
                                 # Layer 3: send raw IP packet
                                 # For AF_INET/SOCK_RAW, need to provide destination address
-                                self.context.socket.sendto(pkt_bytes, (self.target, 0))
-                            sent_packet = [fuzzed_packets[itteration]]  # For history update compatibility
+                                send_success = self.context.socket.sendto(pkt_bytes, (self.target, 0))
                             if self.context and self.context.fuzz_history:
                                 self.context.fuzz_history[-1].timestamp_received = datetime.now()
-                                self.context.fuzz_history[-1].packet = sent_packet[0]
+                                self.context.fuzz_history[-1].packet = pkt_bytes
                         except Exception as e:
                             if self.verbose:
                                 logger.error(f"[SEND] Failed to send packet: {e}")
-                            sent_packet = None
+                            send_success = None
 
                         # Receive a response if capture_responses is enabled
-                        if self.capture_responses and sent_packet:
+                        if self.capture_responses and send_success:
                             try:
                                 if self.layer == 2:
                                     # Layer 2: Use sniff() with a filter for Ethernet frames

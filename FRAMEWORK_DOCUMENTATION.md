@@ -194,18 +194,19 @@ def crash_callback(self, crash_info, context):
 
 ### Configuration Attributes
 
-| Category | Attribute | Type | Default | Description |
-|----------|-----------|------|---------|-------------|
-| **Required** | `name` | `str` | `"Unnamed Campaign"` | Campaign identifier |
-| | `target` | `str` | `"127.0.0.1"` | Target IP address |
-| **Execution** | `iterations` | `int` | `100` | Number of packets to send |
-| | `duration` | `Optional[int]` | `None` | Max execution time (seconds) |
-| | `rate_limit` | `int` | `1` | Packets per second |
-| **Output** | `output_pcap` | `Optional[str]` | `None` | Output PCAP filename |
-| | `verbose` | `bool` | `False` | Enable detailed logging |
-| | `interface` | `Optional[str]` | `None` | Network interface (Layer 2) |
-| **Safety** | `output_network` | `bool` | `False` | Actually send packets |
-| | `dry_run_mode` | `bool` | `False` | Validation only mode |
+| Category     | Attribute      | Type            | Default           | Description                                      |
+|--------------|---------------|-----------------|-------------------|--------------------------------------------------|
+| **Required** | `name`        | `str`           | `"Unnamed Campaign"` | Campaign identifier                          |
+|              | `target`      | `str`           | `"127.0.0.1"`     | Target IP address                                |
+| **Execution**| `iterations`  | `int`           | `100`             | Number of packets to send                        |
+|              | `duration`    | `Optional[int]` | `None`            | Max execution time (seconds)                     |
+|              | `rate_limit`  | `int`           | `1`               | Packets per second                               |
+| **Output**   | `output_pcap` | `Optional[str]` | `None`            | Output PCAP filename                             |
+|              | `verbose`     | `bool`          | `False`           | Enable detailed logging                          |
+|              | `interface`   | `Optional[str]` | `None`            | Network interface (Layer 2)                      |
+| **Network**  | `socket_type` | `Optional[str]` | `None`            | Socket type: `"raw"`, `"l2"`, `"l3"`, `"udp"`, `"tcp"`; auto-detect if `None` |
+| **Safety**   | `output_network` | `bool`        | `False`           | Actually send packets                            |
+|              | `dry_run_mode`| `bool`          | `False`           | Validation only mode                             |
 
 ### Execution Flow Diagram
 
