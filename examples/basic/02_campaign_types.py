@@ -35,7 +35,7 @@ class BasicHTTPCampaign(FuzzingCampaign):
 class BasicDNSCampaign(FuzzingCampaign):
     """Basic DNS fuzzing campaign."""
     name = "Basic DNS Fuzzing"
-    target = "8.8.8.8"
+    target = "10.10.10.10"
     iterations = 5
     output_network = False
     output_pcap = "basic_dns.pcap"

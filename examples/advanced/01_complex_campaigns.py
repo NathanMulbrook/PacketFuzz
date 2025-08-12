@@ -125,7 +125,7 @@ class AdvancedHTTPCampaign(FuzzingCampaign):
 class AdvancedDNSCampaign(FuzzingCampaign):
     """DNS fuzzing with response analysis and subdomain enumeration."""
     name = "Advanced DNS Fuzzing"
-    target = "8.8.8.8"
+    target = "10.10.10.10"
     iterations = 12
     output_pcap = "advanced_dns_complex.pcap"
     capture_responses = True

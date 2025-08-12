@@ -43,7 +43,7 @@ class DNSQueryFuzzCampaign(PcapFuzzCampaign):
     extract_layer = "UDP"  # Extract UDP payload
     repackage_in = "IP/UDP"  # New headers
     fuzz_mode = "field"  # Field-aware fuzzing
-    target = "8.8.8.8"
+    target = "10.10.10.10"
     iterations = 2  # Reduced for faster test execution
     output_pcap = "intermediate_dns_extraction.pcap"
     verbose = True
@@ -75,8 +75,8 @@ def create_sample_pcaps():
     
     # Create sample DNS traffic
     dns_packets = [
-        IP(src="192.168.1.10", dst="8.8.8.8")/UDP(sport=54321, dport=53)/b"\x12\x34\x01\x00\x00\x01\x00\x00\x00\x00\x00\x00\x07example\x03com\x00\x00\x01\x00\x01",
-        IP(src="8.8.8.8", dst="192.168.1.10")/UDP(sport=53, dport=54321)/b"\x12\x34\x81\x80\x00\x01\x00\x01\x00\x00\x00\x00\x07example\x03com\x00\x00\x01\x00\x01"
+        IP(src="192.168.1.10", dst="10.10.10.10")/UDP(sport=54321, dport=53)/b"\x12\x34\x01\x00\x00\x01\x00\x00\x00\x00\x00\x00\x07example\x03com\x00\x00\x01\x00\x01",
+        IP(src="10.10.10.10", dst="192.168.1.10")/UDP(sport=53, dport=54321)/b"\x12\x34\x81\x80\x00\x01\x00\x01\x00\x00\x00\x00\x07example\x03com\x00\x00\x01\x00\x01"
     ]
     wrpcap(f"{sample_dir}/dns_sample.pcap", dns_packets)
     

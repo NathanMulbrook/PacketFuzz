@@ -78,7 +78,7 @@ class CallbackTest(unittest.TestCase):
             constructed_packets.extend([tcp_packet, udp_packet])
             return CallbackResult.SUCCESS
         campaign = FuzzingCampaign()
-        campaign.target = "8.8.8.8"
+        campaign.target = "10.10.10.10"
         context = CampaignContext(campaign)
         test_packet = IP(dst="0.0.0.0")/TCP(dport=80)
         result = multi_protocol_callback(test_packet, context)
@@ -86,13 +86,13 @@ class CallbackTest(unittest.TestCase):
         self.assertEqual(len(constructed_packets), 2)
         tcp_packet = constructed_packets[0]
         self.assertTrue(tcp_packet.haslayer(TCP))
-        self.assertEqual(tcp_packet[IP].dst, "8.8.8.8")
+        self.assertEqual(tcp_packet[IP].dst, "10.10.10.10")
         self.assertEqual(tcp_packet[TCP].dport, 80)
         self.assertEqual(tcp_packet[TCP].flags, 2)
         self.assertEqual(tcp_packet[Raw].load, b"TCP_SYN_PROBE")
         udp_packet = constructed_packets[1]
         self.assertTrue(udp_packet.haslayer(UDP))
-        self.assertEqual(udp_packet[IP].dst, "8.8.8.8")
+        self.assertEqual(udp_packet[IP].dst, "10.10.10.10")
         self.assertEqual(udp_packet[UDP].dport, 53)
         self.assertEqual(udp_packet[UDP].sport, 53000)
         self.assertEqual(udp_packet[Raw].load, b"DNS_QUERY_PROBE")

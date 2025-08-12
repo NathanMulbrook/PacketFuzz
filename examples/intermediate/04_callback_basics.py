@@ -160,7 +160,7 @@ class DNSMalformCampaign(FuzzingCampaign):
 class DNSMalformCampaign(FuzzingCampaign):
     """DNS fuzzing with malformed name callbacks."""
     name = "DNS Malform Callback"
-    target = "8.8.8.8"
+    target = "10.10.10.10"
     iterations = 5
     output_pcap = "intermediate_dns_malform.pcap"
     

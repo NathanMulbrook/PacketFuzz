@@ -30,7 +30,7 @@ class IntegerFuzzCampaign(FuzzingCampaign):
 class StringFuzzCampaign(FuzzingCampaign):
     """Demonstrates string field fuzzing."""
     name = "String Fuzzing"
-    target = "8.8.8.8"
+    target = "10.10.10.10"
     iterations = 5
     output_pcap = "basic_string_fuzz.pcap"
     

@@ -166,7 +166,7 @@ class HTTPTestCampaign(FuzzingCampaign):
 class DNSTestCampaign(FuzzingCampaign):
     """DNS-focused test campaign"""
     name = "DNS Test Campaign"
-    target = "8.8.8.8"
+    target = "10.10.10.10"
     iterations = 5
     rate_limit = 20.0
     verbose = False
@@ -175,7 +175,7 @@ class DNSTestCampaign(FuzzingCampaign):
     
     def __init__(self):
         super().__init__()
-        self.packet = IP(dst="8.8.8.8") / UDP(dport=53) / DNS(rd=1, qd=DNSQR(qname="test.com"))
+        self.packet = IP(dst="10.10.10.10") / UDP(dport=53) / DNS(rd=1, qd=DNSQR(qname="test.com"))
         
         # Configure embedded fuzzing
         dns_layer = self.packet[DNS]
@@ -344,7 +344,7 @@ def create_test_packet(packet_type: str = "tcp") -> Any:
     elif packet_type == "udp":
         return IP(dst="192.168.1.1") / UDP(dport=53)
     elif packet_type == "dns":
-        return IP(dst="8.8.8.8") / UDP(dport=53) / DNS(rd=1, qd=DNSQR(qname="test.com"))
+        return IP(dst="10.10.10.10") / UDP(dport=53) / DNS(rd=1, qd=DNSQR(qname="test.com"))
     elif packet_type == "arp":
         return Ether(dst="ff:ff:ff:ff:ff:ff") / ARP(pdst="192.168.1.1")
     else:

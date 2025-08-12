@@ -138,7 +138,7 @@ class TestSpecializedCampaigns(unittest.TestCase):
         campaign = DNSTestCampaign()
         
         assert campaign.name == "DNS Test Campaign"
-        assert campaign.target == "8.8.8.8"
+        assert campaign.target == "10.10.10.10"
         
         packet = campaign.packet
         assert packet is not None

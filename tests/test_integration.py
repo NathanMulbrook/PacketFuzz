@@ -486,7 +486,7 @@ class TestModularityAndExtensibility(unittest.TestCase):
         # Should be able to handle various packet types
         test_packets = [
             IP(dst="192.168.1.1") / TCP(dport=80),
-            IP(dst="8.8.8.8") / UDP(dport=53) / DNS(qd=DNSQR(qname="test.com")),
+            IP(dst="10.10.10.10") / UDP(dport=53) / DNS(qd=DNSQR(qname="test.com")),
             IP(dst="192.168.1.1") / TCP(dport=443) / Raw(load=b"test data")
         ]
         
