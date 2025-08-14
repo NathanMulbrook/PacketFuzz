@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Scapy Fuzzing Framework - Class-based Configuration
+PacketFuzz Framework
 
 This module provides a class-based framework for defining fuzzing campaigns,
 similar to how Scapy defines packets and fields using class inheritance.
@@ -13,7 +13,8 @@ Now uses embedded packet configuration with field_fuzz() and fuzz_config() metho
 
 from __future__ import annotations
 from scapy.layers.l2 import Ether, ARP
-from scapy.layers.inet import IP, TCP, UDP, ICMP  
+from scapy.layers.inet import IP, TCP, UDP, ICMP
+from scapy.layers.can import CAN 
 from scapy.packet import Raw, Packet, fuzz
 from scapy.sendrecv import send, sendp
 from typing import Dict, List, Union, Any, Optional, Callable, Protocol
@@ -532,7 +533,6 @@ class FuzzingCampaign:
     """
     
     # Campaign defaults - consolidated in one place
-    layer = 3
     iterations = DEFAULT_ITERATIONS
     duration = None
     rate_limit = DEFAULT_RATE_LIMIT
@@ -580,7 +580,7 @@ class FuzzingCampaign:
     interface_offload_restore: bool = True                     # Restore original settings after campaign
 
     # --- Socket logic additions ---
-    socket_type: str = None    # User can specify: 'l2', 'l3', 'tcp', 'udp', or None for auto
+    socket_type: str = None    # User can specify: 'l2', 'l3', 'tcp', 'udp', "canbus" or None for auto
 
 
 
@@ -624,7 +624,7 @@ class FuzzingCampaign:
 
     def create_fuzzer(self, mutator_preference: Optional[list[str]] = None) -> 'MutatorManager':
         """
-        Create a ScapyFuzzer instance configured for this campaign.
+        Create a packetfuzz instance configured for this campaign.
         mutator_preference: Override the campaign's default mutator preference.
                            If None, uses self.mutator_preference.
         """
@@ -671,12 +671,15 @@ class FuzzingCampaign:
             errors.append("Campaign packet is None (set packet attribute or implement get_packet method)")
         if self.target is None:
             errors.append("Campaign target is None")
-        if self.layer not in [2, 3]:
-            errors.append(f"Invalid layer {self.layer}, must be 2 or 3")
-        if packet and self.layer == 2 and not packet.haslayer(Ether):
-            errors.append("Layer 2 campaign requires Ethernet header")
-        if packet and self.layer == 3 and not packet.haslayer(IP):
-            errors.append("Layer 3 campaign requires IP header")
+        # Validate socket_type if specified
+        if self.socket_type is not None:
+            valid_types = ['l2', 'l3', 'tcp', 'udp', 'canbus']
+            if self.socket_type not in valid_types:
+                errors.append(f"Invalid socket_type {self.socket_type}, must be one of {valid_types}")
+            if packet and self.socket_type == "l2" and not packet.haslayer(Ether):
+                errors.append("Layer 2 (socket_type='l2') campaign requires Ethernet header")
+            if packet and self.socket_type in ["l3", "tcp", "udp"] and not packet.haslayer(IP):
+                errors.append(f"socket_type='{self.socket_type}' campaign requires IP header")
         
         # Log validation errors if verbose mode is enabled
         if errors and self.verbose:
@@ -738,8 +741,7 @@ class FuzzingCampaign:
                 self.callback_manager.handle_no_success("pre_launch", self.context)
             
             # Check permissions for network operations
-            network_enabled = self.output_network
-            if network_enabled and os.geteuid() != 0:
+            if self.output_network and os.geteuid() != 0:
                 raise PermissionError("Root privileges required for network operations")
             
             # Create fuzzer
@@ -760,7 +762,7 @@ class FuzzingCampaign:
                 logger.info("Starting campaign: %s", self.name or 'Unnamed Campaign')
                 logger.info("   Target: %s", self.target)
                 logger.info("   Iterations: %s", self.iterations)
-                logger.info("   Layer: %s", self.layer)
+                logger.info("   Layer: %s", self.socket_type)
                 logger.info("   Rate limit: %s packets/sec", self.rate_limit)
                 if hasattr(packet, 'has_fuzz_config') and packet.has_fuzz_config():  # type: ignore[attr-defined]
                     logger.info("   ### Packet has embedded fuzzing configuration")
@@ -890,28 +892,36 @@ class FuzzingCampaign:
                 
                 # Auto-detect socket type from packet if not specified
                 if not self.socket_type:
-                    if self.layer == 2 or (packet and packet.haslayer(Ether)):
-                        socket_type = 'l2'
-                    elif packet and packet.haslayer(TCP):
-                        socket_type = 'tcp'
+                    if packet and packet.haslayer(TCP):
+                        self.socket_type = 'tcp'
                     elif packet and packet.haslayer(UDP):
-                        socket_type = 'udp'
+                        self.socket_type = 'udp'
+                    elif packet and packet.haslayer(IP):
+                        self.socket_type = 'l3'
+                    elif packet and packet.haslayer(Ether):
+                        self.socket_type = 'l2'
+                    elif packet and packet.haslayer(CAN):
+                        self.socket_type = 'canbus'
                     else:
-                        socket_type = 'l3'  #Default
+                        raise ValueError("Cannot auto-detect socket type from packet and non speciied- please specify socket_type")
 
                 # open sockets for sending
+                #TODO make this also accept functions that return a socket object
                 import socket
                 if self.socket_type == 'l2':
                     s = socket.socket(socket.AF_PACKET, socket.SOCK_RAW)
                     s.bind((self.interface, 0))
+                elif self.socket_type == 'canbus':
+                    s = socket.socket(socket.PF_CAN, socket.SOCK_RAW, socket.CAN_RAW)
+                    s.bind((self.interface,))
                 elif self.socket_type == 'tcp':
                     s = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_TCP)
                 elif self.socket_type == 'udp':
                     s = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_UDP)
-                elif self.socket_type == 'l3' or self.socket_type == 'raw':
+                elif self.socket_type == 'l3':
                     s = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_RAW)
                 else:
-                    raise ValueError(f"Unknown socket_type: {socket_type}")
+                    raise ValueError(f"Unknown socket_type: {self.socket_type}")
                 self.context.socket = s  # Store socket in context for custom send callback
 
                 # Execute pre-send callback with error handling
@@ -957,74 +967,92 @@ class FuzzingCampaign:
                         self.context.fuzz_history.append(history_entry)
                     
                     # Apply campaign target addressing based on network layer
-                    if self.layer == 3 and fuzzed_packets[itteration].haslayer(IP):
+                    if self.socket_type == "l3" or "udp" or "tcp" and fuzzed_packets[itteration].haslayer(IP):
                         fuzzed_packets[itteration][IP].dst = self.target
-                    elif self.layer == 2 and fuzzed_packets[itteration].haslayer(Ether):
+                    elif self.socket_type == "l2"  and fuzzed_packets[itteration].haslayer(Ether):
                         fuzzed_packets[itteration][Ether].dst = self.target
                     
                     response = None  # Placeholder for response capture
                     
-                    # Send packet to network if enabled
-                    network_enabled = self.output_network
-                    if network_enabled:
+                    
+                    # # Canbus using scapy send
+                    # if self.socket_type == "canbus": 
+                    #     try:
+                    #         if fuzzed_packets[itteration] is None:
+                    #             continue
+                    #         # Serialize packet to bytes
+                    #         pkt_bytes = bytes(fuzzed_packets[itteration])
+                    #         send_success = self.context.socket.sendp()
+                    #         if self.context and self.context.fuzz_history:
+                    #             self.context.fuzz_history[-1].timestamp_received = datetime.now()
+                    #             self.context.fuzz_history[-1].packet = pkt_bytes
+                    #     except Exception as e:
+                    #         if self.verbose:
+                    #             logger.error(f"[SEND] Failed to send CAN packet: {e}")
+                    #         send_success = None
+
+
+                    # Send using Python socket
+                
+                    try:
                         if self.verbose:
                             logger.info(f"[SEND] Sending: {fuzzed_packets[itteration].summary()}")
-                        
-                        # Send using Python socket
+                        if fuzzed_packets[itteration] is None:
+                            continue
+                        # Serialize packet to bytes
+                        pkt_bytes = bytes(fuzzed_packets[itteration])
+                        if not self.context.socket:
+                            raise RuntimeError("No socket available for sending packets.")
+                        if self.socket_type == "l2" and self.output_network:
+                            # Layer 2: send raw Ethernet frame
+                            send_success = self.context.socket.send(pkt_bytes)
+                        elif self.output_network:
+                            # Layer 3: send raw IP packet
+                            # For AF_INET/SOCK_RAW, need to provide destination address
+                            send_success = self.context.socket.sendto(pkt_bytes, (self.target, 0))
+                        if self.context and self.context.fuzz_history:
+                            self.context.fuzz_history[-1].timestamp_received = datetime.now()
+                            self.context.fuzz_history[-1].packet = pkt_bytes
+                    except Exception as e:
+                        if self.verbose:
+                            logger.error(f"[SEND] Failed to send packet: {e}")
+                        send_success = None
+                
+
+
+                    # Receive a response if capture_responses is enabled
+                    #TODO update for canbus
+                    if self.capture_responses and send_success:
                         try:
-                            if fuzzed_packets[itteration] is None:
-                                continue
-                            # Serialize packet to bytes
-                            pkt_bytes = bytes(fuzzed_packets[itteration])
-                            if not self.context.socket:
-                                raise RuntimeError("No socket available for sending packets.")
-                            if self.layer == 2:
-                                # Layer 2: send raw Ethernet frame
-                                send_success = self.context.socket.send(pkt_bytes)
+                            if self.socket_type == "l2":
+                                # Layer 2: Use sniff() with a filter for Ethernet frames
+                                response = sniff(
+                                    iface=self.interface,
+                                    timeout=self.response_timeout,
+                                    count=1,
+                                    lfilter=lambda x: x.haslayer(Ether) and x[Ether].src == self.target
+                                )
                             else:
-                                # Layer 3: send raw IP packet
-                                # For AF_INET/SOCK_RAW, need to provide destination address
-                                send_success = self.context.socket.sendto(pkt_bytes, (self.target, 0))
+                                # Layer 3: Use sr1() for IP packets with timeout
+                                #TODO this should not send but it does
+                                response = sr1(
+                                    packet,
+                                    iface=self.interface,
+                                    timeout=self.response_timeout,
+                                    verbose=self.verbose
+                                )
+                            
+                            if self.verbose and response:
+                                logger.info(f"[RECV] Response: {response.summary()}")
+                            
+                            # Update history entry with response information
                             if self.context and self.context.fuzz_history:
+                                self.context.fuzz_history[-1].response = response
                                 self.context.fuzz_history[-1].timestamp_received = datetime.now()
-                                self.context.fuzz_history[-1].packet = pkt_bytes
                         except Exception as e:
                             if self.verbose:
-                                logger.error(f"[SEND] Failed to send packet: {e}")
-                            send_success = None
-
-                        # Receive a response if capture_responses is enabled
-                        if self.capture_responses and send_success:
-                            try:
-                                if self.layer == 2:
-                                    # Layer 2: Use sniff() with a filter for Ethernet frames
-                                    response = sniff(
-                                        iface=self.interface,
-                                        timeout=self.response_timeout,
-                                        count=1,
-                                        lfilter=lambda x: x.haslayer(Ether) and x[Ether].src == self.target
-                                    )
-                                else:
-                                    # Layer 3: Use sr1() for IP packets with timeout
-                                    #TODO this should not send but it does
-                                    response = sr1(
-                                        packet,
-                                        iface=self.interface,
-                                        timeout=self.response_timeout,
-                                        verbose=self.verbose
-                                    )
-                                
-                                if self.verbose and response:
-                                    logger.info(f"[RECV] Response: {response.summary()}")
-                                
-                                # Update history entry with response information
-                                if self.context and self.context.fuzz_history:
-                                    self.context.fuzz_history[-1].response = response
-                                    self.context.fuzz_history[-1].timestamp_received = datetime.now()
-                            except Exception as e:
-                                if self.verbose:
-                                    logger.error(f"[RECV] Failed to capture response: {e}")
-                                response = None
+                                logger.error(f"[RECV] Failed to capture response: {e}")
+                            response = None
                     
                 # Execute post-send callback
                 if self.post_send_callback and self.context:
@@ -1075,9 +1103,9 @@ class FuzzingCampaign:
                             if base_packet and hasattr(base_packet, '__class__'):
                                 # Create clean copy and apply target addressing
                                 pcap_packet = base_packet.__class__()
-                                if self.layer == 3 and pcap_packet.haslayer(IP):
+                                if self.socket_type == "l3" and pcap_packet.haslayer(IP):
                                     pcap_packet[IP].dst = self.target
-                                elif self.layer == 2 and pcap_packet.haslayer(Ether):
+                                elif self.socket_type == "l2" and pcap_packet.haslayer(Ether):
                                     pcap_packet[Ether].dst = self.target
                                 # Verify template packet is serializable before adding
                                 bytes(pcap_packet)
@@ -1164,6 +1192,14 @@ class FuzzingCampaign:
                 finally:
                     self._interface_configured = False
                     self._original_offload_settings = {}
+            # Close socket if it exists in context
+            if self.context and self.context.socket:
+                try:
+                    self.context.socket.close()
+                    if self.verbose:
+                        logger.info("Closed campaign socket.")
+                except Exception as e:
+                    logger.warning(f"Failed to close campaign socket: {e}")
 
     def _load_merged_field_mapping(self) -> list:
         """
@@ -1225,7 +1261,7 @@ class FuzzingCampaign:
         return (f"{self.__class__.__name__}(name={self.name}, "
                 f"target={self.target}, "
                 f"iterations={self.iterations}, "
-                f"layer={self.layer})")
+                f"layer={self.socket_type})")
         
     def __post_init__(self):
         # After merging/overrides, attach PacketFuzzConfig to the correct layer

@@ -1,5 +1,5 @@
 """
-Mutator Manager for Scapy Fuzzer
+Mutator Manager for PacketFuzzer
 
 Manages mutator selection and orchestrates fuzzing campaigns.
 Delegates all actual mutation logic to specialized mutators in the mutators/ directory.
@@ -109,7 +109,7 @@ class FuzzConfig:
 
 class MutatorManager:
     """
-    Mutator Manager for Scapy fuzzing campaigns
+    Mutator Manager for PacketFuzzing campaigns
     
     Manages mutator selection and orchestrates fuzzing operations.
     Delegates all mutation logic to specialized mutators.
@@ -526,7 +526,7 @@ class MutatorManager:
                 )
         # If using LibFuzzerMutator and a dictionary is present, use per-field corpus logic
         if dictionary_entries and LibFuzzerMutator and isinstance(mutator, LibFuzzerMutator):
-            temp_dir = tempfile.mkdtemp(prefix=f"scapyfuzz_corpus_{field_name}_")
+            temp_dir = tempfile.mkdtemp(prefix=f"packetfuzz_corpus_{field_name}_")
             try:
                 if hasattr(mutator, 'generate_dictionary_seed'):
                     mutator.generate_dictionary_seed(dict_strings, temp_dir)  # type: ignore[attr-defined]

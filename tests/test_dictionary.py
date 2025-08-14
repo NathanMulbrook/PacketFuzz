@@ -17,6 +17,7 @@ import unittest
 import importlib.util
 from pathlib import Path
 from typing import Dict, List, Any
+from scapy.all import IP, TCP, UDP, DNS, DNSQR, Raw
 
 # Try to import pytest, fall back to unittest if not available
 try:
@@ -33,9 +34,6 @@ from default_mappings import (
     FIELD_DEFAULT_VALUES
 )
 from fuzzing_framework import FuzzingCampaign
-from scapy.layers.inet import IP, TCP, UDP
-from scapy.layers.dns import DNS, DNSQR
-from scapy.packet import Raw
 
 # Import packet extensions to enable field_fuzz() method
 import packet_extensions
@@ -277,6 +275,14 @@ class TestUserDictionaryConfiguration(unittest.TestCase):
         # No attribute access; just check file exists
 
 
+class DummyDictionaryCampaign(FuzzingCampaign):
+    name = "dummy_dict"
+    target = "127.0.0.1"
+    output_network = False
+    def build_packets(self):
+        return [IP(dst=self.target)/UDP(dport=int(53))/Raw(load=b"test")]  # Ensure dport is int
+
+
 class TestDictionaryConfigurationInCampaigns(unittest.TestCase):
     """Test dictionary configuration in campaign context"""
     
@@ -333,18 +339,21 @@ class TestCLIDictionaryConfiguration(unittest.TestCase):
     def test_cli_dictionary_config_option(self):
         """Test CLI --dictionary-config option"""
         returncode, stdout, stderr = self.run_cli_command([
-            "examples/dictionary_config_campaign.py",
+            "examples/intermediate/02_dictionary_config.py",
             "--dictionary-config", "examples/user_dictionary_config.py",
-            "--list-campaigns"
+            "--verbose",
+            "--disable-network"
         ])
         
         assert returncode == 0, f"CLI command failed: {stderr}"
-        assert "CLI override" in stdout
+        # Look for dictionary config info in either stdout or stderr
+        output = stdout + stderr
+        assert "Dictionary config" in output or "examples/user_dictionary_config.py" in output
     
     def test_cli_list_shows_dictionary_info(self):
         """Test that campaign listing shows dictionary information"""
         returncode, stdout, stderr = self.run_cli_command([
-            "examples/dictionary_config_campaign.py",
+            "examples/intermediate/02_dictionary_config.py",
             "--list-campaigns"
         ])
         
@@ -354,10 +363,10 @@ class TestCLIDictionaryConfiguration(unittest.TestCase):
     def test_cli_verbose_shows_dictionary_config(self):
         """Test that verbose mode shows dictionary configuration"""
         returncode, stdout, stderr = self.run_cli_command([
-            "examples/dictionary_config_campaign.py",
+            "examples/intermediate/02_dictionary_config.py",
             "--dictionary-config", "examples/user_dictionary_config.py",
             "--verbose",
-            "--dry-run"
+            "--disable-network"
         ])
         
         assert returncode == 0, f"CLI command failed: {stderr}"
@@ -367,14 +376,14 @@ class TestCLIDictionaryConfiguration(unittest.TestCase):
         """Test CLI override takes precedence over campaign attribute"""
         # Test with CLI override
         returncode1, stdout1, stderr1 = self.run_cli_command([
-            "examples/dictionary_config_campaign.py",
+            "examples/intermediate/02_dictionary_config.py",
             "--dictionary-config", "examples/user_dictionary_config.py",
             "--list-campaigns"
         ])
         
         # Test without CLI override
         returncode2, stdout2, stderr2 = self.run_cli_command([
-            "examples/dictionary_config_campaign.py",
+            "examples/intermediate/02_dictionary_config.py",
             "--list-campaigns"
         ])
         

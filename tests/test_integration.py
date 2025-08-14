@@ -27,6 +27,7 @@ import time
 import unittest
 from pathlib import Path
 from typing import Dict, List, Any, Optional
+from scapy.all import IP, TCP, UDP, DNS, DNSQR, Raw, Packet, rdpcap
 
 # Try to import pytest, fall back to unittest if not available
 try:
@@ -40,14 +41,18 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from fuzzing_framework import FuzzingCampaign
 from mutator_manager import MutatorManager, DictionaryManager
-from scapy.layers.inet import IP, TCP, UDP
-from scapy.layers.dns import DNS, DNSQR
-from scapy.packet import Raw
-from scapy.all import Packet
 from conftest import (
     BasicTestCampaign, HTTPTestCampaign, DNSTestCampaign,
     Layer2TestCampaign, DictionaryTestCampaign, PCAPTestCampaign
 )
+
+
+class DummyCampaign(FuzzingCampaign):
+    name = "dummy"
+    target = "127.0.0.1"
+    output_network = False
+    def build_packets(self):
+        return [IP(dst=self.target)/TCP(dport=int(80))/Raw(load=b"test")]  # Ensure dport is int
 
 
 class TestEndToEndWorkflows(unittest.TestCase):
@@ -429,7 +434,7 @@ class TestRealWorldScenarios(unittest.TestCase):
         campaign = Layer2TestCampaign()
         
         # Verify Layer 2 configuration
-        assert campaign.layer == 2
+        assert campaign.socket_type == "l2"
         assert campaign.interface == "eth0"
         
         packet = campaign.packet

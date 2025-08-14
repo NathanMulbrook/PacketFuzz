@@ -28,9 +28,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from fuzzing_framework import FuzzingCampaign
 from mutator_manager import MutatorManager
-from scapy.layers.inet import IP, TCP, UDP
+from scapy.all import IP, TCP, UDP, Raw
 from scapy.layers.dns import DNS, DNSQR
-from scapy.packet import Raw
 from conftest import (
     BasicTestCampaign, HTTPTestCampaign, DNSTestCampaign,
     Layer2TestCampaign, DictionaryTestCampaign, PCAPTestCampaign,
@@ -156,7 +155,7 @@ class TestSpecializedCampaigns(unittest.TestCase):
         campaign = Layer2TestCampaign()
         
         assert campaign.name == "Layer 2 Test Campaign"
-        assert campaign.layer == 2
+        assert campaign.socket_type == "l2"
         assert campaign.interface == "eth0"
         
         # Should have layer 2 packet
@@ -396,6 +395,14 @@ class TestCampaignConfiguration:
         # Should be able to modify
         campaign.verbose = True
         assert campaign.verbose == True
+
+
+class DummyTestCampaign(FuzzingCampaign):
+    name = "dummy_test"
+    target = "127.0.0.1"
+    output_network = False
+    def build_packets(self):
+        return [IP(dst=self.target)/TCP(dport=int(80))/Raw(load=b"test")]  # Ensure dport is int
 
 
 if __name__ == '__main__':

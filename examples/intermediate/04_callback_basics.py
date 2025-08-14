@@ -83,7 +83,7 @@ class HTTPInjectionCampaign(FuzzingCampaign):
     iterations = 6
     output_pcap = "intermediate_http_injection.pcap"
     
-    packet = IP() / TCP() / HTTP() / HTTPRequest(Path=b"/search", Method=b"GET", Host=b"target.com", data=b"q=test")
+    packet = IP() / TCP() / HTTP() / HTTPRequest(Path=b"/search?q=test", Method=b"GET", Host=b"target.com")
     pre_send_callback = payload_injection_callback
 
 # Define a post-send callback to analyze responses and track history

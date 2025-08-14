@@ -21,11 +21,11 @@ def discover_campaign_files(directory):
     return campaign_files
 
 def run_campaign_file_cli(file_path):
-    """Run packetfuzz CLI on a campaign file with --dry-run and return success status."""
+    """Run packetfuzz CLI on a campaign file with --disable-network and return success status."""
     try:
         print(f"Validating {file_path} with packetfuzz CLI...")
         result = subprocess.run([
-            sys.executable, "../packetfuzz.py", file_path, "--dry-run"
+            sys.executable, "../packetfuzz.py", file_path, "--disable-network"
         ], capture_output=True, text=True, cwd=os.path.dirname(__file__))
         if result.returncode == 0:
             print(f"{os.path.basename(file_path)} validated successfully\n")
@@ -63,7 +63,7 @@ def run_example_category_cli(category_name, directory):
     return successes, failures
 
 def main():
-    print("SCAPY FUZZER - CLI-BASED CAMPAIGN VALIDATION RUNNER")
+    print("PacketFuzzER - CLI-BASED CAMPAIGN VALIDATION RUNNER")
     print("=" * 60)
     print()
     examples_dir = os.path.dirname(os.path.abspath(__file__))

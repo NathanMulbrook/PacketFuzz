@@ -233,7 +233,7 @@ def run_example_validation():
 def main():
     """Run the comprehensive test structure."""
     print("=" * 60)
-    print("Scapy Fuzzer - Comprehensive Test Suite")
+    print("PacketFuzzer - Comprehensive Test Suite")
     print("=" * 60)
     
     # Clean up any leftover test artifacts from previous runs

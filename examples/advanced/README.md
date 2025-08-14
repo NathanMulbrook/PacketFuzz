@@ -1,6 +1,6 @@
 # Advanced Examples
 
-This directory contains complex examples demonstrating advanced features of the Scapy Fuzzing Framework. These examples assume familiarity with basic concepts and explore sophisticated fuzzing techniques.
+This directory contains complex examples demonstrating advanced features of the PacketFuzzing Framework. These examples assume familiarity with basic concepts and explore sophisticated fuzzing techniques.
 
 ## Examples Overview
 

@@ -25,9 +25,7 @@ import unittest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from fuzzing_framework import FuzzingCampaign
-from scapy.layers.inet import IP, TCP, UDP, ICMP
-from scapy.packet import Raw
-from scapy.utils import rdpcap
+from scapy.all import IP, TCP, UDP, ICMP, Raw, rdpcap, wrpcap
 from conftest import PCAPTestCampaign, cleanup_test_files
 
 
@@ -301,7 +299,7 @@ class TestPCAPFunctionality(unittest.TestCase):
                     for i in range(3):
                         fuzzed_packets = fuzzer.fuzz_packet(packet, iterations=1)
                         for fuzzed_packet in fuzzed_packets:
-                            if self.layer == 3 and fuzzed_packet.haslayer(IP):
+                            if self.socket_type == "l3" and fuzzed_packet.haslayer(IP):
                                 fuzzed_packet[IP].dst = self.target
                             collected_packets.append(fuzzed_packet)
                     

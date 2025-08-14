@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Reusable Packet Report Generator for Scapy Fuzzing Framework
+Reusable Packet Report Generator for PacketFuzzing Framework
 
 Generates a formatted, Markdown-style report for any Scapy packet.
 Can be used for crash logging, debug output, user export, etc.

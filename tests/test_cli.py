@@ -79,7 +79,7 @@ class TestCLIBasics(CLITestBase):
         
         # Should contain key arguments
         help_text = stdout + stderr
-        expected_options = ["--verbose", "--dry-run", "--list-campaigns"]
+        expected_options = ["--verbose", "--list-campaigns"]  # Removed --dry-run
         for option in expected_options:
             assert option in help_text
     

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Scapy Fuzzer - Main Entry Point
+PacketFuzz - Main Entry Point
 
 This script provides a command-line interface for running fuzzing campaigns.
 """
@@ -172,18 +172,13 @@ def apply_cli_overrides(campaign, args):
 def main():
     """Main entry point for the packetfuzz CLI."""
     parser = argparse.ArgumentParser(
-        description="Scapy Fuzzer - Advanced Network Protocol Fuzzing Framework"
+        description="PacketFuzzer - Advanced Network Protocol Fuzzing Framework"
     )
     parser.add_argument(
         "config_file",
         type=Path,
         nargs='?',
         help="Path to campaign configuration file"
-    )
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Validate campaigns without executing them."
     )
     parser.add_argument(
         "--verbose",
@@ -310,7 +305,6 @@ def main():
             campaign = campaign_class()
             apply_cli_overrides(campaign, args)
             logger.info(f"Processing campaign: {campaign_class.__name__}")
-            # Show output configuration
             network_mode = "ENABLED" if getattr(campaign, 'output_network', True) else "DISABLED"
             pcap_file = getattr(campaign, 'output_pcap', None) or getattr(campaign, 'pcap_filename', 'None')
             dict_config = getattr(campaign, 'dictionary_config_file', None) or 'Default mappings'
@@ -318,27 +312,18 @@ def main():
                 logger.info(f"  Network transmission: {network_mode}")
                 logger.info(f"  PCAP output: {pcap_file}")
                 logger.info(f"  Dictionary config: {dict_config}")
-            if args.dry_run:
-                if campaign.validate_campaign():
-                    logger.info(f"Campaign {campaign_class.__name__} is valid")
-                    success_count += 1
-                else:
-                    logger.error(f"Campaign {campaign_class.__name__} validation failed")
+            # Always execute campaign, but if --disable-network is set, output_network will be False
+            if campaign.execute():
+                logger.info(f"Campaign {campaign_class.__name__} completed successfully")
+                success_count += 1
             else:
-                if campaign.execute():
-                    logger.info(f"Campaign {campaign_class.__name__} completed successfully")
-                    success_count += 1
-                else:
-                    logger.error(f"Campaign {campaign_class.__name__} failed")
+                logger.error(f"Campaign {campaign_class.__name__} failed")
         except Exception as e:
             logger.error(f"Campaign {campaign_class.__name__} error: {e}")
     
     # Summary
     total_campaigns = len(campaigns)
-    if args.dry_run:
-        logger.info(f"Validation complete: {success_count}/{total_campaigns} campaigns valid")
-    else:
-        logger.info(f"Execution complete: {success_count}/{total_campaigns} campaigns successful")
+    logger.info(f"Execution complete: {success_count}/{total_campaigns} campaigns successful")
     
     return 0 if success_count == total_campaigns else 1
 

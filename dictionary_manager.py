@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Dictionary Management for Scapy Fuzzing
+Dictionary Management for PacketFuzzing
 
 Provides dictionary mapping with support for embedded packet configuration,
 user overrides, and hierarchical fallback patterns.

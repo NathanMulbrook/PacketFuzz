@@ -58,7 +58,7 @@ class TestExampleValidation(unittest.TestCase):
             self.skipTest(f"Campaign file {campaign_path} not found")
             
         result = subprocess.run(
-            [sys.executable, str(self.project_root / "packetfuzz.py"), str(campaign_path), "--dry-run"],
+            [sys.executable, str(self.project_root / "packetfuzz.py"), str(campaign_path), "--disable-network"],
             cwd=str(self.project_root),
             capture_output=True,
             text=True,

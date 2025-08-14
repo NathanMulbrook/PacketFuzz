@@ -204,9 +204,8 @@ def crash_callback(self, crash_info, context):
 | **Output**   | `output_pcap` | `Optional[str]` | `None`            | Output PCAP filename                             |
 |              | `verbose`     | `bool`          | `False`           | Enable detailed logging                          |
 |              | `interface`   | `Optional[str]` | `None`            | Network interface (Layer 2)                      |
-| **Network**  | `socket_type` | `Optional[str]` | `None`            | Socket type: `"raw"`, `"l2"`, `"l3"`, `"udp"`, `"tcp"`; auto-detect if `None` |
+| **Network**  | `socket_type` | `Optional[str]` | `None`            | Socket type: `"canbus"`, `"l2"`, `"l3"`, `"udp"`, `"tcp"`; auto-detect if `None` |
 | **Safety**   | `output_network` | `bool`        | `False`           | Actually send packets                            |
-|              | `dry_run_mode`| `bool`          | `False`           | Validation only mode                             |
 
 ### Execution Flow Diagram
 
@@ -254,9 +253,6 @@ campaign = MyCampaign()
 
 # Standard execution
 campaign.execute()
-
-# Dry run (validation only)
-campaign.dry_run()
 
 # With callback hooks
 def progress_callback(sent: int, total: int):
@@ -715,5 +711,4 @@ python tests/run_all_tests.py
 
 ### Methods
 - `campaign.execute()` - Run the campaign
-- `campaign.dry_run()` - Validate without execution
 

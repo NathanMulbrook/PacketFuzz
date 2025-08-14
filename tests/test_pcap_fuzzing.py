@@ -11,15 +11,12 @@ import os
 import sys
 import shutil
 from unittest.mock import patch, MagicMock
+from scapy.all import IP, UDP, TCP, Ether, Raw, wrpcap
 
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from pcapfuzz import PcapFuzzCampaign, pcap_fuzz
-from scapy.layers.inet import IP, UDP, TCP
-from scapy.layers.l2 import Ether
-from scapy.packet import Raw
-from scapy.utils import wrpcap
 from conftest import cleanup_test_files
 
 

@@ -25,10 +25,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from fuzzing_framework import FuzzingCampaign, FuzzField, FuzzMutator
 from mutator_manager import MutatorManager, FuzzConfig, FuzzMode
-from scapy.layers.inet import IP, TCP, UDP
-from scapy.layers.dns import DNS, DNSQR
-from scapy.packet import Raw
-from conftest import create_test_packet, configure_packet_fuzzing
+from scapy.all import IP, TCP, UDP, DNS, DNSQR, Raw
 
 
 class LocalFuzzingCampaign(FuzzingCampaign):
@@ -353,6 +350,14 @@ class TestConfigurationPersistence(unittest.TestCase):
         response_time = history_entry.get_response_time()
         assert response_time is not None
         assert 14.0 <= response_time <= 16.0  # Allow small floating point variance
+
+
+class DummyCoreCampaign(Campaign):
+    name = "dummy_core"
+    target = "127.0.0.1"
+    output_network = False
+    def build_packets(self):
+        return [IP(dst=self.target)/TCP(dport=int(80))/Raw(load=b"test")]  # Ensure dport is int
 
 
 if __name__ == '__main__':
