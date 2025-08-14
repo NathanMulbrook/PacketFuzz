@@ -139,7 +139,7 @@ class TestDictionaryManager(unittest.TestCase):
     def test_enhanced_manager_with_config(self):
         """Test DictionaryManager with global config"""
         # Use file path directly for user config
-        config_path = "examples/user_dictionary_config.py"
+        config_path = "examples/config/user_dictionary_config.py"
         manager = DictionaryManager(user_config_file=config_path)
         assert manager is not None
     
@@ -245,12 +245,12 @@ class TestUserDictionaryConfiguration(unittest.TestCase):
     
     def test_load_user_config(self):
         """Test loading user dictionary configuration"""
-        config = "examples/user_dictionary_config.py" if os.path.exists("examples/user_dictionary_config.py") else None
+        config = "examples/config/user_dictionary_config.py" if os.path.exists("examples/config/user_dictionary_config.py") else None
         assert config is not None, "User config file should exist"
     
     def test_user_config_overrides(self):
         """Test that user config overrides defaults"""
-        config = "examples/user_dictionary_config.py" if os.path.exists("examples/user_dictionary_config.py") else None
+        config = "examples/config/user_dictionary_config.py" if os.path.exists("examples/config/user_dictionary_config.py") else None
         manager = DictionaryManager(config)
         
         # Create packet without embedded config
@@ -264,13 +264,13 @@ class TestUserDictionaryConfiguration(unittest.TestCase):
     
     def test_user_config_field_mappings(self):
         """Test user config field mappings"""
-        config_path = "examples/user_dictionary_config.py"
+        config_path = "examples/config/user_dictionary_config.py"
         assert os.path.exists(config_path)
         # No attribute access; just check file exists
 
     def test_user_config_default_values(self):
         """Test user config default values"""
-        config_path = "examples/user_dictionary_config.py"
+        config_path = "examples/config/user_dictionary_config.py"
         assert os.path.exists(config_path)
         # No attribute access; just check file exists
 
@@ -362,7 +362,7 @@ class TestCLIDictionaryConfiguration(unittest.TestCase):
         assert returncode == 0, f"CLI command failed: {stderr}"
         # Look for dictionary config info in either stdout or stderr
         output = stdout + stderr
-        assert "Dictionary config" in output or "examples/user_dictionary_config.py" in output
+        assert "Dictionary config" in output or "examples/config/user_dictionary_config.py" in output
     
     def test_cli_list_shows_dictionary_info(self):
         """Test that campaign listing shows dictionary information"""

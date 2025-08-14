@@ -120,19 +120,19 @@ packetfuzz [OPTIONS] <campaign_config.py>
 **Examples:**
 ```bash
 # List campaigns
-packetfuzz examples/campaign_examples.py --list-campaigns
+packetfuzz examples/basic/01_quick_start.py --list-campaigns
 
 # Execute campaigns
-packetfuzz examples/campaign_examples.py
+packetfuzz examples/basic/01_quick_start.py
 
 # Use a custom dictionary config
-packetfuzz examples/campaign_examples.py --dictionary-config examples/user_dictionary_config.py
+packetfuzz examples/basic/01_quick_start.py --dictionary-config examples/config/user_dictionary_config.py
 
 # Enable PCAP output to a specific file
-packetfuzz examples/campaign_examples.py --pcap-file output.pcap
+packetfuzz examples/basic/01_quick_start.py --pcap-file output.pcap
 
 # Validate campaigns without sending packets
-packetfuzz examples/campaign_examples.py --disable-network --verbose
+packetfuzz examples/basic/01_quick_start.py --disable-network --verbose
 
 # Check component availability
 packetfuzz
@@ -187,7 +187,7 @@ campaign.execute()
 
 ```bash
 # Enable verbose logging
-packetfuzz examples/campaign_examples.py --verbose
+packetfuzz examples/basic/01_quick_start.py --verbose
 
 # Test with minimal iterations
 python -c "

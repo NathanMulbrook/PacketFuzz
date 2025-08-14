@@ -151,7 +151,7 @@ class TestCrossComponentIntegration(unittest.TestCase):
         
         # Load dictionary config
         try:
-            config = "examples/user_dictionary_config.py" if os.path.exists("examples/user_dictionary_config.py") else None
+            config = "examples/config/user_dictionary_config.py" if os.path.exists("examples/config/user_dictionary_config.py") else None
             manager = DictionaryManager(config)
             
             assert manager is not None
@@ -198,7 +198,7 @@ class TestCrossComponentIntegration(unittest.TestCase):
         # This would normally test CLI loading campaigns
         # For now, just verify campaign files exist
         campaign_files = [
-            "examples/campaign_examples.py",
+            "examples/basic/01_quick_start.py",
             "examples/dictionary_config_campaign.py",
             "examples/embedded_config_examples.py"
         ]

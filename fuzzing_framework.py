@@ -135,6 +135,7 @@ class CampaignContext:
     shared_data: dict = field(default_factory=dict)  # User data sharing between callbacks
     start_time: float = field(default_factory=time.time)
     fuzz_history: List[FuzzHistoryEntry] = field(default_factory=list)
+    fuzz_history_errors: List[Packet] = field(default_factory=list)
     max_history_size: int = 1000  # Limit history size to prevent memory issues
     socket: Optional[Any] = None  # Placeholder for socket object if needed
 
@@ -1053,6 +1054,8 @@ class FuzzingCampaign:
                             serialize_error = e
                             logger.error(f"[SERIALIZE] Failed to serialize mutated packet: {e}")
                             serialize_failure_count += 1
+                            self.context.fuzz_history_errors[-1].serialize_error = pkt
+
                             if self.context:
                                 self.context.stats['serialize_failure_count'] = serialize_failure_count
 
@@ -1075,25 +1078,16 @@ class FuzzingCampaign:
                                 logger.debug(f"[PCAP] Wrote packet {packets_written_to_pcap}")
                         # Only send when network is enabled; PCAP-only mode skips sending
                         send_success = None
-                        # Ensure we have a bytes buffer to send; prefer previously serialized bytes
-                        send_buf = pkt_bytes
-                        if send_buf is None:
-                            try:
-                                send_buf = bytes(pkt)
-                            except Exception as e:
-                                if self.verbose:
-                                    logger.debug(f"[SERIALIZE] Failed to serialize packet for send: {e}")
-                                send_buf = None
 
-                        if network_enabled and self.output_network and self.context and self.context.socket and send_buf is not None:
+                        if network_enabled and self.output_network and self.context and self.context.socket and pkt_bytes is not None:
                             sock = self.context.socket
                             if self.socket_type == "l2":
                                 # Layer 2: send raw Ethernet frame
-                                send_success = sock.send(send_buf)
+                                send_success = sock.send(pkt_bytes)
                             else:
                                 # Layer 3: send raw IP packet
                                 # For AF_INET/SOCK_RAW, need to provide destination address
-                                send_success = sock.sendto(send_buf, (self.target, 0))
+                                send_success = sock.sendto(pkt_bytes, (self.target, 0))
 
                         if self.context and self.context.fuzz_history:
                             self.context.fuzz_history[-1].timestamp_received = datetime.now()

@@ -363,7 +363,7 @@ USER_DICTIONARY_CONFIG = {
 class WebAppCampaign(FuzzingCampaign):
     name = "Custom Dictionary Campaign"
     target = "192.168.1.100"
-    dictionary_config_file = "examples/user_dictionary_config.py"  # Campaign-specific
+    dictionary_config_file = "examples/config/user_dictionary_config.py"  # Campaign-specific
     
     packet = IP() / TCP() / HTTP() / HTTPRequest(
         Path=b"/",
@@ -390,7 +390,7 @@ class MyCampaign(FuzzingCampaign):
 #### User provided dicitonary on commandline
 This applies to all campaings that are ran
 ```bash
-packetfuzz examples/campaign_examples.py --dictionary-config examples/user_dictionary_config.py
+packetfuzz examples/basic/01_quick_start.py --dictionary-config examples/config/user_dictionary_config.py
 ```
 
 ## Weight & Priority Resolution

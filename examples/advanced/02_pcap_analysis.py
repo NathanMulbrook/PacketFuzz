@@ -267,7 +267,7 @@ def main():
         create_sample_pcaps()
         print()
     
-    print("🔬 Advanced PCAP Features:")
+    print(" Advanced PCAP Features:")
     print("   • HTTP payload extraction and injection")
     print("   • Binary-level protocol analysis")
     print("   • Multi-layer fuzzing with protocol switching")
@@ -278,7 +278,7 @@ def main():
     for campaign_class in CAMPAIGNS:
         campaign = campaign_class()
         
-        print(f"🚀 Running {campaign.name}")
+        print(f" Running {campaign.name}")
         print(f"   Target: {campaign.target}")
         print(f"   Mode: {campaign.fuzz_mode}")
         print(f"   Layer: {campaign.extract_layer if hasattr(campaign, 'extract_layer') else 'N/A'}")
@@ -287,34 +287,34 @@ def main():
         results.append(result)
         
         if result:
-            print(f"   ✓ Success - {campaign.output_pcap}")
+            print(f"    Success - {campaign.output_pcap}")
             
             # Show campaign-specific statistics
             if hasattr(campaign, 'http_methods') and campaign.http_methods:
-                print(f"   📊 HTTP methods: {', '.join(campaign.http_methods)}")
+                print(f"    HTTP methods: {', '.join(campaign.http_methods)}")
             
             if hasattr(campaign, 'attack_patterns') and campaign.attack_patterns:
-                print(f"   💉 Attack patterns: {', '.join(campaign.attack_patterns)}")
+                print(f"    Attack patterns: {', '.join(campaign.attack_patterns)}")
             
             if hasattr(campaign, 'response_codes') and campaign.response_codes:
                 codes = [f"{k}:{v}" for k, v in campaign.response_codes.items()]
-                print(f"   📊 Response codes: {', '.join(codes)}")
+                print(f"    Response codes: {', '.join(codes)}")
             
             if hasattr(campaign, 'binary_stats') and campaign.binary_stats['total_bytes'] > 0:
                 stats = campaign.binary_stats
-                print(f"   � Binary analysis: {stats['total_bytes']} bytes, {stats['high_entropy']} high entropy")
+                print(f"    Binary analysis: {stats['total_bytes']} bytes, {stats['high_entropy']} high entropy")
             
             if hasattr(campaign, 'layer_mutations') and any(campaign.layer_mutations.values()):
                 mutations = [f"{k}:{v}" for k, v in campaign.layer_mutations.items() if v > 0]
-                print(f"   🔧 Layer mutations: {', '.join(mutations)}")
+                print(f"    Layer mutations: {', '.join(mutations)}")
         else:
-            print(f"   ✗ Failed")
+            print(f"    Failed")
         print()
     
     success_count = sum(results)
-    print(f"📊 Summary: {success_count}/{len(CAMPAIGNS)} campaigns successful")
+    print(f" Summary: {success_count}/{len(CAMPAIGNS)} campaigns successful")
     
-    print("\n🎯 Advanced PCAP Techniques:")
+    print("\n Advanced PCAP Techniques:")
     print("   • Layer extraction with intelligent repackaging")
     print("   • Protocol-aware payload injection")
     print("   • Binary pattern analysis and entropy detection")
