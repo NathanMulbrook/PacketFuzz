@@ -70,8 +70,10 @@ class TCPCallbackCampaign(FuzzingCampaign):
     """TCP fuzzing with pre-send callbacks."""
     name = "TCP Callback Fuzzing"
     target = "192.168.1.100"
-    iterations = 8
+    iterations = 1
     output_pcap = "intermediate_tcp_callback.pcap"
+    output_network = False
+    verbose = False
     
     packet = IP() / TCP() / HTTP() / HTTPRequest(Path=b"/", Method=b"GET", Host=b"test.com")
     pre_send_callback = tcp_pre_send_callback
@@ -80,8 +82,10 @@ class HTTPInjectionCampaign(FuzzingCampaign):
     """HTTP fuzzing with payload injection callbacks."""
     name = "HTTP Injection Callback"
     target = "192.168.1.100"
-    iterations = 6
+    iterations = 1
     output_pcap = "intermediate_http_injection.pcap"
+    output_network = False
+    verbose = False
     
     packet = IP() / TCP() / HTTP() / HTTPRequest(Path=b"/search?q=test", Method=b"GET", Host=b"target.com")
     pre_send_callback = payload_injection_callback
@@ -134,20 +138,22 @@ class ResponseTrackingCampaign(FuzzingCampaign):
     """Campaign demonstrating response capture and history tracking."""
     name = "Response Tracking Callback"
     target = "192.168.1.100"
-    iterations = 10
+    iterations = 1
     output_pcap = "intermediate_response_tracking.pcap"
     
     # Set to true to enable response capture
-    capture_responses = True
+    capture_responses = False
+    output_network = False
+    verbose = False
     
     packet = IP() / TCP() / HTTP() / HTTPRequest(Path=b"/", Method=b"GET", Host=b"target.com")
     post_send_callback = response_capture_callback
 
-class DNSMalformCampaign(FuzzingCampaign):
+class DNSMalformCampaign2(FuzzingCampaign):
     """DNS fuzzing with DNS protocol-aware callback."""
     name = "DNS Malformation Callback"
     target = "192.168.1.100"
-    iterations = 5
+    iterations = 1
     output_pcap = "intermediate_dns_malform.pcap"
     
     def get_packet(self):
@@ -159,9 +165,9 @@ class DNSMalformCampaign(FuzzingCampaign):
 
 class DNSMalformCampaign(FuzzingCampaign):
     """DNS fuzzing with malformed name callbacks."""
-    name = "DNS Malform Callback"
+    name = "DNS Malform Callback 2"
     target = "10.10.10.10"
-    iterations = 5
+    iterations = 1
     output_pcap = "intermediate_dns_malform.pcap"
     
     packet = IP() / UDP() / DNS(rd=1, qd=DNSQR(qname="example.com"))
@@ -188,9 +194,11 @@ class ResponseAnalysisCampaign(FuzzingCampaign):
     """Campaign with response analysis callbacks."""
     name = "Response Analysis"
     target = "192.168.1.100"
-    iterations = 4
+    iterations = 1
     output_pcap = "intermediate_response_analysis.pcap"
-    capture_responses = True
+    capture_responses = False
+    output_network = False
+    verbose = False
     
     packet = IP() / TCP() / HTTP() / HTTPRequest(Path=b"/", Method=b"GET", Host=b"test.com")
     post_send_callback = response_analysis_callback
@@ -220,7 +228,9 @@ class PreprocessingCampaign(FuzzingCampaign):
     """Campaign with packet preprocessing."""
     name = "Preprocessing Callback"
     target = "192.168.1.100"
-    iterations = 3
+    iterations = 1
+    output_network = False
+    verbose = False
     output_pcap = "intermediate_preprocessing.pcap"
     
     packet = IP() / TCP() / HTTP() / HTTPRequest(Path=b"/api/data", Method=b"GET", Host=b"api.com")
@@ -232,6 +242,7 @@ CAMPAIGNS = [
     HTTPInjectionCampaign,
     ResponseTrackingCampaign,  # New response tracking campaign
     DNSMalformCampaign,
+    DNSMalformCampaign2,
     ResponseAnalysisCampaign,
     PreprocessingCampaign
 ]

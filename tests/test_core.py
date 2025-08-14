@@ -20,12 +20,39 @@ try:
 except ImportError:
     PYTEST_AVAILABLE = False
 
-# Add parent directory to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from fuzzing_framework import FuzzingCampaign, FuzzField, FuzzMutator
+Campaign = FuzzingCampaign
 from mutator_manager import MutatorManager, FuzzConfig, FuzzMode
 from scapy.all import IP, TCP, UDP, DNS, DNSQR, Raw
+
+# Import packet extensions to enable field_fuzz() method
+import packet_extensions
+
+# Import from conftest with robust fallback similar to test_dictionary.py
+import importlib.util
+try:
+    from conftest import create_test_packet
+except ImportError:
+    try:
+        from tests.conftest import create_test_packet
+    except ImportError:
+        conftest_path = os.path.join(os.path.dirname(__file__), 'conftest.py')
+        spec = importlib.util.spec_from_file_location("conftest", conftest_path)
+        if spec is not None and spec.loader is not None:
+            conftest = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(conftest)
+            create_test_packet = conftest.create_test_packet
+        else:
+            # Minimal fallback
+            def create_test_packet(packet_type="tcp"):
+                if packet_type == "tcp":
+                    return IP()/TCP()
+                elif packet_type == "udp":
+                    return IP()/UDP()
+                else:
+                    return IP()
 
 
 class LocalFuzzingCampaign(FuzzingCampaign):

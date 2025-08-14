@@ -22,11 +22,13 @@ class AdvancedHTTPCampaign(FuzzingCampaign):
     """Multi-stage HTTP fuzzing with comprehensive monitoring."""
     name = "Advanced HTTP Fuzzing"
     target = "192.168.1.100"
-    iterations = 15
-    rate_limit = 2.0  # Controlled rate
+    # Keep example semantics but make validation fast and non-blocking
+    iterations = 1
+    rate_limit = None  # No artificial sleep in test/validation runs
     output_pcap = "advanced_http_complex.pcap"
-    capture_responses = True
-    verbose = True
+    capture_responses = False
+    verbose = False
+    output_network = False
     
     # Base packet for transformation
     packet = IP() / TCP() / HTTP() / HTTPRequest(Path=b"/", Method=b"GET", Host=b"target.com")
@@ -126,10 +128,12 @@ class AdvancedDNSCampaign(FuzzingCampaign):
     """DNS fuzzing with response analysis and subdomain enumeration."""
     name = "Advanced DNS Fuzzing"
     target = "10.10.10.10"
-    iterations = 12
+    iterations = 1
     output_pcap = "advanced_dns_complex.pcap"
-    capture_responses = True
-    verbose = True
+    capture_responses = False
+    verbose = False
+    rate_limit = None
+    output_network = False
     
     packet = IP() / UDP() / DNS(rd=1, qd=DNSQR(qname="example.com"))
     
@@ -187,9 +191,11 @@ class AdvancedMultiProtocolCampaign(FuzzingCampaign):
     """Multi-protocol campaign with protocol switching."""
     name = "Multi-Protocol Advanced"
     target = "192.168.1.100"
-    iterations = 10
+    iterations = 1
     output_pcap = "advanced_multiprotocol.pcap"
-    verbose = True
+    verbose = False
+    rate_limit = None
+    output_network = False
     
     packet = IP() / TCP() / HTTP() / HTTPRequest(Path=b"/", Method=b"GET")
     

@@ -22,8 +22,12 @@ class WebFuzzWithDictionaryCampaign(FuzzingCampaign):
     """Web fuzzing using custom dictionary configuration."""
     name = "Web Fuzzing with Custom Dictionaries"
     target = "192.168.1.100"
-    iterations = 15
+    iterations = 1
     output_pcap = "intermediate_dict_web.pcap"
+    verbose = False
+    capture_responses = False
+    output_network = False
+    rate_limit = None
     
     # Reference custom dictionary config
     dictionary_config_file = "examples/config/user_dictionary_config.py"
@@ -41,8 +45,12 @@ class SQLInjectionCampaign(FuzzingCampaign):
     """SQL injection testing with targeted dictionaries."""
     name = "SQL Injection Testing"
     target = "192.168.1.200"
-    iterations = 20
+    iterations = 1
     output_pcap = "intermediate_dict_sqli.pcap"
+    verbose = False
+    capture_responses = False
+    output_network = False
+    rate_limit = None
     
     packet = (
         IP() /
@@ -61,8 +69,12 @@ class MixedDictionaryCampaign(FuzzingCampaign):
     """Campaign mixing inline values with dictionary sources."""
     name = "Mixed Dictionary Sources"
     target = "192.168.1.100"
-    iterations = 12
+    iterations = 1
     output_pcap = "intermediate_dict_mixed.pcap"
+    verbose = False
+    capture_responses = False
+    output_network = False
+    rate_limit = None
     
     packet = (
         IP() / 

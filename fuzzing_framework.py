@@ -16,7 +16,7 @@ from scapy.layers.l2 import Ether, ARP
 from scapy.layers.inet import IP, TCP, UDP, ICMP
 from scapy.layers.can import CAN 
 from scapy.packet import Raw, Packet, fuzz
-from scapy.sendrecv import send, sendp
+from scapy.sendrecv import send, sendp, sniff, sr1
 from typing import Dict, List, Union, Any, Optional, Callable, Protocol
 from enum import Enum
 import os
@@ -124,7 +124,7 @@ class FuzzHistoryEntry:
 @dataclass
 class CampaignContext:
     """Shared context passed to all callbacks"""
-    campaign: 'FuzzingCampaign'
+    campaign: Any
     is_running: bool = True
     stats: dict = field(default_factory=lambda: {
         'packets_sent': 0,
@@ -146,7 +146,7 @@ class CallbackManager:
     Logs crashes and invokes user crash callbacks.
     """
     
-    def __init__(self, campaign: 'FuzzingCampaign'):
+    def __init__(self, campaign: Any):
         self.campaign = campaign
     
     def execute_callback(self, callback_func: Optional[Callable], callback_type: str, 
@@ -341,45 +341,61 @@ class FuzzField:
             return random.choice(self.values)
         return None
     
-    def __int__(self) -> int:
-        """Allow FuzzField to be used as an integer"""
-        return int(self.choose_value())
-    
-    def __str__(self) -> str:
-        """Allow FuzzField to be used as a string"""
-        return str(self.choose_value())
-    
-    def __bytes__(self) -> bytes:
-        """Allow FuzzField to be used as bytes"""
+    # Provide sequence-like behavior so Scapy can safely interact with this object
+    def _coerce_to_bytes(self) -> bytes:
         val = self.choose_value()
         if isinstance(val, (bytes, bytearray)):
             return bytes(val)
+        if val is None:
+            return b""
         return str(val).encode()
+    
+    def __len__(self) -> int:
+        try:
+            return len(self._coerce_to_bytes())
+        except Exception:
+            return 0
+    
+    def __getitem__(self, idx):
+        data = self._coerce_to_bytes()
+        return data[idx]
+    
+    def __iter__(self):
+        return iter(self._coerce_to_bytes())
+    
+    def __int__(self) -> int:
+        val = self.choose_value()
+        return int(val) if val is not None else 0
+    
+    def __str__(self) -> str:
+        val = self.choose_value()
+        return str(val) if val is not None else ""
+    
+    def __bytes__(self) -> bytes:
+        return self._coerce_to_bytes()
     
     def __repr__(self) -> str:
         return f"FuzzField(values={self.values})"
 
+    # Support concatenation with bytes/str to cooperate with Scapy encoders
+    def __add__(self, other):
+        if isinstance(other, (bytes, bytearray)):
+            return self._coerce_to_bytes() + bytes(other)
+        if isinstance(other, str):
+            return self._coerce_to_bytes() + other.encode()
+        return NotImplemented
 
-    pass
-
+    def __radd__(self, other):
+        if isinstance(other, (bytes, bytearray)):
+            return bytes(other) + self._coerce_to_bytes()
+        if isinstance(other, str):
+            return other.encode() + self._coerce_to_bytes()
+        return NotImplemented
 
 def configure_interface_offload(interface: str, features: List[str], disable: bool = True) -> tuple[bool, dict]:
     """
     Configure network interface offload features using ethtool.
-    
-    Args:
-        interface: Network interface name (e.g., 'eth0')
-        features: List of offload features to configure
-        disable: If True, disable features; if False, enable features
-        
-    Returns:
-        Tuple of (success: bool, original_settings: dict)
-        original_settings contains the previous state for restoration
-        
-    Raises:
-        PermissionError: If not running as root
-        FileNotFoundError: If ethtool is not available
-        RuntimeError: If interface configuration fails
+    Returns (success, original_settings) for potential restoration later.
     """
     # Check for root privileges
     if os.geteuid() != 0:
@@ -393,43 +409,34 @@ def configure_interface_offload(interface: str, features: List[str], disable: bo
     if not os.path.exists(f"/sys/class/net/{interface}"):
         raise RuntimeError(f"Network interface '{interface}' not found")
     
-    original_settings = {}
+    original_settings: dict = {}
     action = "off" if disable else "on"
     action_desc = "Disabling" if disable else "Enabling"
     
     try:
-        # Get current settings for restoration later
+        # Query current settings for restoration later
         for feature in features:
             try:
-                # Query current feature state
                 result = subprocess.run(
                     ["ethtool", "-k", interface],
                     capture_output=True,
                     text=True,
                     check=True
                 )
-                
-                # Parse ethtool output to find current state
                 for line in result.stdout.split('\n'):
                     if feature in line and ':' in line:
                         current_state = line.split(':')[1].strip().split()[0]
                         original_settings[feature] = current_state
                         break
-                else:
-                    # Feature not found in output, skip it
-                    logger.warning(f"Feature '{feature}' not found on interface '{interface}'")
-                    
-            except subprocess.CalledProcessError as e:
-                logger.warning(f"Failed to query feature '{feature}': {e}")
+            except subprocess.CalledProcessError:
+                logger.warning(f"Failed to query feature '{feature}' on '{interface}'")
         
         # Apply new settings
         success_count = 0
         for feature in features:
             if feature not in original_settings:
                 continue  # Skip features we couldn't query
-                
             try:
-                # Apply configuration
                 subprocess.run(
                     ["ethtool", "-K", interface, feature, action],
                     capture_output=True,
@@ -438,17 +445,14 @@ def configure_interface_offload(interface: str, features: List[str], disable: bo
                 )
                 success_count += 1
                 logger.info(f"{action_desc} {feature} on {interface}")
-                
             except subprocess.CalledProcessError as e:
                 logger.error(f"Failed to configure {feature} on {interface}: {e}")
-                # Continue with other features rather than failing completely
         
         if success_count == 0:
             raise RuntimeError(f"Failed to configure any offload features on {interface}")
         
         logger.info(f"Successfully configured {success_count}/{len(features)} offload features on {interface}")
         return True, original_settings
-        
     except Exception as e:
         logger.error(f"Interface configuration failed: {e}")
         return False, original_settings
@@ -580,7 +584,12 @@ class FuzzingCampaign:
     interface_offload_restore: bool = True                     # Restore original settings after campaign
 
     # --- Socket logic additions ---
-    socket_type: str = None    # User can specify: 'l2', 'l3', 'tcp', 'udp', "canbus" or None for auto
+    socket_type: Optional[str] = None    # User can specify: 'l2', 'l3', 'tcp', 'udp', "canbus" or None for auto
+    # Behavior when mutated packet fails to serialize to bytes
+    # Options:
+    #  - 'fail' : raise RuntimeError (strict, default)
+    #  - 'skip' : do not write PCAP for this iteration and do not send
+    pcap_serialize_failure_mode: str = 'fail'
 
 
 
@@ -839,13 +848,16 @@ class FuzzingCampaign:
         """
         packets_sent = 0
         packets_written_to_pcap = 0
+        serialize_failure_count = 0
         start_time = time.time()
         pcap_writer = None
         merged_field_mapping = self._load_merged_field_mapping()
+        # ...existing code (rest of method body, properly indented)...
         
         try:
             # Configure network interface offload settings if enabled
-            if self.disable_interface_offload and self.output_network:
+            network_enabled = bool(self.output_network)
+            if self.disable_interface_offload and network_enabled:
                 features_to_disable = self.interface_offload_features or DEFAULT_OFFLOAD_FEATURES
                 
                 if self.verbose:
@@ -872,7 +884,33 @@ class FuzzingCampaign:
                 if self.verbose:
                     logger.debug(f"Using PCAP file: {pcap_path}")
                     logger.info(f"Initializing PCAP output to: {pcap_path}")
-                collected_packets = []
+                try:
+                    from scapy.utils import PcapWriter
+                    # Choose linktype so raw bytes (IP) are stored correctly in PCAP
+                    linktype = 1  # Default to Ethernet
+                    try:
+                        if packet is not None:
+                            if packet.haslayer(Ether):
+                                linktype = 1
+                            elif packet.haslayer(IP):
+                                # RAW IP packets should use LINKTYPE_RAW (101)
+                                linktype = 101
+                    except Exception:
+                        # If detection fails, keep default
+                        linktype = 1
+
+                    pcap_writer = PcapWriter(str(pcap_path), append=False, sync=True, linktype=linktype)
+                except Exception as e:
+                    logger.error(f"[PCAP] Failed to initialize writer for {pcap_path}: {e}")
+                    # Fallback: try current working directory with same filename
+                    try:
+                        fallback_path = Path.cwd() / Path(str(pcap_path)).name
+                        if self.verbose:
+                            logger.warning(f"[PCAP] Falling back to cwd: {fallback_path}")
+                        pcap_writer = PcapWriter(str(fallback_path), append=False, sync=True)
+                        pcap_path = fallback_path
+                    except Exception as e2:
+                        logger.error(f"[PCAP] Fallback writer initialization failed: {e2}")
             # Create empty list in case no packet is provided
             fuzzed_packets = [None] * self.iterations
             # Create the fuzzed packets
@@ -905,24 +943,27 @@ class FuzzingCampaign:
                     else:
                         raise ValueError("Cannot auto-detect socket type from packet and non speciied- please specify socket_type")
 
-                # open sockets for sending
-                #TODO make this also accept functions that return a socket object
-                import socket
-                if self.socket_type == 'l2':
-                    s = socket.socket(socket.AF_PACKET, socket.SOCK_RAW)
-                    s.bind((self.interface, 0))
-                elif self.socket_type == 'canbus':
-                    s = socket.socket(socket.PF_CAN, socket.SOCK_RAW, socket.CAN_RAW)
-                    s.bind((self.interface,))
-                elif self.socket_type == 'tcp':
-                    s = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_TCP)
-                elif self.socket_type == 'udp':
-                    s = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_UDP)
-                elif self.socket_type == 'l3':
-                    s = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_RAW)
+                # Open sockets for sending only if network output is enabled
+                # TODO: make this also accept functions that return a socket object
+                if network_enabled:
+                    import socket
+                    if self.socket_type == 'l2':
+                        s = socket.socket(socket.AF_PACKET, socket.SOCK_RAW)
+                        s.bind((self.interface, 0))
+                    elif self.socket_type == 'canbus':
+                        s = socket.socket(socket.PF_CAN, socket.SOCK_RAW, socket.CAN_RAW)
+                        s.bind((self.interface,))
+                    elif self.socket_type == 'tcp':
+                        s = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_TCP)
+                    elif self.socket_type == 'udp':
+                        s = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_UDP)
+                    elif self.socket_type == 'l3':
+                        s = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_RAW)
+                    else:
+                        raise ValueError(f"Unknown socket_type: {self.socket_type}")
+                    self.context.socket = s  # Store socket in context for custom send callback
                 else:
-                    raise ValueError(f"Unknown socket_type: {self.socket_type}")
-                self.context.socket = s  # Store socket in context for custom send callback
+                    self.context.socket = None
 
                 # Execute pre-send callback with error handling
                 if self.pre_send_callback and self.context:
@@ -966,12 +1007,6 @@ class FuzzingCampaign:
                     if self.context:
                         self.context.fuzz_history.append(history_entry)
                     
-                    # Apply campaign target addressing based on network layer
-                    if self.socket_type == "l3" or "udp" or "tcp" and fuzzed_packets[itteration].haslayer(IP):
-                        fuzzed_packets[itteration][IP].dst = self.target
-                    elif self.socket_type == "l2"  and fuzzed_packets[itteration].haslayer(Ether):
-                        fuzzed_packets[itteration][Ether].dst = self.target
-                    
                     response = None  # Placeholder for response capture
                     
                     
@@ -995,24 +1030,75 @@ class FuzzingCampaign:
                     # Send using Python socket
                 
                     try:
-                        if self.verbose:
-                            logger.info(f"[SEND] Sending: {fuzzed_packets[itteration].summary()}")
-                        if fuzzed_packets[itteration] is None:
+                        pkt = fuzzed_packets[itteration]
+                        if pkt is None:
                             continue
-                        # Serialize packet to bytes
-                        pkt_bytes = bytes(fuzzed_packets[itteration])
-                        if not self.context.socket:
-                            raise RuntimeError("No socket available for sending packets.")
-                        if self.socket_type == "l2" and self.output_network:
-                            # Layer 2: send raw Ethernet frame
-                            send_success = self.context.socket.send(pkt_bytes)
-                        elif self.output_network:
-                            # Layer 3: send raw IP packet
-                            # For AF_INET/SOCK_RAW, need to provide destination address
-                            send_success = self.context.socket.sendto(pkt_bytes, (self.target, 0))
+                        if self.verbose:
+                            logger.info(f"[SEND] Sending: {pkt.summary()}")
+                        # Apply campaign target addressing based on network layer (using local pkt)
+                        try:
+                            if (self.socket_type in ("l3", "udp", "tcp")) and pkt.haslayer(IP):
+                                pkt[IP].dst = self.target
+                            elif self.socket_type == "l2" and pkt.haslayer(Ether):
+                                pkt[Ether].dst = self.target
+                        except Exception:
+                            pass
+                        # Serialize packet to bytes first so PCAP contains exactly what is sent
+                        pkt_bytes = None
+                        serialize_error = None
+                        try:
+                            #TODO make sure there are no fuzz fields left, they should have been replaced with values.
+                            pkt_bytes = bytes(pkt)
+                        except Exception as e:
+                            serialize_error = e
+                            logger.error(f"[SERIALIZE] Failed to serialize mutated packet: {e}")
+                            serialize_failure_count += 1
+                            if self.context:
+                                self.context.stats['serialize_failure_count'] = serialize_failure_count
+
+                            mode = getattr(self, 'pcap_serialize_failure_mode', 'fail')
+                            if mode == 'fail':
+                                # Strict mode: raise immediately
+                                raise RuntimeError(f"Failed to serialize mutated packet: {e}") from e
+                            else:
+                                # 'skip' or unknown mode: do not write or send for this iteration
+                                if self.verbose:
+                                    logger.info("[PCAP] Skipping PCAP write/send for this iteration due to serialize failure")
+                                pkt_bytes = None
+
+                        # Write the serialized bytes to PCAP (guarantees identical bytes)
+                        if pcap_writer and pkt_bytes is not None:
+                            # write the exact serialized bytes to PCAP (no fallback) to guarantee parity
+                            pcap_writer.write(pkt_bytes)
+                            packets_written_to_pcap += 1
+                            if self.verbose:
+                                logger.debug(f"[PCAP] Wrote packet {packets_written_to_pcap}")
+                        # Only send when network is enabled; PCAP-only mode skips sending
+                        send_success = None
+                        # Ensure we have a bytes buffer to send; prefer previously serialized bytes
+                        send_buf = pkt_bytes
+                        if send_buf is None:
+                            try:
+                                send_buf = bytes(pkt)
+                            except Exception as e:
+                                if self.verbose:
+                                    logger.debug(f"[SERIALIZE] Failed to serialize packet for send: {e}")
+                                send_buf = None
+
+                        if network_enabled and self.output_network and self.context and self.context.socket and send_buf is not None:
+                            sock = self.context.socket
+                            if self.socket_type == "l2":
+                                # Layer 2: send raw Ethernet frame
+                                send_success = sock.send(send_buf)
+                            else:
+                                # Layer 3: send raw IP packet
+                                # For AF_INET/SOCK_RAW, need to provide destination address
+                                send_success = sock.sendto(send_buf, (self.target, 0))
+
                         if self.context and self.context.fuzz_history:
                             self.context.fuzz_history[-1].timestamp_received = datetime.now()
-                            self.context.fuzz_history[-1].packet = pkt_bytes
+                            # Store the packet object in history for analysis
+                            self.context.fuzz_history[-1].packet = pkt
                     except Exception as e:
                         if self.verbose:
                             logger.error(f"[SEND] Failed to send packet: {e}")
@@ -1022,7 +1108,7 @@ class FuzzingCampaign:
 
                     # Receive a response if capture_responses is enabled
                     #TODO update for canbus
-                    if self.capture_responses and send_success:
+                    if network_enabled and self.capture_responses and send_success:
                         try:
                             if self.socket_type == "l2":
                                 # Layer 2: Use sniff() with a filter for Ethernet frames
@@ -1066,86 +1152,16 @@ class FuzzingCampaign:
                     elif result == CallbackResult.NO_SUCCESS:
                         self.callback_manager.handle_no_success("post_send", self.context, fuzzed_packets[itteration], response)
                 
-                # Write to PCAP if enabled
-                if pcap_path:
-                    collected_packets.append(fuzzed_packets[itteration])
-                    packets_written_to_pcap += 1
-                    if self.verbose:
-                        logger.debug(f"Collected {packets_written_to_pcap} packets for PCAP")
                 
                 packets_sent += 1
                 if self.context:
                     self.context.stats['packets_sent'] = packets_sent
+                    self.context.stats['serialize_failure_count'] = serialize_failure_count
                 
                 # Rate limiting
                 if self.rate_limit:
                     time.sleep(1.0 / self.rate_limit)
             
-            # Write collected packets to PCAP file
-            if pcap_path and collected_packets:
-                if self.verbose:
-                    logger.info(f"[PCAP] Writing {len(collected_packets)} packets to PCAP file: {pcap_path}")
-                
-                # Packet validation and recovery process for PCAP compatibility
-                valid_packets = []
-                for i, packet in enumerate(collected_packets):
-                    try:
-                        # Test if packet can be serialized (some fuzzed packets may be malformed)
-                        bytes(packet)
-                        valid_packets.append(packet)
-                    except Exception as e:
-                        if self.verbose:
-                            logger.debug(f"[PCAP] Packet {i} serialization failed: {e}")
-                        # Recovery attempt: create template-based packet for PCAP compatibility
-                        try:
-                            # Use campaign packet as template for reconstruction
-                            base_packet = self.get_packet_with_embedded_config()
-                            if base_packet and hasattr(base_packet, '__class__'):
-                                # Create clean copy and apply target addressing
-                                pcap_packet = base_packet.__class__()
-                                if self.socket_type == "l3" and pcap_packet.haslayer(IP):
-                                    pcap_packet[IP].dst = self.target
-                                elif self.socket_type == "l2" and pcap_packet.haslayer(Ether):
-                                    pcap_packet[Ether].dst = self.target
-                                # Verify template packet is serializable before adding
-                                bytes(pcap_packet)
-                                valid_packets.append(pcap_packet)
-                                if self.verbose:
-                                    logger.debug(f"[PCAP] Replaced packet {i} with template packet")
-                            else:
-                                if self.verbose:
-                                    logger.debug(f"[PCAP] Skipping packet {i} (no template available)")
-                        except Exception:
-                            if self.verbose:
-                                logger.debug(f"[PCAP] Failed to create template packet for {i}")
-
-                if valid_packets:
-                    try:
-                        wrpcap(str(pcap_path), valid_packets)
-                        if self.verbose:
-                            logger.info(f"[PCAP] File written successfully: {pcap_path}")
-                            logger.info(f"[PCAP] Written {len(valid_packets)}/{len(collected_packets)} packets")
-                            # Verify file was created and is not empty
-                            if pcap_path and pcap_path.exists():
-                                file_size = pcap_path.stat().st_size
-                                logger.info(f"[PCAP] File size: {file_size} bytes")
-                            else:
-                                logger.warning(f"[PCAP] File was not created: {pcap_path}")
-                    except Exception as e:
-                        if self.verbose:
-                            logger.error(f"Failed to write PCAP file {pcap_path}: {e}")
-                            logger.warning(f"Continuing campaign execution despite PCAP write failure")
-                        # Don't fail the entire campaign due to PCAP write issues
-                else:
-                    if self.verbose:
-                        logger.warning(f"[PCAP] No valid packets to write to {pcap_path}")
-                        logger.info(f"[PCAP] Creating empty PCAP file for test compatibility")
-                    try:
-                        # Create an empty but valid PCAP file for test compatibility
-                        wrpcap(str(pcap_path), [])
-                    except Exception as e:
-                        if self.verbose:
-                            logger.warning(f"[PCAP] Failed to create empty PCAP file: {e}")
             
             if self.verbose:
                 logger.info(f"Campaign completed: {packets_sent} packets processed")
@@ -1157,14 +1173,6 @@ class FuzzingCampaign:
             return True
             
         except KeyboardInterrupt:
-            # Handle graceful shutdown and still write PCAP if needed
-            if pcap_path and 'collected_packets' in locals() and collected_packets:
-                try:
-                    if self.verbose:
-                        logger.info(f"[INTERRUPT] Writing {len(collected_packets)} packets to PCAP")
-                    wrpcap(str(pcap_path), collected_packets)
-                except Exception as e:
-                    logger.error(f"Failed to write PCAP during interruption: {e}")
             if self.verbose:
                 logger.info(f"[INTERRUPT] Campaign interrupted: {packets_sent} packets processed")
             return True
@@ -1200,6 +1208,12 @@ class FuzzingCampaign:
                         logger.info("Closed campaign socket.")
                 except Exception as e:
                     logger.warning(f"Failed to close campaign socket: {e}")
+            # Close PCAP writer if open
+            if 'pcap_writer' in locals() and pcap_writer:
+                try:
+                    pcap_writer.close()
+                except Exception:
+                    pass
 
     def _load_merged_field_mapping(self) -> list:
         """

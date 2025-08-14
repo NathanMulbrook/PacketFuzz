@@ -24,10 +24,12 @@ class AdvancedHTTPExtractionCampaign(PcapFuzzCampaign):
     repackage_in = "IP/TCP"
     fuzz_mode = "both"  # Field + binary fuzzing
     target = "192.168.1.100"
-    iterations = 8
-    rate_limit = 1.0
+    iterations = 1
+    rate_limit = None
     output_pcap = "advanced_http_extraction.pcap"
-    verbose = True
+    verbose = False
+    output_network = False
+    capture_responses = False
     
     def __init__(self):
         super().__init__()
@@ -107,9 +109,11 @@ class AdvancedBinaryAnalysisCampaign(PcapFuzzCampaign):
     repackage_in = "IP/UDP"
     fuzz_mode = "binary"
     target = "192.168.1.200"
-    iterations = 6
+    iterations = 1
     output_pcap = "advanced_binary_analysis.pcap"
-    verbose = True
+    verbose = False
+    output_network = False
+    capture_responses = False
     
     def __init__(self):
         super().__init__()
@@ -151,9 +155,11 @@ class AdvancedLayerFuzzCampaign(PcapFuzzCampaign):
     extract_layer = "IP"
     fuzz_mode = "field"
     target = "192.168.1.50"
-    iterations = 10
+    iterations = 1
     output_pcap = "advanced_layer_fuzz.pcap"
-    verbose = True
+    verbose = False
+    output_network = False
+    capture_responses = False
     
     def __init__(self):
         super().__init__()

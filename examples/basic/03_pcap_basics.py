@@ -21,7 +21,8 @@ class BasicRegressionCampaign(PcapFuzzCampaign):
     target = "192.168.1.100"
     output_network = False
     output_pcap = "regression_replay.pcap"
-    verbose = True
+    iterations = 1
+    verbose = False
 
 class BasicPayloadExtractionCampaign(PcapFuzzCampaign):
     """Extract UDP payloads and fuzz them."""
@@ -31,13 +32,14 @@ class BasicPayloadExtractionCampaign(PcapFuzzCampaign):
     repackage_in = "IP/UDP"  # Repackage in new headers
     fuzz_mode = "field"  # Use dictionary-based fuzzing
     target = "192.168.1.100"
-    iterations = 3
+    iterations = 1
     output_network = False
     output_pcap = "udp_payload_fuzz.pcap"
-    verbose = True
+    verbose = False
 
 # List of PCAP campaigns
-campaigns = [
+# Register campaigns for CLI discovery
+CAMPAIGNS = [
     BasicRegressionCampaign,
     BasicPayloadExtractionCampaign
 ]

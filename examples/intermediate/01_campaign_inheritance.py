@@ -19,10 +19,10 @@ from fuzzing_framework import FuzzingCampaign, FuzzField
 # This shows how inheritance can be set to make small changes to a base campaign
 class DNSBaseCampaign(FuzzingCampaign):
     """Base campaign for network infrastructure testing."""
-    rate_limit = 20.0
+    rate_limit = 10.0
     output_network = False
-    verbose = True
-    iterations = 2000
+    verbose = False
+    iterations = 1
     packet = (
         IP() / 
         UDP() / 
@@ -52,9 +52,9 @@ class WebAppBaseCampaign(FuzzingCampaign):
     """Base campaign for web application testing."""
     target = "192.168.1.100"
     rate_limit = 10.0
-    iterations = 3  # Reduced for faster execution in tests
+    iterations = 1  # Reduced for faster execution in tests
     output_network = False
-    verbose = True
+    verbose = False
 
 
 class HTTPFuzzCampaign(WebAppBaseCampaign):
@@ -78,7 +78,7 @@ class HTTPSFuzzCampaign(WebAppBaseCampaign):
 class APIFuzzCampaign(WebAppBaseCampaign):
     """API-specific fuzzing campaign."""
     name = "API Fuzzing" 
-    iterations = 3  # Reduced for faster execution in tests
+    iterations = 1  # Reduced for faster execution in tests
     output_pcap = "intermediate_api_fuzz.pcap"
     rate_limit = 5.0  # Slower for API testing
     

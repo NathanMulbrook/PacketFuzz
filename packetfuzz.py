@@ -145,10 +145,11 @@ def apply_cli_overrides(campaign, args):
             campaign.output_pcap = f"{campaign.__class__.__name__.lower()}_output.pcap"
     elif args.disable_pcap:
         campaign.output_pcap = None
-    # Auto-enable PCAP if network is disabled and no explicit PCAP setting
+    # Auto-enable PCAP if network is disabled and no explicit PCAP setting,
+    # but only if user didn't request --disable-pcap
     if (not getattr(campaign, 'output_network', True) and 
         not getattr(campaign, 'output_pcap', None) and 
-        not args.enable_pcap and not args.pcap_file):
+        not args.enable_pcap and not args.pcap_file and not args.disable_pcap):
         campaign.output_pcap = f"{campaign.__class__.__name__.lower()}_output.pcap"
     # Dictionary
     if args.dictionary_config:

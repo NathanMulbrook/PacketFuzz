@@ -2,7 +2,7 @@
 """
 Run All Examples - CLI-Based Example Runner
 
-Executes all campaign config files using the packetfuzz CLI with --dry-run to validate them.
+Executes all campaign config files using the packetfuzz CLI with --disable-network to validate them.
 Provides summary statistics and validates that all campaign files load correctly.
 """
 
