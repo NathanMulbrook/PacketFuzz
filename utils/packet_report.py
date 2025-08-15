@@ -41,9 +41,11 @@ def write_campaign_summary(
 
         campaign_name = None
         target = None
+        verbose = False
         if campaign is not None:
             campaign_name = getattr(campaign, "name", None) or campaign.__class__.__name__
             target = getattr(campaign, "target", None)
+            verbose = getattr(campaign, "verbose", False)
 
         # Decide output path
         if not file_path:
@@ -78,6 +80,38 @@ def write_campaign_summary(
             f.write("\n".join(lines) + "\n")
 
         logger.info(f"Campaign summary written to {file_path}")
+
+        # If verbose, write packet reports for failed serializations
+        if verbose and campaign_context is not None and hasattr(campaign_context, "fuzz_history"):
+            failed_packets = []
+            for entry in getattr(campaign_context, "fuzz_history", []):
+                # Heuristic: failed serialization if entry.packet is not None and entry.crashed is False and entry.response is None and entry.iteration >= 0 and (entry.packet and not hasattr(entry.packet, "__len__"))
+                # But best: if we can mark failed serializations in history, or if campaign_context has a list of failed packets
+                # For now, collect all packets where entry.packet is not None and entry.crashed is False and entry.response is None
+                # (user can refine this logic as needed)
+                if entry.packet is not None and getattr(entry, "crashed", False) is False and getattr(entry, "response", None) is None:
+                    failed_packets.append((entry.iteration, entry.packet))
+            # If campaign_context has fuzz_history_errors, use that
+            if hasattr(campaign_context, "fuzz_history_errors") and getattr(campaign_context, "fuzz_history_errors"):
+                for idx, pkt in enumerate(getattr(campaign_context, "fuzz_history_errors")):
+                    failed_packets.append((idx, pkt))
+            # Write reports
+            for idx, pkt in failed_packets:
+                try:
+                    fail_path = f"{log_dir}/serialize_failure_iter_{idx}.txt"
+                    write_packet_report(
+                        packet=pkt,
+                        file_path=fail_path,
+                        mode="w",
+                        metadata={
+                            "reason": "serialization_failure",
+                            "iteration": idx,
+                        },
+                        campaign_context=campaign_context,
+                    )
+                except Exception as log_e:
+                    logger.warning(f"Failed to write serialize failure report: {log_e}")
+
         return file_path
     except Exception as e:
         logger.error(f"Failed to write campaign summary: {e}")
@@ -166,10 +200,14 @@ def write_packet_report(
         f.write("```python\n")
         f.write(repr(packet))
         f.write("\n```\n")
-        # Write base64-encoded raw bytes
+        # Write base64-encoded raw bytes (best-effort; skip if serialization fails)
         f.write("\n---\n\n## BASE64 RAW BYTES\n")
         f.write("```\n")
-        f.write(base64.b64encode(bytes(packet)).decode())
+        try:
+            f.write(base64.b64encode(bytes(packet)).decode())
+        except Exception as e:
+            logger.error(f"Failed to serialize packet for raw bytes section: {e}")
+            f.write(f"(Serialization failed: {e})")
         f.write("\n```\n")
         f.write("\n---\n\n")
 
