@@ -32,7 +32,7 @@ import shutil
 from datetime import datetime
 from scapy.utils import wrpcap
 from mutator_manager import MutatorManager, FuzzConfig, FuzzMode
-from utils.packet_report import write_packet_report
+from utils.packet_report import write_packet_report, write_campaign_summary
 from pathlib import Path
 from dataclasses import dataclass, field
 
@@ -738,35 +738,35 @@ class FuzzingCampaign:
             # Validate campaign configuration
             if not self.validate_campaign():
                 raise ValueError("Campaign validation failed")
-            
+
             # Execute pre-launch callback
             result = self.callback_manager.execute_callback(
                 self.pre_launch_callback, "pre_launch", self.context
             )
-            
+
             if result == CallbackResult.FAIL_CRASH:
                 self.callback_manager.handle_crash("pre_launch", None, self.context)
                 return False
             elif result == CallbackResult.NO_SUCCESS:
                 self.callback_manager.handle_no_success("pre_launch", self.context)
-            
+
             # Check permissions for network operations
             if self.output_network and os.geteuid() != 0:
                 raise PermissionError("Root privileges required for network operations")
-            
+
             # Create fuzzer
             fuzzer = self.create_fuzzer()
-            
+
             # Get packet with embedded config
             packet = self.get_packet_with_embedded_config()
             if packet is None:
                 if self.verbose:
                     logger.error("No packet available for fuzzing")
                 return False
-            
+
             # Start monitor thread if callback provided
             self._start_monitor_thread()
-            
+
             # Display campaign information
             if self.verbose:
                 logger.info("Starting campaign: %s", self.name or 'Unnamed Campaign')
@@ -778,27 +778,35 @@ class FuzzingCampaign:
                     logger.info("   ### Packet has embedded fuzzing configuration")
                 if self.pre_launch_callback or self.pre_send_callback or self.post_send_callback or self.crash_callback or self.no_success_callback or self.monitor_callback:
                     logger.info("   ### Callbacks enabled")
-            
+
             # Execute fuzzing iterations
             success = self._run_fuzzing_loop(fuzzer, packet)
-            
+
             # Stop monitor thread
             self._stop_monitor_thread()
-            
+
             return success
-            
+
         except Exception as e:
             if self.verbose:
                 logger.error(f"--- Campaign execution failed: {e}")
-            
+
             # Stop monitor thread on error
             self._stop_monitor_thread()
-            
+
             # Handle as crash if context exists
             if self.context:
                 self.callback_manager.handle_crash("execute", None, self.context, e)
-            
+
             return False
+        finally:
+            # Always write a concise campaign summary at the end
+            try:
+                write_campaign_summary(self, self.context)
+            except Exception as _e:
+                # Do not fail execution due to logging errors
+                if self.verbose:
+                    logger.warning(f"Failed to write campaign summary: {_e}")
 
     def _start_monitor_thread(self) -> None:
         """Start monitor callback thread if provided"""
@@ -1180,15 +1188,13 @@ class FuzzingCampaign:
                 try:
                     if self.verbose:
                         logger.info(f"Restoring interface {self.interface} to original settings")
-                    
+
                     success = restore_interface_offload(self.interface, self._original_offload_settings)
-                    
                     if success:
                         if self.verbose:
                             logger.info(f"Interface {self.interface} restored successfully")
                     else:
                         logger.warning(f"Failed to fully restore interface {self.interface} settings")
-                        
                 except Exception as e:
                     logger.error(f"Error restoring interface {self.interface}: {e}")
                 finally:
