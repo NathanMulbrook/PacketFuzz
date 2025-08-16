@@ -247,8 +247,10 @@ class TestScapyMutator(unittest.TestCase):
             from mutators.scapy_mutator import ScapyMutator
             mutator = ScapyMutator()
             self.assertIsNotNone(mutator)
-            # Test mutate_field returns something (should use PacketFuzz)
-            result = mutator.mutate_field(123)
+            # Test mutate_field with new typed signature returns something
+            from types import SimpleNamespace
+            field_info = SimpleNamespace(kind='numeric')
+            result = mutator.mutate_field(field_info, 123)
             self.assertIsNotNone(result)
         except ImportError as e:
             self.skipTest(f"ScapyMutator not available: {e}")

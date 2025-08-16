@@ -27,6 +27,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from fuzzing_framework import FuzzingCampaign
 import scapy.all as scapy
 from scapy.layers.inet import IP, TCP, UDP, ICMP
+from scapy.layers.inet6 import IPv6
 from scapy.packet import Raw
 from scapy.utils import rdpcap, wrpcap
 from conftest import PCAPTestCampaign, cleanup_test_files
@@ -134,7 +135,7 @@ class TestPCAPFunctionality(unittest.TestCase):
         # Verify packet structure when at least one packet exists
         if len(packets) > 0:
             first_packet = packets[0]
-            assert first_packet.haslayer(IP), "Packet should have IP layer"
+            assert (first_packet.haslayer(IP) or first_packet.haslayer(IPv6)), "Packet should have IP or IPv6 layer"
         # Note: Fuzzer may modify or replace other layers, so we only check for IP
     
     def test_output_pcap_fallback(self):

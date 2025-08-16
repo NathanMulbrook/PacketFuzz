@@ -211,3 +211,91 @@ class LibFuzzerMutator(BaseMutator):
     def is_libfuzzer_available(self) -> bool:
         """Check if the LibFuzzer C extension is available and loaded."""
         return self._lib is not None
+
+    # --- New API: type-aware field mutation ---
+    def mutate_field(self,
+                     field_info: Any,
+                     current_value: Any,
+                     dictionaries: Optional[List[bytes]] = None,
+                     rng: Optional[random.Random] = None,
+                     layer: Optional[Any] = None) -> Any:
+        # If libfuzzer is not available, return current value to allow manager to try other mutators
+        if not self.is_libfuzzer_available():
+            return current_value
+
+        kind = getattr(field_info, 'kind', 'unknown')
+
+        # Helper: mutate some bytes, return bytes
+        def mutate_bytes_seed(b: bytes) -> bytes:
+            try:
+                return self.mutate_bytes(b, dictionaries)
+            except Exception:
+                return b
+
+        # Helper: parse int from bytes/str
+        def parse_int(data: bytes | str) -> Optional[int]:
+            try:
+                s = data.decode('utf-8', errors='ignore') if isinstance(data, (bytes, bytearray)) else str(data)
+                import re
+                m = re.search(r"([+-]?0x[0-9a-fA-F]+|[+-]?\d+)", s)
+                if not m:
+                    return None
+                token = m.group(1)
+                base = 16 if token.lower().startswith('0x') else 10
+                return int(token, base)
+            except Exception:
+                return None
+
+        # Helper: clamp
+        def clamp(v: int, mn: Optional[int], mx: Optional[int]) -> int:
+            if mn is not None and v < mn:
+                v = mn
+            if mx is not None and v > mx:
+                v = mx
+            return v
+
+        if kind in ('numeric', 'flags', 'enum'):
+            seed = ("" if current_value is None else str(current_value)).encode('utf-8', errors='ignore')
+            mutated = mutate_bytes_seed(seed)
+            val = parse_int(mutated)
+            if val is None:
+                # Fallback to seed parsed
+                val = parse_int(seed)
+            if val is None:
+                val = 0
+            val = clamp(val, getattr(field_info, 'min_value', None), getattr(field_info, 'max_value', None))
+            # Enum mapping to allowed values if provided
+            enum_map = getattr(field_info, 'enum_map', None)
+            if enum_map and isinstance(enum_map, dict):
+                # Enum map uses integer keys
+                allowed_ints = list(enum_map.keys())
+                if allowed_ints:
+                    if val not in allowed_ints:
+                        try:
+                            val = allowed_ints[val % len(allowed_ints)]
+                        except Exception:
+                            pass
+            return val
+
+        if kind == 'string':
+            seed = ("" if current_value is None else str(current_value)).encode('utf-8', errors='ignore')
+            mutated = mutate_bytes_seed(seed)
+            try:
+                s = mutated.decode('utf-8', errors='ignore')
+            except Exception:
+                s = mutated.decode('latin-1', errors='ignore')
+            max_len = getattr(field_info, 'max_length', None)
+            if isinstance(max_len, int) and max_len > 0:
+                s = s[:max_len]
+            return s
+
+        if kind in ('options', 'list'):
+            # Let the manager/scapy mutator handle options
+            return None
+
+        if kind == 'raw':
+            seed = b"" if current_value is None else (current_value if isinstance(current_value, (bytes, bytearray)) else str(current_value).encode('utf-8', errors='ignore'))
+            return mutate_bytes_seed(seed)
+
+        # Unknown kinds: no change
+        return current_value

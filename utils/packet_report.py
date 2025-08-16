@@ -98,6 +98,8 @@ def write_campaign_summary(
             # Write reports
             for idx, pkt in failed_packets:
                 try:
+                    if pkt is None:
+                        continue
                     fail_path = f"{log_dir}/serialize_failure_iter_{idx}.txt"
                     write_packet_report(
                         packet=pkt,
@@ -187,18 +189,30 @@ def write_packet_report(
             except Exception as e:
                 logger.error(f"Failed to write PCAP: {e}")
                 f.write(f"(Failed to write PCAP: {e})\n")
-        # Write packet summary
-        f.write("\n---\n\n## PACKET SUMMARY\n")
-        f.write(f"{packet.summary()}\n")
+        # Write packet summary/dump sections guarded against None
+        try:
+            f.write("\n---\n\n## PACKET SUMMARY\n")
+            f.write(f"{packet.summary()}\n")
+        except Exception as e:
+            logger.error(f"Failed to summarize packet: {e}")
+            f.write(f"(Failed to summarize packet: {e})\n")
         # Write Scapy dump
         f.write("\n---\n\n## PACKET DETAILS (Scapy Dump)\n")
         f.write("```\n")
-        f.write(packet.show(dump=True) or "")
+        try:
+            f.write(packet.show(dump=True) or "")
+        except Exception as e:
+            logger.error(f"Failed to dump packet: {e}")
+            f.write(f"(Failed to dump packet: {e})")
         f.write("\n```\n")
         # Write Python reconstructable packet
         f.write("\n---\n\n## PYTHON RECONSTRUCTABLE PACKET\n")
         f.write("```python\n")
-        f.write(repr(packet))
+        try:
+            f.write(repr(packet))
+        except Exception as e:
+            logger.error(f"Failed to repr packet: {e}")
+            f.write(f"# Repr failed: {e}")
         f.write("\n```\n")
         # Write base64-encoded raw bytes (best-effort; skip if serialization fails)
         f.write("\n---\n\n## BASE64 RAW BYTES\n")

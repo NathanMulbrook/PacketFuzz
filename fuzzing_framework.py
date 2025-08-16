@@ -40,7 +40,7 @@ from dataclasses import dataclass, field
 DEFAULT_INTERFACE = "eth0"
 DEFAULT_PCAP_FILENAME = "fuzzing_session.pcap"
 DEFAULT_ITERATIONS = 1000
-DEFAULT_RATE_LIMIT = 10.0
+DEFAULT_RATE_LIMIT = 500.0
 DEFAULT_RESPONSE_TIMEOUT = 2.0
 DEFAULT_STATS_INTERVAL = 10.0
 
@@ -59,18 +59,28 @@ DEFAULT_OFFLOAD_FEATURES = [
     "large-receive-offload"      # Large receive offload (LRO)
 ]
 
-# Configure logging with default log directory
+# Configure logging with default log directory. Logging is required; exit if file logging cannot be initialized.
 log_dir = Path(DEFAULT_LOG_DIR)
-log_dir.mkdir(parents=True, exist_ok=True)
+try:
+    log_dir.mkdir(parents=True, exist_ok=True)
+except Exception:
+    print("[ERROR] Failed to create log directory. Please ensure permissions are correct.")
+    raise SystemExit(2)
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler(log_dir / 'packetfuzz.log'),
-        logging.StreamHandler()  # Also log to console
-    ]
-)
+if not logging.getLogger().handlers:
+    try:
+        file_path = log_dir / 'packetfuzz.log'
+        fh = logging.FileHandler(file_path)
+        logging.basicConfig(
+            level=logging.INFO,
+            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+            handlers=[fh, logging.StreamHandler()]
+        )
+    except Exception as e:
+        print("[ERROR] Failed to initialize file logging at logs/packetfuzz.log.")
+        print("        Please ensure you have write permissions and no root-owned logs remain.")
+        print(f"        Details: {e}")
+        raise SystemExit(2)
 logger = logging.getLogger(__name__)
 
 # Install packet extensions for embedded configuration
@@ -1062,7 +1072,12 @@ class FuzzingCampaign:
                             serialize_error = e
                             logger.error(f"[SERIALIZE] Failed to serialize mutated packet: {e}")
                             serialize_failure_count += 1
-                            self.context.fuzz_history_errors[-1].serialize_error = pkt
+                            # Append the failed packet to error history for reporting
+                            try:
+                                if self.context is not None:
+                                    self.context.fuzz_history_errors.append(pkt)
+                            except Exception:
+                                pass
 
                             if self.context:
                                 self.context.stats['serialize_failure_count'] = serialize_failure_count
@@ -1077,9 +1092,8 @@ class FuzzingCampaign:
                                     logger.info("[PCAP] Skipping PCAP write/send for this iteration due to serialize failure")
                                 pkt_bytes = None
 
-                        # Write the serialized bytes to PCAP (guarantees identical bytes)
+                        # Write exact serialized bytes to PCAP for parity with network send
                         if pcap_writer and pkt_bytes is not None:
-                            # write the exact serialized bytes to PCAP (no fallback) to guarantee parity
                             pcap_writer.write(pkt_bytes)
                             packets_written_to_pcap += 1
                             if self.verbose:

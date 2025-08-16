@@ -38,3 +38,25 @@ class BaseMutator(ABC):
             Mutated byte data
         """
         pass
+
+    @abstractmethod
+    def mutate_field(self,
+                     field_info: Any,
+                     current_value: Any,
+                     dictionaries: Optional[List[bytes]] = None,
+                     rng: Optional[random.Random] = None,
+                     layer: Optional[Any] = None) -> Any:
+        """
+        Mutate a field value with context.
+
+        Args:
+            field_info: Dataclass-like object describing field type, name, constraints
+            current_value: The current Python value of the field
+            dictionaries: Optional dictionary entries for this field
+            rng: Optional RNG
+            layer: The Scapy layer instance that owns this field (optional)
+
+        Returns:
+            A Python value suitable for assignment to this field (or None/Skip to defer)
+        """
+        raise NotImplementedError()
