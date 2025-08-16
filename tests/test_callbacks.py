@@ -16,8 +16,7 @@ from pathlib import Path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from fuzzing_framework import FuzzingCampaign, CallbackResult, CampaignContext
-from scapy.layers.inet import IP, TCP, UDP
-from scapy.packet import Raw
+from scapy.all import IP, TCP, UDP, Raw
 
 class CallbackTest(unittest.TestCase):
     """Test custom send callback and callback interface"""
@@ -25,14 +24,20 @@ class CallbackTest(unittest.TestCase):
         self.temp_dir = tempfile.mkdtemp()
         self.sent_packets = []
         self.callback_calls = []
+        self.crash_exceptions = []
     def tearDown(self):
         shutil.rmtree(self.temp_dir, ignore_errors=True)
     def custom_send_callback(self, fuzzed_packet, context: CampaignContext):
         self.callback_calls.append("custom_send")
-        custom_packet = IP(dst=context.campaign.target)/TCP(dport=8080)/Raw(load=b"CustomTCPPayload")
+        # Ensure dport is always an integer
+        custom_packet = IP(dst=context.campaign.target)/TCP(dport=int(8080))/Raw(load=b"CustomTCPPayload")
         self.sent_packets.append(custom_packet)
         context.shared_data['custom_sends'] = context.shared_data.get('custom_sends', 0) + 1
         return CallbackResult.SUCCESS
+    def crash_callback(self, fuzzed_packet, context, exception):
+        self.callback_calls.append("crash")
+        self.crash_exceptions.append(exception)
+        return getattr(CallbackResult, 'CRASH', 'CRASH')
     def test_custom_send_callback_attribute_exists(self):
         campaign = FuzzingCampaign()
         self.assertTrue(hasattr(campaign, 'custom_send_callback'))
@@ -73,12 +78,12 @@ class CallbackTest(unittest.TestCase):
     def test_custom_packet_construction_example(self):
         constructed_packets = []
         def multi_protocol_callback(fuzzed_packet, context):
-            tcp_packet = IP(dst=context.campaign.target)/TCP(dport=80, flags="S", seq=1000, window=8192)/Raw(load=b"TCP_SYN_PROBE")
-            udp_packet = IP(dst=context.campaign.target)/UDP(sport=53000, dport=53)/Raw(load=b"DNS_QUERY_PROBE")
+            tcp_packet = IP(dst=context.campaign.target)/TCP(dport=int(80), flags="S", seq=1000, window=8192)/Raw(load=b"TCP_SYN_PROBE")
+            udp_packet = IP(dst=context.campaign.target)/UDP(sport=53000, dport=int(53))/Raw(load=b"DNS_QUERY_PROBE")
             constructed_packets.extend([tcp_packet, udp_packet])
             return CallbackResult.SUCCESS
         campaign = FuzzingCampaign()
-        campaign.target = "8.8.8.8"
+        campaign.target = "10.10.10.10"
         context = CampaignContext(campaign)
         test_packet = IP(dst="0.0.0.0")/TCP(dport=80)
         result = multi_protocol_callback(test_packet, context)
@@ -86,13 +91,13 @@ class CallbackTest(unittest.TestCase):
         self.assertEqual(len(constructed_packets), 2)
         tcp_packet = constructed_packets[0]
         self.assertTrue(tcp_packet.haslayer(TCP))
-        self.assertEqual(tcp_packet[IP].dst, "8.8.8.8")
+        self.assertEqual(tcp_packet[IP].dst, "10.10.10.10")
         self.assertEqual(tcp_packet[TCP].dport, 80)
         self.assertEqual(tcp_packet[TCP].flags, 2)
         self.assertEqual(tcp_packet[Raw].load, b"TCP_SYN_PROBE")
         udp_packet = constructed_packets[1]
         self.assertTrue(udp_packet.haslayer(UDP))
-        self.assertEqual(udp_packet[IP].dst, "8.8.8.8")
+        self.assertEqual(udp_packet[IP].dst, "10.10.10.10")
         self.assertEqual(udp_packet[UDP].dport, 53)
         self.assertEqual(udp_packet[UDP].sport, 53000)
         self.assertEqual(udp_packet[Raw].load, b"DNS_QUERY_PROBE")

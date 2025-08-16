@@ -37,18 +37,18 @@ def create_sample_pcaps():
     
     # DNS query packets
     dns_packets = [
-        IP(src="192.168.1.10", dst="8.8.8.8")/UDP(sport=12345, dport=53)/DNS(qd=DNSQR(qname="example.com")),
-        IP(src="192.168.1.10", dst="8.8.8.8")/UDP(sport=12346, dport=53)/DNS(qd=DNSQR(qname="test.org")),
+        IP(src="192.168.1.10", dst="10.10.10.10")/UDP(sport=12345, dport=53)/DNS(qd=DNSQR(qname="example.com")),
+        IP(src="192.168.1.10", dst="10.10.10.10")/UDP(sport=12346, dport=53)/DNS(qd=DNSQR(qname="test.org")),
         # Include potentially suspicious domain for testing malicious payload detection
-        IP(src="192.168.1.10", dst="8.8.8.8")/UDP(sport=12347, dport=53)/DNS(qd=DNSQR(qname="malicious-site.evil")),
+        IP(src="192.168.1.10", dst="10.10.10.10")/UDP(sport=12347, dport=53)/DNS(qd=DNSQR(qname="malicious-site.evil")),
     ]
     
     # HTTP request packets
     http_packets = [
-        IP(src="192.168.1.10", dst="93.184.216.34")/TCP(sport=45678, dport=80)/Raw(b"GET /index.html HTTP/1.1\r\nHost: example.com\r\n\r\n"),
-        IP(src="192.168.1.10", dst="93.184.216.34")/TCP(sport=45679, dport=80)/Raw(b"POST /login HTTP/1.1\r\nHost: example.com\r\nContent-Length: 25\r\n\r\nusername=admin&password=test"),
+        IP(src="192.168.1.10", dst="10.10.10.20")/TCP(sport=45678, dport=80)/Raw(b"GET /index.html HTTP/1.1\r\nHost: example.com\r\n\r\n"),
+        IP(src="192.168.1.10", dst="10.10.10.20")/TCP(sport=45679, dport=80)/Raw(b"POST /login HTTP/1.1\r\nHost: example.com\r\nContent-Length: 25\r\n\r\nusername=admin&password=test"),
         # Include SQL injection payload for testing security fuzzing
-        IP(src="192.168.1.10", dst="93.184.216.34")/TCP(sport=45680, dport=80)/Raw(b"GET /admin.php?id=1' OR '1'='1 HTTP/1.1\r\nHost: example.com\r\n\r\n"),
+        IP(src="192.168.1.10", dst="10.10.10.20")/TCP(sport=45680, dport=80)/Raw(b"GET /admin.php?id=1' OR '1'='1 HTTP/1.1\r\nHost: example.com\r\n\r\n"),
     ]
     
     # Custom UDP protocol packets

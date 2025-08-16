@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Dictionary Management for Scapy Fuzzing
+Dictionary Management for PacketFuzzing
 
 Provides dictionary mapping with support for embedded packet configuration,
 user overrides, and hierarchical fallback patterns.
@@ -401,12 +401,8 @@ class DictionaryManager:
         packet_type = type(packet).__name__
         key = f"{packet_type}.{field_name}"
         field_type, properties = self._extract_field_info(packet, field_name)
-        # Determine global mode if present in any mapping entry
+        # Use default combining mode for weights unless a per-entry mode is specified
         global_mode = "override"
-        for adv in FIELD_ADVANCED_WEIGHTS:
-            if "mode" in adv and adv["mode"] in ("override", "sum", "average", "max", "min"):
-                global_mode = adv["mode"]
-                break
         adv_result = self._resolve_advanced_weight(
             FIELD_ADVANCED_WEIGHTS,
             field_name=key,

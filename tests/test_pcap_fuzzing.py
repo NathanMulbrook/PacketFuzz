@@ -11,15 +11,12 @@ import os
 import sys
 import shutil
 from unittest.mock import patch, MagicMock
+from scapy.all import IP, UDP, TCP, Ether, Raw, wrpcap
 
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from pcapfuzz import PcapFuzzCampaign, pcap_fuzz
-from scapy.layers.inet import IP, UDP, TCP
-from scapy.layers.l2 import Ether
-from scapy.packet import Raw
-from scapy.utils import wrpcap
 from conftest import cleanup_test_files
 
 
@@ -344,7 +341,7 @@ class TestPcapFuzzIntegration(unittest.TestCase):
         # Create realistic test packets
         self.test_packets = [
             # DNS query
-            IP(src="192.168.1.10", dst="8.8.8.8")/UDP(sport=12345, dport=53)/Raw(b"\\x12\\x34\\x01\\x00\\x00\\x01test"),
+            IP(src="192.168.1.10", dst="10.10.10.10")/UDP(sport=12345, dport=53)/Raw(b"\\x12\\x34\\x01\\x00\\x00\\x01test"),
             # HTTP request  
             IP(src="192.168.1.10", dst="93.184.216.34")/TCP(sport=45678, dport=80)/Raw(b"GET /index.html HTTP/1.1\\r\\nHost: example.com\\r\\n\\r\\n"),
             # Custom UDP protocol

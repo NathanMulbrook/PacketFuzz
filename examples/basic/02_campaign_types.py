@@ -20,10 +20,10 @@ class BasicHTTPCampaign(FuzzingCampaign):
     """Basic HTTP fuzzing campaign."""
     name = "Basic HTTP Fuzzing"
     target = "192.168.1.100"
-    iterations = 5
+    iterations = 1
     output_network = False
     output_pcap = "basic_http.pcap"
-    verbose = True
+    verbose = False
     
     packet = (
         IP() /
@@ -35,11 +35,11 @@ class BasicHTTPCampaign(FuzzingCampaign):
 class BasicDNSCampaign(FuzzingCampaign):
     """Basic DNS fuzzing campaign."""
     name = "Basic DNS Fuzzing"
-    target = "8.8.8.8"
-    iterations = 5
+    target = "10.10.10.10"
+    iterations = 1
     output_network = False
     output_pcap = "basic_dns.pcap"
-    verbose = True
+    verbose = False
     
     packet = (
         IP() /
@@ -52,10 +52,10 @@ class BasicTCPCampaign(FuzzingCampaign):
     """Basic TCP port scanning campaign."""
     name = "Basic TCP Port Scan"
     target = "192.168.1.100"
-    iterations = 10
+    iterations = 1
     output_network = False
     output_pcap = "basic_tcp.pcap"
-    verbose = True
+    verbose = False
     
     packet = (
         IP() /
@@ -66,10 +66,10 @@ class MalformedPacketCampaign(FuzzingCampaign):
     """Malformed packet campaign with interface offload management."""
     name = "Malformed Packet Test"
     target = "192.168.1.100"
-    iterations = 5
+    iterations = 1
     output_network = False  # Keep disabled for safety in examples
     output_pcap = "malformed_packets.pcap"
-    verbose = True
+    verbose = False
     
     # Enable interface offload management for malformed packets
     # (Only takes effect when output_network=True and running as root)
@@ -86,7 +86,8 @@ class MalformedPacketCampaign(FuzzingCampaign):
     )
 
 # List of campaigns to run
-campaigns = [
+# Register campaigns for CLI discovery
+CAMPAIGNS = [
     BasicHTTPCampaign,
     BasicDNSCampaign,
     BasicTCPCampaign,

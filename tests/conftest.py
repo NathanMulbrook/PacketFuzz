@@ -35,10 +35,7 @@ except ImportError:
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from fuzzing_framework import FuzzingCampaign
-from scapy.layers.inet import IP, TCP, UDP
-from scapy.layers.dns import DNS, DNSQR
-from scapy.layers.l2 import Ether, ARP
-from scapy.packet import Raw
+from scapy.all import IP, TCP, UDP, DNS, DNSQR, Ether, ARP, Raw
 
 
 def cleanup_test_files():
@@ -166,7 +163,7 @@ class HTTPTestCampaign(FuzzingCampaign):
 class DNSTestCampaign(FuzzingCampaign):
     """DNS-focused test campaign"""
     name = "DNS Test Campaign"
-    target = "8.8.8.8"
+    target = "10.10.10.10"
     iterations = 5
     rate_limit = 20.0
     verbose = False
@@ -175,7 +172,7 @@ class DNSTestCampaign(FuzzingCampaign):
     
     def __init__(self):
         super().__init__()
-        self.packet = IP(dst="8.8.8.8") / UDP(dport=53) / DNS(rd=1, qd=DNSQR(qname="test.com"))
+        self.packet = IP(dst="10.10.10.10") / UDP(dport=53) / DNS(rd=1, qd=DNSQR(qname="test.com"))
         
         # Configure embedded fuzzing
         dns_layer = self.packet[DNS]
@@ -187,7 +184,7 @@ class Layer2TestCampaign(FuzzingCampaign):
     """Layer 2 test campaign"""
     name = "Layer 2 Test Campaign"
     target = "192.168.1.0/24"
-    layer = 2
+    socket_type = "l2"
     interface = "eth0"
     iterations = 3
     rate_limit = 10.0
@@ -249,6 +246,14 @@ class DictionaryTestCampaign(FuzzingCampaign):
     def __init__(self):
         super().__init__()
         self.packet = IP(dst="192.168.1.70") / TCP(dport=80)
+
+
+class DummyConftestCampaign(FuzzingCampaign):
+    name = "dummy_conftest"
+    target = "127.0.0.1"
+    output_network = False
+    def build_packets(self):
+        return [IP(dst=self.target)/UDP(dport=int(53))/Raw(load=b"test")]  # Ensure dport is int
 
 
 # Test Fixtures
@@ -344,7 +349,7 @@ def create_test_packet(packet_type: str = "tcp") -> Any:
     elif packet_type == "udp":
         return IP(dst="192.168.1.1") / UDP(dport=53)
     elif packet_type == "dns":
-        return IP(dst="8.8.8.8") / UDP(dport=53) / DNS(rd=1, qd=DNSQR(qname="test.com"))
+        return IP(dst="10.10.10.10") / UDP(dport=53) / DNS(rd=1, qd=DNSQR(qname="test.com"))
     elif packet_type == "arp":
         return Ether(dst="ff:ff:ff:ff:ff:ff") / ARP(pdst="192.168.1.1")
     else:
@@ -393,4 +398,5 @@ TEST_CAMPAIGNS = [
     PCAPTestCampaign,
     NetworkTestCampaign,
     DictionaryTestCampaign,
+    DummyConftestCampaign,
 ]

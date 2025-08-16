@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # type: ignore
 """
-Comprehensive mutator testing for Scapy Fuzzer
+Comprehensive mutator testing for PacketFuzzer
 
 Tests all mutator implementations including LibFuzzer integration,
 dictionary corpus generation, and mutation quality verification.
@@ -14,8 +14,10 @@ import shutil
 import unittest
 from unittest.mock import patch
 
-# Add the parent directory to the path
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from fuzzing_framework import FuzzingCampaign
+Campaign = FuzzingCampaign
 
 
 class TestMutatorAvailability(unittest.TestCase):
@@ -245,11 +247,21 @@ class TestScapyMutator(unittest.TestCase):
             from mutators.scapy_mutator import ScapyMutator
             mutator = ScapyMutator()
             self.assertIsNotNone(mutator)
-            # Test mutate_field returns something (should use scapy fuzz)
-            result = mutator.mutate_field(123)
+            # Test mutate_field with new typed signature returns something
+            from types import SimpleNamespace
+            field_info = SimpleNamespace(kind='numeric')
+            result = mutator.mutate_field(field_info, 123)
             self.assertIsNotNone(result)
         except ImportError as e:
             self.skipTest(f"ScapyMutator not available: {e}")
+
+
+class DummyMutatorCampaign(Campaign):
+    name = "dummy_mutator"
+    target = "127.0.0.1"
+    output_network = False
+    def build_packets(self):
+        return [IP(dst=self.target)/UDP(dport=int(53))/Raw(load=b"test")]  # Ensure dport is int
 
 
 if __name__ == '__main__':

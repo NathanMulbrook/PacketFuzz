@@ -194,18 +194,18 @@ def crash_callback(self, crash_info, context):
 
 ### Configuration Attributes
 
-| Category | Attribute | Type | Default | Description |
-|----------|-----------|------|---------|-------------|
-| **Required** | `name` | `str` | `"Unnamed Campaign"` | Campaign identifier |
-| | `target` | `str` | `"127.0.0.1"` | Target IP address |
-| **Execution** | `iterations` | `int` | `100` | Number of packets to send |
-| | `duration` | `Optional[int]` | `None` | Max execution time (seconds) |
-| | `rate_limit` | `int` | `1` | Packets per second |
-| **Output** | `output_pcap` | `Optional[str]` | `None` | Output PCAP filename |
-| | `verbose` | `bool` | `False` | Enable detailed logging |
-| | `interface` | `Optional[str]` | `None` | Network interface (Layer 2) |
-| **Safety** | `output_network` | `bool` | `False` | Actually send packets |
-| | `dry_run_mode` | `bool` | `False` | Validation only mode |
+| Category     | Attribute      | Type            | Default           | Description                                      |
+|--------------|---------------|-----------------|-------------------|--------------------------------------------------|
+| **Required** | `name`        | `str`           | `"Unnamed Campaign"` | Campaign identifier                          |
+|              | `target`      | `str`           | `"127.0.0.1"`     | Target IP address                                |
+| **Execution**| `iterations`  | `int`           | `100`             | Number of packets to send                        |
+|              | `duration`    | `Optional[int]` | `None`            | Max execution time (seconds)                     |
+|              | `rate_limit`  | `int`           | `1`               | Packets per second                               |
+| **Output**   | `output_pcap` | `Optional[str]` | `None`            | Output PCAP filename                             |
+|              | `verbose`     | `bool`          | `False`           | Enable detailed logging                          |
+|              | `interface`   | `Optional[str]` | `None`            | Network interface (Layer 2)                      |
+| **Network**  | `socket_type` | `Optional[str]` | `None`            | Socket type: `"canbus"`, `"l2"`, `"l3"`, `"udp"`, `"tcp"`; auto-detect if `None` |
+| **Safety**   | `output_network` | `bool`        | `False`           | Actually send packets                            |
 
 ### Execution Flow Diagram
 
@@ -253,9 +253,6 @@ campaign = MyCampaign()
 
 # Standard execution
 campaign.execute()
-
-# Dry run (validation only)
-campaign.dry_run()
 
 # With callback hooks
 def progress_callback(sent: int, total: int):
@@ -366,7 +363,7 @@ USER_DICTIONARY_CONFIG = {
 class WebAppCampaign(FuzzingCampaign):
     name = "Custom Dictionary Campaign"
     target = "192.168.1.100"
-    dictionary_config_file = "examples/user_dictionary_config.py"  # Campaign-specific
+    dictionary_config_file = "examples/config/user_dictionary_config.py"  # Campaign-specific
     
     packet = IP() / TCP() / HTTP() / HTTPRequest(
         Path=b"/",
@@ -393,7 +390,7 @@ class MyCampaign(FuzzingCampaign):
 #### User provided dicitonary on commandline
 This applies to all campaings that are ran
 ```bash
-packetfuzz examples/campaign_examples.py --dictionary-config examples/user_dictionary_config.py
+packetfuzz examples/basic/01_quick_start.py --dictionary-config examples/config/user_dictionary_config.py
 ```
 
 ## Weight & Priority Resolution
@@ -714,5 +711,4 @@ python tests/run_all_tests.py
 
 ### Methods
 - `campaign.execute()` - Run the campaign
-- `campaign.dry_run()` - Validate without execution
 

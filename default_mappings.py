@@ -882,8 +882,18 @@ FIELD_NAME_WEIGHTS = {
     # Protocol overhead fields - low to moderate weights
     "IP.tos": 0.2,         # Type of service - reduced from 0.4
     "IP.frag": 0.2,        # Fragmentation flags - reduced from 0.45
-    "IP.ihl": 0.1,         # IP header length critical - reduced from 0.25
-    
+    "IP.ihl": 0.05,         # IP header length critical - reduced from 0.25
+    "IP.id": 0.1,           # IP identification field - critical for fragmentation
+    "IP.ttl": 0.15,         # IP time-to-live - critical for routing
+    "IP.options": 0.05,     # IP options - rarely used, but can break parsing
+    "TCP.urgptr": 0.1,      # TCP urgent pointer - critical for some flows
+    "TCP.reserved": 0.05,   # TCP reserved bits - must be valid for parsing
+    "TCP.options": 0.05,    # TCP options - rarely used, but can break parsing
+    "ICMP.type": 0.1,       # ICMP type - critical for protocol parsing
+    "ICMP.code": 0.1,       # ICMP code - critical for protocol parsing
+    "ICMP.id": 0.1,         # ICMP identifier - critical for echo/request flows
+    "ICMP.seq": 0.1,        # ICMP sequence - critical for echo/request flows
+
     # MAC layer fields - very low weights
     "Ether.dst": 0.15,     # MAC addresses less critical in most scenarios - reduced
     "Ether.src": 0.1,      # Source MAC least important - reduced from 0.25
@@ -978,5 +988,14 @@ FIELD_ADVANCED_WEIGHTS = [
     },
     # ...add more as needed
 ]
+
+# =============================
+# Layer-based weight scaling
+# =============================
+# Scale field fuzzing weights based on how deep the layer is within the packet.
+# Outermost layers get scaled down more; the innermost layer is unscaled.
+# For a layer with K layers below it, the effective weight multiplier is
+# (LAYER_WEIGHT_SCALING ** K). Example: 0.9 means 10% reduction per deeper layer.
+LAYER_WEIGHT_SCALING: float = 0.1
 
 

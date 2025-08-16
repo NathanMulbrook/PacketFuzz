@@ -22,11 +22,13 @@ class AdvancedHTTPCampaign(FuzzingCampaign):
     """Multi-stage HTTP fuzzing with comprehensive monitoring."""
     name = "Advanced HTTP Fuzzing"
     target = "192.168.1.100"
-    iterations = 15
-    rate_limit = 2.0  # Controlled rate
+    # Keep example semantics but make validation fast and non-blocking
+    iterations = 1
+    rate_limit = None  # No artificial sleep in test/validation runs
     output_pcap = "advanced_http_complex.pcap"
-    capture_responses = True
-    verbose = True
+    capture_responses = False
+    verbose = False
+    output_network = False
     
     # Base packet for transformation
     packet = IP() / TCP() / HTTP() / HTTPRequest(Path=b"/", Method=b"GET", Host=b"target.com")
@@ -125,11 +127,13 @@ class AdvancedHTTPCampaign(FuzzingCampaign):
 class AdvancedDNSCampaign(FuzzingCampaign):
     """DNS fuzzing with response analysis and subdomain enumeration."""
     name = "Advanced DNS Fuzzing"
-    target = "8.8.8.8"
-    iterations = 12
+    target = "10.10.10.10"
+    iterations = 1
     output_pcap = "advanced_dns_complex.pcap"
-    capture_responses = True
-    verbose = True
+    capture_responses = False
+    verbose = False
+    rate_limit = None
+    output_network = False
     
     packet = IP() / UDP() / DNS(rd=1, qd=DNSQR(qname="example.com"))
     
@@ -187,9 +191,11 @@ class AdvancedMultiProtocolCampaign(FuzzingCampaign):
     """Multi-protocol campaign with protocol switching."""
     name = "Multi-Protocol Advanced"
     target = "192.168.1.100"
-    iterations = 10
+    iterations = 1
     output_pcap = "advanced_multiprotocol.pcap"
-    verbose = True
+    verbose = False
+    rate_limit = None
+    output_network = False
     
     packet = IP() / TCP() / HTTP() / HTTPRequest(Path=b"/", Method=b"GET")
     
@@ -239,61 +245,3 @@ CAMPAIGNS = [
     AdvancedDNSCampaign,
     AdvancedMultiProtocolCampaign
 ]
-def main():
-    """Run advanced campaign examples."""
-    print("=== Advanced Example 1: Complex Campaign Scenarios ===")
-    print("Demonstrates multi-stage attacks, response monitoring, and crash handling")
-    print()
-    
-    print("Advanced Features:")
-    print("   • Multi-stage attack progression")
-    print("   • Response analysis and monitoring")  
-    print("   • Crash detection and handling")
-    print("   • Protocol switching and adaptation")
-    print()
-    
-    results = []
-    for campaign_class in CAMPAIGNS:
-        campaign = campaign_class()
-        
-        print(f"Running {campaign.name}")
-        print(f"   Target: {campaign.target}")
-        print(f"   Iterations: {campaign.iterations}")
-        
-        result = campaign.execute()
-        results.append(result)
-        
-        if result:
-            print(f"   Success - {campaign.output_pcap}")
-            
-            # Show campaign-specific stats
-            if hasattr(campaign, 'discovered_ports') and campaign.discovered_ports:
-                print(f"Discovered ports: {sorted(campaign.discovered_ports)}")
-            
-            if hasattr(campaign, 'resolved_domains') and campaign.resolved_domains:
-                print(f"Resolved domains: {len(campaign.resolved_domains)}")
-            
-            if hasattr(campaign, 'vulnerability_indicators') and campaign.vulnerability_indicators:
-                print(f"Vulnerability indicators: {len(campaign.vulnerability_indicators)}")
-            
-            if hasattr(campaign, 'protocol_stats') and campaign.protocol_stats:
-                stats = [f"{k}:{v}" for k, v in campaign.protocol_stats.items() if v > 0]
-                print(f"Protocol stats: {', '.join(stats)}")
-        else:
-            print(f"   Failed")
-        print()
-    
-    success_count = sum(results)
-    print(f"Summary: {success_count}/{len(CAMPAIGNS)} campaigns successful")
-    
-    print("\nAdvanced Techniques Demonstrated:")
-    print("   • Multi-stage attack workflows")
-    print("   • Dynamic packet modification")
-    print("   • Response pattern analysis")
-    print("   • Cross-protocol fuzzing")
-    print("   • Comprehensive crash handling")
-    
-    return all(results)
-
-if __name__ == "__main__":
-    main()

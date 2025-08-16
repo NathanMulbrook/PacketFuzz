@@ -3,6 +3,7 @@ ScapyMutator: Minimal mutator that uses Scapy's built-in fuzz() function.
 """
 
 from scapy.packet import Packet, fuzz
+import random
 
 class ScapyMutator:
     """
@@ -12,8 +13,18 @@ class ScapyMutator:
         # Not meaningful for raw bytes, so just return the input
         return data
 
-    def mutate_field(self, value, field_desc=None, layer=None, dictionary_entries=None):
+    def mutate_field(self, field_info, current_value, dictionaries=None, rng: random.Random | None = None, layer: Packet | None = None):
+        """Typed mutate_field: prefers Scapy fuzz() based on value kind."""
+        kind = getattr(field_info, 'kind', 'unknown')
         try:
-            return fuzz(value)
+            if kind in ('options', 'list'):
+                base = current_value if current_value is not None else []
+                return fuzz(base)
+            if kind in ('string', 'raw'):
+                base = current_value if current_value is not None else ""
+                return fuzz(base)
+            # numeric, flags, enum (or unknown)
+            base = current_value if current_value is not None else 0
+            return fuzz(base)
         except Exception:
-            return value
+            return current_value

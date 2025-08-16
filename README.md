@@ -14,7 +14,7 @@ For detailed usage information, please see the [framework documentation](FRAMEWO
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                      SCAPY FUZZING FRAMEWORK                    │
+│                      PacketFuzzING FRAMEWORK                    │
 ├─────────────────────────────────────────────────────────────────┤
 │  CLI Interface (packetfuzz.py)                               │
 │  ├─ Campaign Discovery & Execution                             │
@@ -106,7 +106,6 @@ packetfuzz [OPTIONS] <campaign_config.py>
 
 **Common Options:**
 - `--list-campaigns`    List all campaigns in the config file and exit
-- `--dry-run`        Validate campaigns without sending packets
 - `--verbose`, `-v`    Enable verbose output
 - `--dictionary-config <file.py>` Override dictionary config for all campaigns
 - `--enable-pcap`     Enable PCAP output (default filename)
@@ -121,16 +120,19 @@ packetfuzz [OPTIONS] <campaign_config.py>
 **Examples:**
 ```bash
 # List campaigns
-packetfuzz examples/campaign_examples.py --list-campaigns
+packetfuzz examples/basic/01_quick_start.py --list-campaigns
 
 # Execute campaigns
-packetfuzz examples/campaign_examples.py
+packetfuzz examples/basic/01_quick_start.py
 
 # Use a custom dictionary config
-packetfuzz examples/campaign_examples.py --dictionary-config examples/user_dictionary_config.py
+packetfuzz examples/basic/01_quick_start.py --dictionary-config examples/config/user_dictionary_config.py
 
 # Enable PCAP output to a specific file
-packetfuzz examples/campaign_examples.py --pcap-file output.pcap
+packetfuzz examples/basic/01_quick_start.py --pcap-file output.pcap
+
+# Validate campaigns without sending packets
+packetfuzz examples/basic/01_quick_start.py --disable-network --verbose
 
 # Check component availability
 packetfuzz
@@ -146,6 +148,7 @@ class MyCampaign(FuzzingCampaign):
     target = "192.168.1.1"
     packet = IP() / TCP() / HTTP() / HTTPRequest(Path=b"/", Method=b"GET")
     iterations = 100
+    output_network = False  # Set to False for validation/no-network
 
 campaign = MyCampaign()
 campaign.execute()
@@ -184,10 +187,7 @@ campaign.execute()
 
 ```bash
 # Enable verbose logging
-packetfuzz examples/campaign_examples.py --verbose
-
-# Dry run for validation
-packetfuzz examples/campaign_examples.py --dry-run --verbose
+packetfuzz examples/basic/01_quick_start.py --verbose
 
 # Test with minimal iterations
 python -c "
@@ -195,6 +195,5 @@ from examples.campaign_examples import WebAppFuzzCampaign
 campaign = WebAppFuzzCampaign()
 campaign.iterations = 1
 campaign.verbose = True
-campaign.dry_run()
 "
 ```
