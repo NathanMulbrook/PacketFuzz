@@ -882,7 +882,7 @@ FIELD_NAME_WEIGHTS = {
     # Protocol overhead fields - low to moderate weights
     "IP.tos": 0.2,         # Type of service - reduced from 0.4
     "IP.frag": 0.2,        # Fragmentation flags - reduced from 0.45
-    "IP.ihl": 0.1,         # IP header length critical - reduced from 0.25
+    "IP.ihl": 0.05,         # IP header length critical - reduced from 0.25
     
     # MAC layer fields - very low weights
     "Ether.dst": 0.15,     # MAC addresses less critical in most scenarios - reduced
@@ -978,5 +978,14 @@ FIELD_ADVANCED_WEIGHTS = [
     },
     # ...add more as needed
 ]
+
+# =============================
+# Layer-based weight scaling
+# =============================
+# Scale field fuzzing weights based on how deep the layer is within the packet.
+# Outermost layers get scaled down more; the innermost layer is unscaled.
+# For a layer with K layers below it, the effective weight multiplier is
+# (LAYER_WEIGHT_SCALING ** K). Example: 0.9 means 10% reduction per deeper layer.
+LAYER_WEIGHT_SCALING: float = 0.9
 
 

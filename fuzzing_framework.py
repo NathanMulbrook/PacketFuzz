@@ -584,6 +584,9 @@ class FuzzingCampaign:
     
     # Mutator configuration
     mutator_preference: Optional[List[str]] = None  # Campaign mutator preference (defaults to ["libfuzzer"])
+    # Layer-weight scaling controls (campaign-level overrides)
+    enable_layer_weight_scaling: bool = True
+    layer_weight_scaling: Optional[float] = None  # None uses default from default_mappings
 
     # Optionally exclude layers from fuzzing by name (sets fuzz_weight=0.0 for those layers)
     excluded_layers: Optional[List[str]] = None
@@ -657,7 +660,9 @@ class FuzzingCampaign:
             use_dictionaries = True,
             fuzz_weight = 1.0,
             global_dict_config_path = dict_config_path,
-            mutator_preference = effective_preference
+            mutator_preference = effective_preference,
+            enable_layer_weight_scaling = getattr(self, 'enable_layer_weight_scaling', True),
+            layer_weight_scaling = getattr(self, 'layer_weight_scaling', None)
         )
         return MutatorManager(config)
 

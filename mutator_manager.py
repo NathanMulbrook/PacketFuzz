@@ -110,6 +110,9 @@ class FuzzConfig:
     fuzz_weight: float = DEFAULT_FUZZ_WEIGHT  # Probability of fuzzing a field
     simple_field_fuzz_weight: Optional[float] = None  # Probability of fuzzing simple fields
     fuzz_weight_scale: float = 1.0  # Global scaling factor for fuzz probabilities
+    # Layer-based scaling configuration (multiplier per layer distance from innermost)
+    layer_weight_scaling: Optional[float] = None  # None = use default mapping constant
+    enable_layer_weight_scaling: bool = True
     mutator_preference: List[str] = field(default_factory=lambda: ["libfuzzer"])
     global_dict_config_path: Optional[str] = None  # Path to global dictionary configuration
     rng: Optional[random.Random] = None  # Optional random generator for reproducibility
@@ -225,6 +228,16 @@ class MutatorManager:
         results: List[Packet] = []
         for _ in range(iterations):
             fuzzed_packet = copy.deepcopy(packet)
+            # Ensure the deep-copied packet does not contain FuzzField wrappers
+            # Replace any FuzzField instances on the cloned packet with a concrete
+            # value chosen by the FuzzField (or remove the attribute to let
+            # Scapy resolve defaults). This keeps the original packet's
+            # FuzzField metadata intact while ensuring the clone serializes.
+            try:
+                self._materialize_fuzzfields_on_clone(fuzzed_packet)
+            except Exception:
+                # Best-effort: do not fail fuzzing if materialization has issues
+                logger.debug("Failed to materialize FuzzField instances on packet clone")
             # Build candidate field list: either a single named field or all fields in all layers
             if field_name:
                 candidate_fields = [(layer, layer.get_field(field_name), field_name)]
@@ -394,11 +407,11 @@ class MutatorManager:
         # Fallback: any available
         return self.scapy_mutator or self.dictionary_only_mutator or self.libfuzzer_mutator
 
-    def _mutate_with_retries(self, field_info: FieldInfo, layer: Packet, fname: str,
-                              current_value: Any, dictionaries: List[bytes], fuzzfield_config: Dict[str, Any]) -> bool:
+    def _mutate_with_retries(self, field_info, layer, fname,
+                              current_value, dictionaries, fuzzfield_config):
         attempts = 0
         max_attempts = 3
-        last_err: Any = None
+        last_err = None
 
         while attempts < max_attempts:
             attempts += 1
@@ -412,7 +425,7 @@ class MutatorManager:
 
                 mutated_value = None
                 if mutator and hasattr(mutator, 'mutate_field'):
-                    mutated_value = mutator.mutate_field(field_info, current_value, dictionaries, self.config.rng, layer)
+                    mutated_value = mutator.mutate_field(field_info, current_value, dictionaries, self.config.rng, layer)  # type: ignore
                 else:
                     mutated_value = current_value
 
@@ -424,7 +437,7 @@ class MutatorManager:
 
         layer_name = getattr(layer, 'name', layer.__class__.__name__)
         logger.warning(f"[FUZZ] Field mutation failed after {attempts} attempts: {layer_name}.{fname}: {last_err}")
-        key: Tuple[str, str] = (layer_name, fname)
+        key = (layer_name, fname)
         self.field_mutation_failures[key] = self.field_mutation_failures.get(key, 0) + 1
         # Revert to original when available; else drop attr to let Scapy resolve defaults
         try:
@@ -651,8 +664,33 @@ class MutatorManager:
                 return self.dictionary_manager.get_dictionary_entries(dictionary_paths)
             except FileNotFoundError:
                 return []
-            except Exception:
-                return []
+
+    def _materialize_fuzzfields_on_clone(self, packet_clone: Packet) -> None:
+        """
+        Remove or replace FuzzField attributes on the cloned packet's layers.
+        If a FuzzField is found, set the field to its chosen value, or delete the attribute if None.
+        """
+        try:
+            from fuzzing_framework import FuzzField as _FuzzField
+        except Exception:
+            return
+        cursor = packet_clone
+        from scapy.packet import NoPayload
+        while cursor is not None and not isinstance(cursor, NoPayload):
+            for desc in getattr(cursor, 'fields_desc', []):
+                fname = getattr(desc, 'name', None)
+                if not fname:
+                    continue
+                val = getattr(cursor, fname, None)
+                if isinstance(val, _FuzzField):
+                    chosen = val.choose_value()
+                    if chosen is None:
+                        # Remove attribute so Scapy resolves default
+                        if hasattr(cursor, fname):
+                            delattr(cursor, fname)
+                    else:
+                        setattr(cursor, fname, chosen)
+            cursor = getattr(cursor, 'payload', None)
 
     # =========================
     # Mutation Logic
@@ -664,8 +702,34 @@ class MutatorManager:
     def _should_skip_field(self, layer, field_desc, field_name: Optional[str] = None) -> bool:
         """Determine if a field should be skipped during fuzzing, using resolved weight logic for all fields (simple and complex)."""
         # All fields use advanced mapping/override logic for weight
-        weight = self.dictionary_manager.get_field_weight(layer, field_name or getattr(field_desc, 'name', ''))
-        return not MutatorManager.should_fuzz(weight, self.config.rng)
+        base_weight = self.dictionary_manager.get_field_weight(layer, field_name or getattr(field_desc, 'name', ''))
+
+        # Optional: apply layer-based scaling so outer layers are fuzzed less when deeper layers exist
+        effective_weight = base_weight
+        try:
+            if getattr(self.config, 'enable_layer_weight_scaling', True):
+                # Determine depth: number of layers from current to innermost
+                # Innermost layer should not be scaled at all (exponent 0)
+                from scapy.packet import NoPayload
+                # Walk to count remaining payload chain from current layer
+                depth_below = 0
+                cursor = layer
+                while hasattr(cursor, 'payload') and not isinstance(cursor.payload, NoPayload):
+                    depth_below += 1
+                    cursor = cursor.payload
+                # Load scaling factor: campaign override via config or default mapping constant
+                try:
+                    from default_mappings import LAYER_WEIGHT_SCALING as DEFAULT_LAYER_SCALING
+                except Exception:
+                    DEFAULT_LAYER_SCALING = 0.9
+                scale = self.config.layer_weight_scaling if (self.config.layer_weight_scaling is not None) else DEFAULT_LAYER_SCALING
+                # Apply scaling: base * (scale ** depth_below). If depth_below==0 (innermost), multiplier=1.0
+                if isinstance(scale, (int, float)) and scale > 0:
+                    effective_weight = base_weight * (float(scale) ** int(max(depth_below, 0)))
+        except Exception:
+            effective_weight = base_weight
+
+        return not MutatorManager.should_fuzz(effective_weight, self.config.rng)
 
     @staticmethod
     def should_fuzz(resolved_weight: float, rng: Optional[random.Random] = None) -> bool:
