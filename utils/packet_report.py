@@ -46,6 +46,23 @@ def write_campaign_summary(
             campaign_name = getattr(campaign, "name", None) or campaign.__class__.__name__
             target = getattr(campaign, "target", None)
             verbose = getattr(campaign, "verbose", False)
+            # Base packet definition summary (repr and summary)
+            base_pkt = None
+            try:
+                base_pkt = campaign.get_packet_with_embedded_config() if hasattr(campaign, 'get_packet_with_embedded_config') else getattr(campaign, 'packet', None)
+            except Exception:
+                base_pkt = getattr(campaign, 'packet', None)
+            base_pkt_summary = None
+            base_pkt_repr = None
+            if base_pkt is not None:
+                try:
+                    base_pkt_summary = base_pkt.summary()
+                except Exception:
+                    base_pkt_summary = "(summary failed)"
+                try:
+                    base_pkt_repr = repr(base_pkt)
+                except Exception:
+                    base_pkt_repr = "(repr failed)"
 
         # Decide output path
         if not file_path:
@@ -70,6 +87,31 @@ def write_campaign_summary(
         if stats:
             # Include raw stats for completeness
             lines.append(f"- Raw stats: {stats}")
+        # Mutator usage (if available)
+        try:
+            # Mutator usage can be stored on the campaign context (if fuzzer exposed it)
+            mutator_usage = getattr(campaign_context, 'mutator_usage', None)
+            if not mutator_usage and hasattr(campaign, 'last_fuzzer'):
+                mutator_usage = getattr(getattr(campaign, 'last_fuzzer'), 'mutator_usage_counts', None)
+            if mutator_usage:
+                lines.append("")
+                lines.append("## Mutator Usage")
+                # Sort by count desc
+                for k, v in sorted(dict(mutator_usage).items(), key=lambda kv: kv[1], reverse=True):
+                    lines.append(f"- {k}: {v}")
+        except Exception:
+            pass
+        # Base packet details (concise)
+        if 'base_pkt_summary' in locals() or 'base_pkt_repr' in locals():
+            lines.append("")
+            lines.append("## Base Packet")
+            if base_pkt_summary:
+                lines.append(f"- Summary: {base_pkt_summary}")
+            if base_pkt_repr:
+                lines.append("- Definition:")
+                lines.append("```python")
+                lines.append(base_pkt_repr)
+                lines.append("```")
         if extra:
             lines.append("")
             lines.append("## Extra")
@@ -81,38 +123,54 @@ def write_campaign_summary(
 
         logger.info(f"Campaign summary written to {file_path}")
 
-        # If verbose, write packet reports for failed serializations
-        if verbose and campaign_context is not None and hasattr(campaign_context, "fuzz_history"):
-            failed_packets = []
-            for entry in getattr(campaign_context, "fuzz_history", []):
-                # Heuristic: failed serialization if entry.packet is not None and entry.crashed is False and entry.response is None and entry.iteration >= 0 and (entry.packet and not hasattr(entry.packet, "__len__"))
-                # But best: if we can mark failed serializations in history, or if campaign_context has a list of failed packets
-                # For now, collect all packets where entry.packet is not None and entry.crashed is False and entry.response is None
-                # (user can refine this logic as needed)
-                if entry.packet is not None and getattr(entry, "crashed", False) is False and getattr(entry, "response", None) is None:
-                    failed_packets.append((entry.iteration, entry.packet))
-            # If campaign_context has fuzz_history_errors, use that
-            if hasattr(campaign_context, "fuzz_history_errors") and getattr(campaign_context, "fuzz_history_errors"):
-                for idx, pkt in enumerate(getattr(campaign_context, "fuzz_history_errors")):
-                    failed_packets.append((idx, pkt))
-            # Write reports
-            for idx, pkt in failed_packets:
+        # If verbose, consolidate serialization failure reports into one file with a summary
+        if verbose and campaign_context is not None:
+            failed: List[tuple[int, Any, Optional[str]]] = []  # (iteration, packet, error_str)
+            # Prefer explicit error list if provided
+            if hasattr(campaign_context, "serialize_failures"):
                 try:
-                    if pkt is None:
-                        continue
-                    fail_path = f"{log_dir}/serialize_failure_iter_{idx}.txt"
-                    write_packet_report(
-                        packet=pkt,
-                        file_path=fail_path,
-                        mode="w",
-                        metadata={
-                            "reason": "serialization_failure",
-                            "iteration": idx,
-                        },
-                        campaign_context=campaign_context,
-                    )
+                    for item in getattr(campaign_context, "serialize_failures") or []:
+                        # item: dict with keys iteration, packet, error
+                        it = int(item.get('iteration', -1))
+                        pkt = item.get('packet')
+                        err = str(item.get('error')) if item.get('error') is not None else None
+                        failed.append((it, pkt, err))
+                except Exception:
+                    pass
+            # Fallbacks from history
+            if hasattr(campaign_context, "fuzz_history_errors"):
+                for idx, pkt in enumerate(getattr(campaign_context, "fuzz_history_errors") or []):
+                    failed.append((idx, pkt, None))
+            # Single consolidated file
+            if failed:
+                summary_path = f"{log_dir}/serialize_failures.txt"
+                try:
+                    with open(summary_path, "w", encoding="utf-8") as sf:
+                        sf.write("# Serialization Failures Summary\n\n")
+                        # Group by error message
+                        from collections import Counter
+                        errors = [err or "(unspecified error)" for (_, __, err) in failed]
+                        counts = Counter(errors)
+                        for err, cnt in counts.most_common():
+                            sf.write(f"- {err}: {cnt}\n")
+                        sf.write("\n---\n\n")
+                        # Append individual packet sections
+                        for it, pkt, err in failed:
+                            if pkt is None:
+                                continue
+                            meta = {"reason": "serialization_failure", "iteration": it}
+                            if err:
+                                meta["error"] = err
+                            # Append per-packet report into same file
+                            write_packet_report(
+                                packet=pkt,
+                                file_path=summary_path,
+                                mode="a",
+                                metadata=meta,
+                                campaign_context=campaign_context,
+                            )
                 except Exception as log_e:
-                    logger.warning(f"Failed to write serialize failure report: {log_e}")
+                    logger.warning(f"Failed to write consolidated serialize failure report: {log_e}")
 
         return file_path
     except Exception as e:

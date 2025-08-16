@@ -771,6 +771,11 @@ class FuzzingCampaign:
 
             # Create fuzzer
             fuzzer = self.create_fuzzer()
+            # Expose fuzzer for reporting (mutator usage counts)
+            try:
+                self.last_fuzzer = fuzzer
+            except Exception:
+                pass
 
             # Get packet with embedded config
             packet = self.get_packet_with_embedded_config()
@@ -1081,6 +1086,14 @@ class FuzzingCampaign:
                             try:
                                 if self.context is not None:
                                     self.context.fuzz_history_errors.append(pkt)
+                                    # Also collect structured failure info for consolidated summary
+                                    if not hasattr(self.context, 'serialize_failures'):
+                                        self.context.serialize_failures = []  # type: ignore[attr-defined]
+                                    self.context.serialize_failures.append({  # type: ignore[attr-defined]
+                                        'iteration': itteration,
+                                        'packet': pkt,
+                                        'error': str(e)
+                                    })
                             except Exception:
                                 pass
 

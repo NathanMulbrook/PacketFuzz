@@ -172,6 +172,27 @@ class MutatorManager:
             self.scapy_mutator = None
         # Track per-field mutation failures for reporting/analysis
         self.field_mutation_failures: Dict[Tuple[str, str], int] = {}
+        # Track mutator usage counts for reporting
+        self.mutator_usage_counts: Dict[str, int] = {}
+
+    def _record_mutator_usage(self, mutator_obj: Any) -> None:
+        try:
+            name = None
+            if mutator_obj is None:
+                name = "none"
+            else:
+                cls_name = mutator_obj.__class__.__name__.lower()
+                if "dictionary" in cls_name and "only" in cls_name:
+                    name = "dictionary_only"
+                elif "libfuzzer" in cls_name:
+                    name = "libfuzzer"
+                elif "scapy" in cls_name:
+                    name = "scapy"
+                else:
+                    name = cls_name
+            self.mutator_usage_counts[name] = self.mutator_usage_counts.get(name, 0) + 1
+        except Exception:
+            pass
 
     
     def set_global_dictionary_config(self, config_path: str) -> None:
@@ -403,9 +424,14 @@ class MutatorManager:
             elif mval == 'scapy' and self.scapy_mutator:
                 mutator_candidates.append(self.scapy_mutator)
         if mutator_candidates:
-            return random.choice(mutator_candidates)
+            chosen = random.choice(mutator_candidates)
+            # Record chosen mutator usage for reporting
+            self._record_mutator_usage(chosen)
+            return chosen
         # Fallback: any available
-        return self.scapy_mutator or self.dictionary_only_mutator or self.libfuzzer_mutator
+        chosen = self.scapy_mutator or self.dictionary_only_mutator or self.libfuzzer_mutator
+        self._record_mutator_usage(chosen)
+        return chosen
 
     def _mutate_with_retries(self, field_info, layer, fname,
                               current_value, dictionaries, fuzzfield_config):
@@ -566,6 +592,11 @@ class MutatorManager:
         else:
             # Simple fallback order
             mutator = self.libfuzzer_mutator or self.dictionary_only_mutator or self.scapy_mutator
+        # Record usage of selected mutator
+        try:
+            self._record_mutator_usage(mutator)
+        except Exception:
+            pass
         
         for _ in range(iterations):
             # Convert packet to bytes
