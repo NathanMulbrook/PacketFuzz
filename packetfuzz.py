@@ -164,6 +164,15 @@ def apply_cli_overrides(campaign, args):
     # Verbose
     if hasattr(campaign, 'verbose'):
         campaign.verbose = args.verbose
+    # Set root logger level based on verbosity so all module loggers inherit
+    import logging
+    # 0 = WARNING, 1 = INFO, 2+ = DEBUG
+    if args.verbose >= 2:
+        logging.getLogger().setLevel(logging.DEBUG)
+    elif args.verbose == 1:
+        logging.getLogger().setLevel(logging.INFO)
+    else:
+        logging.getLogger().setLevel(logging.WARNING)
 
 
 # ===========================
@@ -182,10 +191,11 @@ def main():
         help="Path to campaign configuration file"
     )
     parser.add_argument(
-        "--verbose",
         "-v",
-        action="store_true",
-        help="Enable verbose output."
+        "--verbose",
+        action="count",
+        default=0,
+        help="Increase verbosity (e.g., -v, -vv, -vvv, up to -vvvvvv for max debug)."
     )
     parser.add_argument(
         "--list-campaigns",

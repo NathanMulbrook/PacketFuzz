@@ -31,7 +31,10 @@ except ImportError:
     DEFAULT_LOG_DIR = "logs"
 from utils.packet_report import write_packet_report
 
+
 logger = logging.getLogger(__name__)
+# Verbosity levels: 0=quiet, 1=normal, 2=verbose, 3=debug
+VERBOSITY_LEVEL = 1  # Default; can be set by campaign or CLI
 
 # Import FuzzField for direct handling
 try:
@@ -319,21 +322,28 @@ class MutatorManager:
         # Extract FuzzField configuration if present in the field value (for dictionaries only)
         raw_field_value = getattr(layer, fname, None)
         fuzzfield_config = self._extract_fuzzfield_config(raw_field_value)
+        # List of critical fields to track
+        CRITICAL_FIELDS = {'ihl', 'len', 'chksum', 'dataofs', 'sport', 'dport', 'seq', 'ack', 'flags', 'window', 'src', 'dst'}
         if fuzzfield_config['is_fuzzfield']:
             # Remove the FuzzField wrapper to avoid leaking into Scapy
             try:
                 delattr(layer, fname)
+                if fname in CRITICAL_FIELDS:
+                    logger.debug(f"[DEBUG] Unset {layer.__class__.__name__}.{fname} via delattr (FuzzField removal)")
             except Exception:
-                setattr(layer, fname, None)
-
+                if fname in CRITICAL_FIELDS:
+                    logger.debug(f"[DEBUG] Failed to unset {layer.__class__.__name__}.{fname} via delattr (FuzzField removal)")
         # Apply field weighting and exclusion logic
         # Priority order: 1) Campaign/dictionary values 2) FuzzField values 3) Let Scapy resolve
         if self._should_skip_field(layer, field_desc, fname):
             # If skipping fuzz, prefer letting Scapy resolve by deleting the attr
             try:
                 delattr(layer, fname)
+                if fname in CRITICAL_FIELDS:
+                    logger.debug(f"[DEBUG] Unset {layer.__class__.__name__}.{fname} via delattr (skip logic)")
             except Exception:
-                setattr(layer, fname, None)
+                if fname in CRITICAL_FIELDS:
+                    logger.debug(f"[DEBUG] Failed to unset {layer.__class__.__name__}.{fname} via delattr (skip logic)")
             return False
 
         # Type-aware mutation using FieldInfo + mutate_field API
@@ -356,13 +366,18 @@ class MutatorManager:
             except Exception:
                 pick = explicit_values[0]
             if self._validate_and_assign(field_info, pick, layer, fname):
+                if fname in CRITICAL_FIELDS:
+                    logger.debug(f"[DEBUG] Assigned {layer.__class__.__name__}.{fname} to {pick} (explicit value)")
                 return True
             # If the explicit pick fails validation/assignment, fall back to mutation path
 
         # 2) Mutator-based generation with retries
         dictionaries = self._get_field_dictionary_entries(fuzzfield_config, fname, field_desc, layer)
         current_value = None if (FuzzField is not None and isinstance(raw_field_value, FuzzField)) else raw_field_value
-        return self._mutate_with_retries(field_info, layer, fname, current_value, dictionaries, fuzzfield_config)
+        result = self._mutate_with_retries(field_info, layer, fname, current_value, dictionaries, fuzzfield_config)
+        if fname in CRITICAL_FIELDS:
+            logger.debug(f"[DEBUG] Mutate with retries result for {layer.__class__.__name__}.{fname}: {getattr(layer, fname, None)}")
+        return result
 
     # --- Helper: FieldInfo ---
     def _build_field_info(self, layer: Packet, field_desc: Field, fname: str) -> FieldInfo:
@@ -469,11 +484,16 @@ class MutatorManager:
         try:
             if current_value is not None:
                 setattr(layer, fname, current_value)
+                if fname in CRITICAL_FIELDS:
+                    logger.debug(f"[DEBUG] Set {layer.__class__.__name__}.{fname} to {current_value} via setattr (mutation fallback)")
             else:
                 try:
                     delattr(layer, fname)
+                    if fname in CRITICAL_FIELDS:
+                        logger.debug(f"[DEBUG] Unset {layer.__class__.__name__}.{fname} via delattr (mutation fallback)")
                 except Exception:
-                    setattr(layer, fname, None)
+                    if fname in CRITICAL_FIELDS:
+                        logger.debug(f"[DEBUG] Failed to unset {layer.__class__.__name__}.{fname} via delattr (mutation fallback)")
         except Exception:
             pass
         return False
@@ -719,8 +739,12 @@ class MutatorManager:
                         # Remove attribute so Scapy resolves default
                         if hasattr(cursor, fname):
                             delattr(cursor, fname)
+                            if fname == 'ihl':
+                                logger.debug(f"[DEBUG] Unset IP.ihl via delattr (materialize) on layer {getattr(cursor, 'name', type(cursor).__name__)}")
                     else:
                         setattr(cursor, fname, chosen)
+                        if fname == 'ihl':
+                            logger.debug(f"[DEBUG] Set IP.ihl to {chosen} via setattr (materialize) on layer {getattr(cursor, 'name', type(cursor).__name__)}")
             cursor = getattr(cursor, 'payload', None)
 
     # =========================
@@ -757,7 +781,9 @@ class MutatorManager:
                 # Apply scaling: base * (scale ** depth_below). If depth_below==0 (innermost), multiplier=1.0
                 if isinstance(scale, (int, float)) and scale > 0:
                     effective_weight = base_weight * (float(scale) ** int(max(depth_below, 0)))
-        except Exception:
+                logger.debug(f"LayerWeightScaling: layer={getattr(layer, 'name', type(layer).__name__)}, field={field_name}, base_weight={base_weight}, depth_below={depth_below}, scale={scale}, effective_weight={effective_weight}")
+        except Exception as e:
+            logger.debug(f"LayerWeightScaling: Exception for layer={getattr(layer, 'name', type(layer).__name__)}, field={field_name}: {e}")
             effective_weight = base_weight
 
         return not MutatorManager.should_fuzz(effective_weight, self.config.rng)

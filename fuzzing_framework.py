@@ -1193,7 +1193,8 @@ class FuzzingCampaign:
                     self.context.stats['serialize_failure_count'] = serialize_failure_count
                 
                 # Rate limiting
-                if self.rate_limit:
+                # Only apply rate limiting if network sending is enabled
+                if self.rate_limit and network_enabled:
                     time.sleep(1.0 / self.rate_limit)
             
             
