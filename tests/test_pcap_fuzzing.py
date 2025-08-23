@@ -55,17 +55,18 @@ class TestPcapFuzzCampaign(unittest.TestCase):
         # Check default values
         self.assertEqual(campaign.pcap_folder, "regression_samples/")
         self.assertEqual(campaign.fuzz_mode, "field")
-        self.assertIsNone(campaign.extract_layer)
-        self.assertIsNone(campaign.repackage_in)
+        self.assertIsNone(campaign.extract_at_layer)
+        self.assertIsNone(campaign.repackage_template)
         self.assertEqual(campaign.target, "192.168.1.100")
     
     def test_layer_extraction_udp(self):
         """Test UDP layer extraction."""
         campaign = PcapFuzzCampaign()
+        campaign.extract_at_layer = "UDP"
         
         # Test UDP extraction
         udp_packet = IP()/UDP(dport=53)/Raw(b"test data")
-        extracted = campaign._extract_layer(udp_packet, "UDP")
+        extracted = campaign._extract_layers(udp_packet)
         
         self.assertIsNotNone(extracted)
         self.assertIsInstance(extracted, Raw)
@@ -75,10 +76,11 @@ class TestPcapFuzzCampaign(unittest.TestCase):
     def test_layer_extraction_tcp(self):
         """Test TCP layer extraction."""
         campaign = PcapFuzzCampaign()
+        campaign.extract_at_layer = "TCP"
         
         # Test TCP extraction  
         tcp_packet = IP()/TCP(dport=80)/Raw(b"HTTP data")
-        extracted = campaign._extract_layer(tcp_packet, "TCP")
+        extracted = campaign._extract_layers(tcp_packet)
         
         self.assertIsNotNone(extracted)
         self.assertIsInstance(extracted, Raw)
@@ -88,37 +90,41 @@ class TestPcapFuzzCampaign(unittest.TestCase):
     def test_layer_extraction_ip(self):
         """Test IP layer extraction."""
         campaign = PcapFuzzCampaign()
+        campaign.extract_at_layer = "IP"
         
         # Test IP extraction
         eth_packet = Ether()/IP(dst="10.0.0.1")/UDP()/Raw(b"data")
-        extracted = campaign._extract_layer(eth_packet, "IP")
+        extracted = campaign._extract_layers(eth_packet)
         
         self.assertIsNotNone(extracted)
-        self.assertIsInstance(extracted, IP)
+        self.assertIsInstance(extracted, UDP)
         if extracted:  # Type guard
             self.assertTrue(extracted.haslayer(UDP))
-            self.assertEqual(extracted[IP].dst, "10.0.0.1")
+            self.assertTrue(extracted.haslayer(Raw))
     
     def test_layer_extraction_ethernet(self):
         """Test Ethernet layer extraction."""
         campaign = PcapFuzzCampaign()
+        campaign.extract_at_layer = "Ethernet"
         
         # Test Ethernet extraction
         eth_packet = Ether(dst="aa:bb:cc:dd:ee:ff")/IP()/UDP()
-        extracted = campaign._extract_layer(eth_packet, "Ethernet")
+        extracted = campaign._extract_layers(eth_packet)
         
         self.assertIsNotNone(extracted)
-        self.assertIsInstance(extracted, Ether)
+        self.assertIsInstance(extracted, IP)
         if extracted:  # Type guard
-            self.assertEqual(extracted[Ether].dst, "aa:bb:cc:dd:ee:ff")
+            self.assertTrue(extracted.haslayer(IP))
+            self.assertTrue(extracted.haslayer(UDP))
     
     def test_layer_extraction_not_found(self):
         """Test layer extraction when layer is not present."""
         campaign = PcapFuzzCampaign()
+        campaign.extract_at_layer = "TCP"
         
         # Test non-existent layer
         ip_packet = IP()/UDP()
-        extracted = campaign._extract_layer(ip_packet, "TCP")
+        extracted = campaign._extract_layers(ip_packet)
         
         self.assertIsNone(extracted)
     
@@ -128,7 +134,8 @@ class TestPcapFuzzCampaign(unittest.TestCase):
         campaign.target = "192.168.1.200"
         
         payload = Raw(b"test payload")
-        repackaged = campaign._repackage_payload(payload, "IP/UDP")
+        template = IP(dst="192.168.1.200")/UDP(dport=80)
+        repackaged = campaign._repackage_payload(payload, template)
         
         self.assertTrue(repackaged.haslayer(IP))
         self.assertTrue(repackaged.haslayer(UDP))
@@ -142,7 +149,8 @@ class TestPcapFuzzCampaign(unittest.TestCase):
         campaign.target = "10.0.0.1"
         
         payload = Raw(b"http data")
-        repackaged = campaign._repackage_payload(payload, "IP/TCP")
+        template = IP(dst="10.0.0.1")/TCP(dport=80)
+        repackaged = campaign._repackage_payload(payload, template)
         
         self.assertTrue(repackaged.haslayer(IP))
         self.assertTrue(repackaged.haslayer(TCP))
@@ -156,18 +164,19 @@ class TestPcapFuzzCampaign(unittest.TestCase):
         campaign.target = "172.16.0.1"
         
         payload = Raw(b"raw data")
-        repackaged = campaign._repackage_payload(payload, "IP")
+        template = IP(dst="172.16.0.1")
+        repackaged = campaign._repackage_payload(payload, template)
         
         self.assertTrue(repackaged.haslayer(IP))
         self.assertEqual(repackaged[IP].dst, "172.16.0.1")
         self.assertEqual(bytes(repackaged[Raw]), b"raw data")
     
     def test_repackage_payload_no_wrapper(self):
-        """Test payload repackaging with unknown wrapper."""
+        """Test payload repackaging with no template."""
         campaign = PcapFuzzCampaign()
         
         payload = Raw(b"unchanged")
-        repackaged = campaign._repackage_payload(payload, "UNKNOWN")
+        repackaged = campaign._repackage_payload(payload, None)
         
         self.assertEqual(repackaged, payload)
     
@@ -205,7 +214,7 @@ class TestPcapFuzzCampaign(unittest.TestCase):
     def test_process_packet_with_extraction(self):
         """Test packet processing with layer extraction."""
         campaign = PcapFuzzCampaign()
-        campaign.extract_layer = "UDP"
+        campaign.extract_at_layer = "UDP"
         
         original = IP()/UDP()/Raw(b"extracted data")
         processed = campaign._process_packet(original)
@@ -218,8 +227,8 @@ class TestPcapFuzzCampaign(unittest.TestCase):
     def test_process_packet_with_repackaging(self):
         """Test packet processing with repackaging."""
         campaign = PcapFuzzCampaign()
-        campaign.extract_layer = "UDP"
-        campaign.repackage_in = "IP/UDP"
+        campaign.extract_at_layer = "UDP"
+        campaign.repackage_template = IP(dst="10.0.0.1")/UDP()
         campaign.target = "10.0.0.1"
         
         original = IP()/UDP()/Raw(b"test")
@@ -234,7 +243,7 @@ class TestPcapFuzzCampaign(unittest.TestCase):
     def test_process_packet_extraction_fails(self):
         """Test packet processing when extraction fails."""
         campaign = PcapFuzzCampaign()
-        campaign.extract_layer = "TCP"  # Not present in UDP packet
+        campaign.extract_at_layer = "TCP"  # Not present in UDP packet
         
         original = IP()/UDP()/Raw(b"data")
         processed = campaign._process_packet(original)
@@ -297,12 +306,12 @@ class TestPcapFuzzStandalone(unittest.TestCase):
         mock_campaign.execute.return_value = True
         mock_campaign_class.return_value = mock_campaign
         
-        result = pcap_fuzz(self.temp_dir, extract_layer="UDP")
+        result = pcap_fuzz(self.temp_dir, extract_at_layer="UDP")
         
         # Verify campaign was configured correctly
         mock_campaign_class.assert_called_once()
         self.assertEqual(mock_campaign.pcap_folder, self.temp_dir)
-        self.assertEqual(mock_campaign.extract_layer, "UDP")
+        self.assertEqual(mock_campaign.extract_at_layer, "UDP")
         mock_campaign.execute.assert_called_once()
         self.assertTrue(result)
     
@@ -315,7 +324,7 @@ class TestPcapFuzzStandalone(unittest.TestCase):
         
         result = pcap_fuzz(
             self.temp_dir,
-            extract_layer="TCP",
+            extract_at_layer="TCP",
             fuzz_mode="binary",
             target="10.0.0.1",
             iterations=50
@@ -323,7 +332,7 @@ class TestPcapFuzzStandalone(unittest.TestCase):
         
         # Verify all attributes were set
         self.assertEqual(mock_campaign.pcap_folder, self.temp_dir)
-        self.assertEqual(mock_campaign.extract_layer, "TCP")
+        self.assertEqual(mock_campaign.extract_at_layer, "TCP")
         self.assertEqual(mock_campaign.fuzz_mode, "binary")
         self.assertEqual(mock_campaign.target, "10.0.0.1")
         self.assertEqual(mock_campaign.iterations, 50)
@@ -373,8 +382,8 @@ class TestPcapFuzzIntegration(unittest.TestCase):
         """Test UDP payload extraction integration."""
         campaign = PcapFuzzCampaign()
         campaign.pcap_folder = self.temp_dir
-        campaign.extract_layer = "UDP"
-        campaign.repackage_in = "IP/UDP"
+        campaign.extract_at_layer = "UDP"
+        campaign.repackage_template = IP()/UDP()
         campaign.fuzz_mode = "none"
         campaign.output_network = False
         campaign.verbose = False
@@ -392,8 +401,8 @@ class TestPcapFuzzIntegration(unittest.TestCase):
         """Test TCP payload extraction integration."""
         campaign = PcapFuzzCampaign()
         campaign.pcap_folder = self.temp_dir
-        campaign.extract_layer = "TCP"
-        campaign.repackage_in = "IP/TCP"
+        campaign.extract_at_layer = "TCP"
+        campaign.repackage_template = IP()/TCP()
         campaign.fuzz_mode = "none"
         campaign.output_network = False
         campaign.verbose = False

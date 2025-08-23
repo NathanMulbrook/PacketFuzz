@@ -276,22 +276,32 @@ class MutatorManager:
             # Fuzz all candidate fields, but always ensure at least one is fuzzed
             fuzzed_any = False
             attempt_no = 0
-            # attempt to ensure that at least one field is fuzze, but if all layers have weights set to 0 we dont want to fuzz
+            
+            # Check if layer weight scaling is enabled and aggressive (< 0.5)
+            # If so, respect the user's intent for less fuzzing and disable retries entirely
+            layer_scaling_enabled = getattr(self.config, 'enable_layer_weight_scaling', True)
+            scaling_factor = self.config.layer_weight_scaling if (self.config.layer_weight_scaling is not None) else None
+            if scaling_factor is None:
+                try:
+                    from default_mappings import LAYER_WEIGHT_SCALING as DEFAULT_LAYER_SCALING
+                except Exception:
+                    DEFAULT_LAYER_SCALING = 0.9
+                scaling_factor = DEFAULT_LAYER_SCALING
+            
+            # If layer scaling is aggressive (< 0.5), disable retries entirely to respect scaling intent
+            use_retries = not (layer_scaling_enabled and scaling_factor < 0.5)
+            max_attempts = 4 if use_retries else 1
+            
+            # attempt to ensure that at least one field is fuzzed, but if all layers have weights set to 0 we dont want to fuzz
             # Rather than checking all the weights to see if if they are 0, we just try a few times if nothing is fuzzed
             # The assumption is that if any field is allowed to be fuzzed then at least one will be after a few attempts
-            # 4 attempts was chosen as a good default, this may need adjusted later
-            # with the way this is now handled we can probably remove the FORCE_FUZZ constant, but for now its fine to leave
-            while not fuzzed_any and attempt_no < 4:
+            # When layer weight scaling is aggressive (< 0.5), we disable retries entirely to respect the user's intent
+            while not fuzzed_any and attempt_no < max_attempts:
                 for idx, (layer, field_desc, fname) in enumerate(candidate_fields):
-                    # Only force fuzz the first field if none have been fuzzed yet
-                    if not fuzzed_any or idx == 0:
-                        fuzzed = self._fuzz_field_in_layer(layer, field_desc, fname, merged_field_mapping)
-                        fuzzed_any = True if fuzzed else fuzzed_any
-                    else:
-                        fuzzed = self._fuzz_field_in_layer(layer, field_desc, fname, merged_field_mapping)
-                        fuzzed_any = True if fuzzed else fuzzed_any
-                if not FORCE_FUZZ:
-                    # Only attempt to fuzz the packet once if force fuzz is not set
+                    fuzzed = self._fuzz_field_in_layer(layer, field_desc, fname, merged_field_mapping)
+                    fuzzed_any = True if fuzzed else fuzzed_any
+                if not FORCE_FUZZ or not use_retries:
+                    # Only attempt to fuzz the packet once if force fuzz is not set or retries are disabled
                     break
                 attempt_no += 1
             results.append(fuzzed_packet)
@@ -335,17 +345,8 @@ class MutatorManager:
                     logger.debug(f"[DEBUG] Failed to unset {layer.__class__.__name__}.{fname} via delattr (FuzzField removal)")
         # Apply field weighting and exclusion logic
         # Priority order: 1) Campaign/dictionary values 2) FuzzField values 3) Let Scapy resolve
-        if self._should_skip_field(layer, field_desc, fname):
-            # If skipping fuzz, prefer letting Scapy resolve by deleting the attr
-            try:
-                delattr(layer, fname)
-                if fname in CRITICAL_FIELDS:
-                    logger.debug(f"[DEBUG] Unset {layer.__class__.__name__}.{fname} via delattr (skip logic)")
-            except Exception:
-                if fname in CRITICAL_FIELDS:
-                    logger.debug(f"[DEBUG] Failed to unset {layer.__class__.__name__}.{fname} via delattr (skip logic)")
-            return False
-
+        # NOTE: Weight check moved below dictionary value retrieval to apply scaling to all fields
+        
         # Type-aware mutation using FieldInfo + mutate_field API
         field_info = self._build_field_info(layer, field_desc, fname)
 
@@ -359,6 +360,16 @@ class MutatorManager:
             explicit_values = combined
         except Exception:
             pass
+        
+        # Apply weight check AFTER dictionary values are retrieved but BEFORE using them
+        # This ensures layer weight scaling applies to all fields, including dictionary-based ones
+        if self._should_skip_field(layer, field_desc, fname):
+            # If skipping fuzz, do NOT delete the field - this preserves the original value
+            # The previous logic of deleting the field caused Scapy to auto-generate random values
+            if fname in CRITICAL_FIELDS:
+                logger.debug(f"[DEBUG] Skipping {layer.__class__.__name__}.{fname} (weight-based skip)")
+            return False
+            
         if explicit_values:
             pick_rng = self.config.rng or random
             try:
@@ -759,12 +770,13 @@ class MutatorManager:
         # All fields use advanced mapping/override logic for weight
         base_weight = self.dictionary_manager.get_field_weight(layer, field_name or getattr(field_desc, 'name', ''))
 
-        # Optional: apply layer-based scaling so outer layers are fuzzed less when deeper layers exist
+        # Optional: apply layer-based scaling so outer layers are fuzzed less when scaling factor is lower
         effective_weight = base_weight
         try:
             if getattr(self.config, 'enable_layer_weight_scaling', True):
                 # Determine depth: number of layers from current to innermost
-                # Innermost layer should not be scaled at all (exponent 0)
+                # Innermost layer should not be scaled at all (depth 0)
+                # Outer layers get scaled down based on their distance from innermost
                 from scapy.packet import NoPayload
                 # Walk to count remaining payload chain from current layer
                 depth_below = 0
@@ -778,7 +790,12 @@ class MutatorManager:
                 except Exception:
                     DEFAULT_LAYER_SCALING = 0.9
                 scale = self.config.layer_weight_scaling if (self.config.layer_weight_scaling is not None) else DEFAULT_LAYER_SCALING
-                # Apply scaling: base * (scale ** depth_below). If depth_below==0 (innermost), multiplier=1.0
+                
+                # Apply scaling: base * (scale ** depth_below). 
+                # Lower scale means outer layers (higher depth_below) get reduced more
+                # If depth_below==0 (innermost), multiplier=1.0 (no scaling)
+                # If depth_below==1, multiplier=scale
+                # If depth_below==2, multiplier=scale^2, etc.
                 if isinstance(scale, (int, float)) and scale > 0:
                     effective_weight = base_weight * (float(scale) ** int(max(depth_below, 0)))
                 logger.debug(f"LayerWeightScaling: layer={getattr(layer, 'name', type(layer).__name__)}, field={field_name}, base_weight={base_weight}, depth_below={depth_below}, scale={scale}, effective_weight={effective_weight}")

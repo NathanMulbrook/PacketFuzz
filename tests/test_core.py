@@ -11,7 +11,11 @@ Tests for the core functionality of the scapy-fuzzer framework including:
 import sys
 import os
 import unittest
+import logging
+import time
+import tempfile
 from typing import Any, List
+from collections import Counter, defaultdict
 
 # Try to import pytest, fall back to unittest if not available
 try:
@@ -22,10 +26,11 @@ except ImportError:
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from fuzzing_framework import FuzzingCampaign, FuzzField, FuzzMutator
+from fuzzing_framework import FuzzingCampaign, FuzzField, FuzzMutator, CallbackResult
 Campaign = FuzzingCampaign
 from mutator_manager import MutatorManager, FuzzConfig, FuzzMode
 from scapy.all import IP, TCP, UDP, DNS, DNSQR, Raw
+from scapy.utils import rdpcap, wrpcap
 
 # Import packet extensions to enable field_fuzz() method
 import packet_extensions
@@ -118,6 +123,9 @@ class TestPacketExtensions(unittest.TestCase):
         """Test get_all_field_fuzz_configs method"""
         packet = create_test_packet("tcp")
         tcp_layer = packet[TCP]
+        
+        # Clear any existing configurations first
+        tcp_layer.clear_fuzz_configs()
         
         assert hasattr(tcp_layer, 'get_all_field_fuzz_configs')
         
@@ -266,6 +274,99 @@ class TestFuzzField(unittest.TestCase):
 class TestCoreFuzzer(unittest.TestCase):
     """Test core fuzzer functionality"""
     
+    def setUp(self):
+        """Set up enhanced logging and tracking for tests"""
+        # Configure detailed logging for debugging
+        self.test_logger = logging.getLogger(f'test.{self._testMethodName}')
+        self.test_logger.setLevel(logging.DEBUG)
+        
+        # Create handler if not exists
+        if not self.test_logger.handlers:
+            handler = logging.StreamHandler()
+            formatter = logging.Formatter('%(name)s - %(levelname)s - %(message)s')
+            handler.setFormatter(formatter)
+            self.test_logger.addHandler(handler)
+        
+        # Initialize tracking variables
+        self.mutation_log = []
+        self.performance_log = {}
+        self.temp_dir = tempfile.mkdtemp()
+    
+    def tearDown(self):
+        """Enhanced teardown with failure analysis"""
+        # Log summary information
+        if hasattr(self, 'mutation_log') and self.mutation_log:
+            total_mutations = len(self.mutation_log)
+            mutations_with_changes = sum(1 for m in self.mutation_log if m.get('total_changes', 0) > 0)
+            self.test_logger.info(f"Test completed - {mutations_with_changes}/{total_mutations} mutations had changes")
+        
+        # Check if test failed and provide additional debugging (compatible across Python versions)
+        try:
+            if hasattr(self, '_outcome') and self._outcome:
+                if hasattr(self._outcome, 'errors') and self._outcome.errors:
+                    self.test_logger.error("Test failed - dumping debug information:")
+                    if hasattr(self, 'performance_log'):
+                        for key, value in self.performance_log.items():
+                            self.test_logger.error(f"Performance {key}: {value}")
+                elif hasattr(self._outcome, 'result') and self._outcome.result and self._outcome.result.errors:
+                    self.test_logger.error("Test failed - dumping debug information:")
+                    if hasattr(self, 'performance_log'):
+                        for key, value in self.performance_log.items():
+                            self.test_logger.error(f"Performance {key}: {value}")
+        except (AttributeError, TypeError):
+            # Fallback for different test runners
+            pass
+        
+        # Cleanup
+        import shutil
+        try:
+            shutil.rmtree(self.temp_dir)
+        except:
+            pass
+    
+    def track_mutations(self, original, fuzzed, iteration=None):
+        """Track and log detailed mutation information"""
+        changes = []
+        
+        # Track IP layer changes
+        if IP in original and IP in fuzzed:
+            if original[IP].dst != fuzzed[IP].dst:
+                changes.append(f"IP.dst: {original[IP].dst} -> {fuzzed[IP].dst}")
+            if original[IP].src != fuzzed[IP].src:
+                changes.append(f"IP.src: {original[IP].src} -> {fuzzed[IP].src}")
+            if original[IP].ttl != fuzzed[IP].ttl:
+                changes.append(f"IP.ttl: {original[IP].ttl} -> {fuzzed[IP].ttl}")
+        
+        # Track TCP layer changes
+        if TCP in original and TCP in fuzzed:
+            if original[TCP].dport != fuzzed[TCP].dport:
+                changes.append(f"TCP.dport: {original[TCP].dport} -> {fuzzed[TCP].dport}")
+            if original[TCP].sport != fuzzed[TCP].sport:
+                changes.append(f"TCP.sport: {original[TCP].sport} -> {fuzzed[TCP].sport}")
+            if getattr(original[TCP], 'seq', None) != getattr(fuzzed[TCP], 'seq', None):
+                changes.append(f"TCP.seq: {getattr(original[TCP], 'seq', None)} -> {getattr(fuzzed[TCP], 'seq', None)}")
+        
+        # Track Raw layer changes
+        if Raw in original and Raw in fuzzed:
+            if bytes(original[Raw]) != bytes(fuzzed[Raw]):
+                orig_load = bytes(original[Raw])[:20]  # First 20 bytes for logging
+                fuzz_load = bytes(fuzzed[Raw])[:20]
+                changes.append(f"Raw.load: {orig_load!r} -> {fuzz_load!r}")
+        
+        mutation_entry = {
+            'iteration': iteration if iteration is not None else len(self.mutation_log),
+            'changes': changes,
+            'total_changes': len(changes),
+            'timestamp': time.time()
+        }
+        
+        self.mutation_log.append(mutation_entry)
+        
+        if changes:
+            self.test_logger.debug(f"Mutation {len(self.mutation_log)}: {changes}")
+        
+        return mutation_entry
+    
     def test_scapy_fuzzer_creation(self):
         """Test MutatorManager creation"""
         config = FuzzConfig()
@@ -275,20 +376,177 @@ class TestCoreFuzzer(unittest.TestCase):
         assert fuzzer.config.mode == FuzzMode.BOTH
         assert fuzzer.config.use_dictionaries == True
     
-    def test_fuzzer_with_embedded_config(self):
-        """Test fuzzer working with embedded configuration"""
+    def test_fuzzer_with_embedded_config_and_validation(self):
+        """Test fuzzer working with embedded configuration and validate results"""
         # Create packet with embedded config
         packet = create_test_packet("tcp")
         tcp_layer = packet[TCP]
-        tcp_layer.field_fuzz('dport').default_values = [80, 443, 8080]
+        tcp_layer.field_fuzz('dport').default_values = [8080, 8443, 9000]
+        tcp_layer.field_fuzz('dport').fuzz_weight = 0.8
         
         # Create fuzzer
         config = FuzzConfig(mode=FuzzMode.BOTH, use_dictionaries=True)
         fuzzer = MutatorManager(config)
         
-        # Test that fuzzer can process the packet
         assert fuzzer is not None
-        # Note: Actual fuzzing would require more setup, this tests basic compatibility
+        
+        # Test actual fuzzing with embedded config
+        original_dport = packet[TCP].dport
+        self.test_logger.info(f"Original packet dport: {original_dport}")
+        
+        # Generate multiple fuzzed packets to test configuration application
+        fuzzed_packets = []
+        for i in range(20):
+            try:
+                fuzzed = fuzzer.fuzz_packet(packet, iterations=1)
+                if fuzzed:
+                    fuzzed_packets.extend(fuzzed)
+                    if len(fuzzed) > 0:
+                        self.track_mutations(packet, fuzzed[0], i)
+            except Exception as e:
+                self.test_logger.warning(f"Fuzzing iteration {i} failed: {e}")
+        
+        # Validate that fuzzing actually occurred
+        if fuzzed_packets:
+            dports_found = set()
+            for fuzzed_pkt in fuzzed_packets:
+                if TCP in fuzzed_pkt:
+                    dports_found.add(fuzzed_pkt[TCP].dport)
+            
+            self.test_logger.info(f"Found dports in fuzzed packets: {sorted(dports_found)}")
+            
+            # Check if configured values appear
+            configured_values = {8080, 8443, 9000}
+            found_configured = configured_values.intersection(dports_found)
+            
+            if found_configured:
+                self.test_logger.info(f"SUCCESS: Found configured values: {found_configured}")
+            else:
+                self.test_logger.warning(f"No configured values found. This may indicate configuration not applied.")
+        
+        # Log mutation summary
+        if self.mutation_log:
+            changes_count = sum(m['total_changes'] for m in self.mutation_log)
+            self.test_logger.info(f"Total mutations tracked: {len(self.mutation_log)}, total changes: {changes_count}")
+
+    def test_callback_execution_and_tracking(self):
+        """Test that callbacks are executed and can be tracked"""
+        callback_calls = []
+        callback_results = []
+        
+        class TrackingCampaign(FuzzingCampaign):
+            name = "Callback Tracking Test"
+            target = "127.0.0.1"
+            iterations = 10
+            output_network = False
+            output_pcap = None
+            verbose = False
+            
+            def get_packet(self):
+                return IP(dst="127.0.0.1") / TCP(dport=80) / Raw(b"test")
+            
+            def pre_send_callback(self, context, packet):
+                callback_calls.append(('pre_send', context.iteration, len(bytes(packet))))
+                return CallbackResult.SUCCESS
+            
+            def post_send_callback(self, context, packet, response=None):
+                callback_calls.append(('post_send', context.iteration, len(bytes(packet))))
+                return CallbackResult.SUCCESS
+        
+        # Set up PCAP output
+        test_pcap = os.path.join(self.temp_dir, "callback_test.pcap")
+        campaign = TrackingCampaign()
+        campaign.output_pcap = test_pcap
+        
+        start_time = time.time()
+        result = campaign.execute()
+        end_time = time.time()
+        
+        # Log performance
+        duration = end_time - start_time
+        self.performance_log['callback_test_duration'] = duration
+        self.test_logger.info(f"Campaign completed in {duration:.2f}s")
+        
+        # Validate callback execution
+        assert result == True, "Campaign with callbacks should succeed"
+        
+        pre_send_calls = [call for call in callback_calls if call[0] == 'pre_send']
+        post_send_calls = [call for call in callback_calls if call[0] == 'post_send']
+        
+        self.test_logger.info(f"Callback execution: {len(pre_send_calls)} pre_send, {len(post_send_calls)} post_send")
+        
+        # Validate callback counts
+        assert len(pre_send_calls) > 0, "Pre-send callbacks should be called"
+        assert len(post_send_calls) > 0, "Post-send callbacks should be called"
+        
+        # Validate packet sizes in callbacks
+        for call_type, iteration, packet_size in callback_calls:
+            assert packet_size > 0, f"Callback {call_type} at iteration {iteration} had empty packet"
+        
+        # Check PCAP output matches callback calls
+        if os.path.exists(test_pcap):
+            packets = rdpcap(test_pcap)
+            self.test_logger.info(f"PCAP contains {len(packets)} packets")
+            
+            # Log some packet analysis
+            if packets:
+                tcp_ports = [pkt[TCP].dport for pkt in packets if TCP in pkt]
+                port_distribution = Counter(tcp_ports)
+                self.test_logger.info(f"Port distribution: {dict(port_distribution)}")
+
+    def test_fuzzer_statistics_accuracy(self):
+        """Test that reported statistics match actual PCAP content"""
+        class StatisticsValidationCampaign(FuzzingCampaign):
+            name = "Statistics Validation Test"
+            target = "127.0.0.1"
+            iterations = 25
+            output_network = False
+            output_pcap = None
+            verbose = False
+            
+            def get_packet(self):
+                return IP(dst="127.0.0.1") / TCP(dport=80) / Raw(b"statistics_test")
+        
+        test_pcap = os.path.join(self.temp_dir, "stats_test.pcap")
+        campaign = StatisticsValidationCampaign()
+        campaign.output_pcap = test_pcap
+        
+        # Execute campaign and capture statistics
+        result = campaign.execute()
+        assert result == True, "Statistics validation campaign should succeed"
+        
+        # Get campaign statistics
+        stats = campaign.context.stats if hasattr(campaign, 'context') and campaign.context else {}
+        self.test_logger.info(f"Campaign statistics: {stats}")
+        
+        # Read and analyze PCAP
+        if os.path.exists(test_pcap):
+            packets = rdpcap(test_pcap)
+            pcap_packet_count = len(packets)
+            
+            self.test_logger.info(f"PCAP analysis: {pcap_packet_count} packets")
+            
+            # Validate statistics accuracy
+            if 'packets_sent' in stats:
+                reported_sent = stats['packets_sent']
+                serialize_failures = stats.get('serialize_failure_count', 0)
+                expected_in_pcap = reported_sent - serialize_failures
+                
+                self.test_logger.info(f"Reported sent: {reported_sent}, Serialize failures: {serialize_failures}")
+                self.test_logger.info(f"Expected in PCAP: {expected_in_pcap}, Actual: {pcap_packet_count}")
+                
+                # Allow some tolerance for edge cases
+                assert abs(pcap_packet_count - expected_in_pcap) <= 1, \
+                    f"PCAP packet count {pcap_packet_count} doesn't match expected {expected_in_pcap}"
+            
+            # Validate packet content
+            if packets:
+                # Check that packets have expected structure
+                valid_packets = sum(1 for pkt in packets if IP in pkt and TCP in pkt)
+                validity_rate = valid_packets / len(packets)
+                
+                self.test_logger.info(f"Packet validity: {valid_packets}/{len(packets)} ({validity_rate:.1%})")
+                assert validity_rate > 0.8, f"Too many invalid packets: {validity_rate:.1%}"
     
     def test_fuzzer_packet_serialization(self):
         """Test that configured packets can be serialized"""

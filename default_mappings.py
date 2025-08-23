@@ -993,9 +993,14 @@ FIELD_ADVANCED_WEIGHTS = [
 # Layer-based weight scaling
 # =============================
 # Scale field fuzzing weights based on how deep the layer is within the packet.
-# Outermost layers get scaled down more; the innermost layer is unscaled.
+# Lower scaling factors reduce fuzzing of outer layers more aggressively.
 # For a layer with K layers below it, the effective weight multiplier is
-# (LAYER_WEIGHT_SCALING ** K). Example: 0.9 means 10% reduction per deeper layer.
-LAYER_WEIGHT_SCALING: float = 0.1
+# (LAYER_WEIGHT_SCALING ** K). 
+# Examples:
+#   - 0.9: Mild reduction (10% reduction per layer depth)
+#   - 0.5: Moderate reduction (50% reduction per layer depth)  
+#   - 0.1: Aggressive reduction (90% reduction per layer depth)
+# Innermost layer (depth=0) is never scaled (multiplier=1.0)
+LAYER_WEIGHT_SCALING: float = 0.9
 
 

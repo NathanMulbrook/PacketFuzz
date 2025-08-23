@@ -135,6 +135,7 @@ class FuzzHistoryEntry:
 class CampaignContext:
     """Shared context passed to all callbacks"""
     campaign: Any
+    iteration: int = 0  # Current iteration number
     is_running: bool = True
     stats: dict = field(default_factory=lambda: {
         'packets_sent': 0,
@@ -179,7 +180,7 @@ class CallbackManager:
             
         try:
             context.stats['callbacks_executed'] += 1
-            result = callback_func(*args, context)
+            result = callback_func(context, *args)
             
             # Handle different return types
             if isinstance(result, CallbackResult):
@@ -191,8 +192,8 @@ class CallbackManager:
             elif result == "fail_crash" or result == "crash":
                 return CallbackResult.FAIL_CRASH
             else:
-                # Default to success for unknown return values this may be a bad assumption
-                 return CallbackResult.SUCCESS
+                # Default to success for unknown return values (conservative fallback)
+                return CallbackResult.SUCCESS
                 
         except Exception as e:
             logger.error(f"Callback {callback_type} failed with exception: {e}")
@@ -556,6 +557,7 @@ class FuzzingCampaign:
     verbose = True   #TODO implement conf.verb
     output_network = True
     output_pcap: Optional[str] = None  # PCAP output file path (None = disabled)
+    append_pcap = False  # Whether to append to existing PCAP file or overwrite
     stats_interval = DEFAULT_STATS_INTERVAL
     capture_responses = False
     global_dict_config_path: Optional[str] = None  # Path to global dictionary config file
@@ -584,7 +586,12 @@ class FuzzingCampaign:
     
     # Mutator configuration
     mutator_preference: Optional[List[str]] = None  # Campaign mutator preference (defaults to ["libfuzzer"])
+    
     # Layer-weight scaling controls (campaign-level overrides)
+    # Lower values reduce fuzzing of outer layers more aggressively:
+    #   - 0.9: Mild reduction (outer layers get 90% → 81% → 73% of base weight)
+    #   - 0.5: Moderate reduction (outer layers get 50% → 25% → 12.5% of base weight)  
+    #   - 0.1: Aggressive reduction (outer layers get 10% → 1% → 0.1% of base weight)
     enable_layer_weight_scaling: bool = True
     layer_weight_scaling: Optional[float] = None  # None uses default from default_mappings
 
@@ -928,7 +935,8 @@ class FuzzingCampaign:
                         # If detection fails, keep default
                         linktype = 1
 
-                    pcap_writer = PcapWriter(str(pcap_path), append=False, sync=True, linktype=linktype)
+                    # Use campaign's append setting for PCAP behavior
+                    pcap_writer = PcapWriter(str(pcap_path), append=self.append_pcap, sync=True, linktype=linktype)
                 except Exception as e:
                     logger.error(f"[PCAP] Failed to initialize writer for {pcap_path}: {e}")
                     # Fallback: try current working directory with same filename
@@ -936,7 +944,7 @@ class FuzzingCampaign:
                         fallback_path = Path.cwd() / Path(str(pcap_path)).name
                         if self.verbose:
                             logger.warning(f"[PCAP] Falling back to cwd: {fallback_path}")
-                        pcap_writer = PcapWriter(str(fallback_path), append=False, sync=True)
+                        pcap_writer = PcapWriter(str(fallback_path), append=self.append_pcap, sync=True)
                         pcap_path = fallback_path
                     except Exception as e2:
                         logger.error(f"[PCAP] Fallback writer initialization failed: {e2}")
@@ -946,7 +954,11 @@ class FuzzingCampaign:
             if packet and not self.custom_send_callback:
                 fuzzed_packets = fuzzer.fuzz_fields(packet, self.iterations, merged_field_mapping=merged_field_mapping)            
             #Iterate over the fuzzed packets
-            for itteration in range(self.iterations or 1000):
+            for iteration in range(self.iterations or 1000):
+                # Update context with current iteration
+                if self.context:
+                    self.context.iteration = iteration
+                    
                 # Check if campaign should continue (monitor thread may have stopped it)
                 if self.context and not self.context.is_running:
                     if self.verbose:
@@ -970,7 +982,7 @@ class FuzzingCampaign:
                     elif packet and packet.haslayer(CAN):
                         self.socket_type = 'canbus'
                     else:
-                        raise ValueError("Cannot auto-detect socket type from packet and non speciied- please specify socket_type")
+                        raise ValueError("Cannot auto-detect socket type from packet and not specified — please specify socket_type")
 
                 # Open sockets for sending only if network output is enabled
                 # TODO: make this also accept functions that return a socket object
@@ -997,35 +1009,35 @@ class FuzzingCampaign:
                 # Execute pre-send callback with error handling
                 if self.pre_send_callback and self.context:
                     result = self.callback_manager.execute_callback(
-                        self.pre_send_callback, "pre_send", self.context, fuzzed_packets[itteration]
+                        self.pre_send_callback, "pre_send", self.context, fuzzed_packets[iteration]
                     )
                     
                     # Handle callback result - determine if execution should continue
                     if result == CallbackResult.FAIL_CRASH:
-                        self.callback_manager.handle_crash("pre_send", fuzzed_packets[itteration], self.context)
+                        self.callback_manager.handle_crash("pre_send", fuzzed_packets[iteration], self.context)
                         return False
                     elif result == CallbackResult.NO_SUCCESS:
-                        self.callback_manager.handle_no_success("pre_send", self.context, fuzzed_packets[itteration])
+                        self.callback_manager.handle_no_success("pre_send", self.context, fuzzed_packets[iteration])
                 
                 # Execute custom send callback (replaces default packet sending behavior)
                 if self.custom_send_callback and self.context:
                     result = self.callback_manager.execute_callback(
-                        self.custom_send_callback, "custom_send", self.context, fuzzed_packets[itteration]
+                        self.custom_send_callback, "custom_send", self.context, fuzzed_packets[iteration]
                     )
                     
                     # Custom send callback error handling
                     if result == CallbackResult.FAIL_CRASH:
-                        self.callback_manager.handle_crash("custom_send", fuzzed_packets[itteration], self.context)
+                        self.callback_manager.handle_crash("custom_send", fuzzed_packets[iteration], self.context)
                         return False
                     elif result == CallbackResult.NO_SUCCESS:
-                        self.callback_manager.handle_no_success("custom_send", self.context, fuzzed_packets[itteration]) 
+                        self.callback_manager.handle_no_success("custom_send", self.context, fuzzed_packets[iteration]) 
                 # Default packet sending behavior (if no custom send callback)
-                elif fuzzed_packets[itteration] is not None:
+                elif fuzzed_packets[iteration] is not None:
                     # Create history entry for this iteration
                     history_entry = FuzzHistoryEntry(
-                        packet=fuzzed_packets[itteration],
+                        packet=fuzzed_packets[iteration],
                         timestamp_sent=datetime.now(),
-                        iteration=itteration
+                        iteration=iteration
                     )
                     
                     # Manage history size limit
@@ -1059,7 +1071,7 @@ class FuzzingCampaign:
                     # Send using Python socket
                 
                     try:
-                        pkt = fuzzed_packets[itteration]
+                        pkt = fuzzed_packets[iteration]
                         if pkt is None:
                             continue
                         if self.verbose:
@@ -1090,7 +1102,7 @@ class FuzzingCampaign:
                                     if not hasattr(self.context, 'serialize_failures'):
                                         self.context.serialize_failures = []  # type: ignore[attr-defined]
                                     self.context.serialize_failures.append({  # type: ignore[attr-defined]
-                                        'iteration': itteration,
+                                        'iteration': iteration,
                                         'packet': pkt,
                                         'error': str(e)
                                     })
@@ -1177,14 +1189,14 @@ class FuzzingCampaign:
                 # Execute post-send callback
                 if self.post_send_callback and self.context:
                     result = self.callback_manager.execute_callback(
-                        self.post_send_callback, "post_send", self.context, fuzzed_packets[itteration], response
+                        self.post_send_callback, "post_send", self.context, fuzzed_packets[iteration], response
                     )
                     
                     if result == CallbackResult.FAIL_CRASH:
-                        self.callback_manager.handle_crash("post_send", fuzzed_packets[itteration], self.context)
+                        self.callback_manager.handle_crash("post_send", fuzzed_packets[iteration], self.context)
                         return False
                     elif result == CallbackResult.NO_SUCCESS:
-                        self.callback_manager.handle_no_success("post_send", self.context, fuzzed_packets[itteration], response)
+                        self.callback_manager.handle_no_success("post_send", self.context, fuzzed_packets[iteration], response)
                 
                 
                 packets_sent += 1

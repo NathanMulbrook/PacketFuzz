@@ -166,12 +166,13 @@ def apply_cli_overrides(campaign, args):
         campaign.verbose = args.verbose
     # Set root logger level based on verbosity so all module loggers inherit
     import logging
-    # 0 = WARNING, 1 = INFO, 2+ = DEBUG
+    # 0 = WARNING (basic progress via print), 1 = INFO (config details), 2+ = DEBUG (full debug)
     if args.verbose >= 2:
         logging.getLogger().setLevel(logging.DEBUG)
-    elif args.verbose == 1:
+    elif args.verbose >= 1:
         logging.getLogger().setLevel(logging.INFO)
     else:
+        # Level 0: Use WARNING level for logger, essential messages via print
         logging.getLogger().setLevel(logging.WARNING)
 
 
@@ -195,7 +196,7 @@ def main():
         "--verbose",
         action="count",
         default=0,
-        help="Increase verbosity (e.g., -v, -vv, -vvv, up to -vvvvvv for max debug)."
+        help="Increase verbosity: -v (show config details), -vv (full debug mode)."
     )
     parser.add_argument(
         "--list-campaigns",
@@ -315,26 +316,53 @@ def main():
         try:
             campaign = campaign_class()
             apply_cli_overrides(campaign, args)
-            logger.info(f"Processing campaign: {campaign_class.__name__}")
+            # Level 0: Basic progress via print (always shown)
+            if args.verbose == 0:
+                print(f"Processing campaign: {campaign_class.__name__}")
+            else:
+                logger.info(f"Processing campaign: {campaign_class.__name__}")
+                
             network_mode = "ENABLED" if getattr(campaign, 'output_network', True) else "DISABLED"
             pcap_file = getattr(campaign, 'output_pcap', None) or getattr(campaign, 'pcap_filename', 'None')
             dict_config = getattr(campaign, 'dictionary_config_file', None) or 'Default mappings'
-            if args.verbose:
+            
+            # Verbosity level 1: Show campaign configuration details
+            if args.verbose >= 1:
                 logger.info(f"  Network transmission: {network_mode}")
                 logger.info(f"  PCAP output: {pcap_file}")
                 logger.info(f"  Dictionary config: {dict_config}")
+            
+            # Verbosity level 2+: Show additional campaign details
+            if args.verbose >= 2:
+                logger.debug(f"  Campaign class: {campaign_class}")
+                logger.debug(f"  Packets to fuzz: {getattr(campaign, 'packets_to_fuzz', 'Unknown')}")
+                logger.debug(f"  Mutator: {getattr(campaign, 'mutator_manager', 'Default')}")
+                logger.debug(f"  Verbose mode: {getattr(campaign, 'verbose', False)}")
+            
             # Always execute campaign, but if --disable-network is set, output_network will be False
             if campaign.execute():
-                logger.info(f"Campaign {campaign_class.__name__} completed successfully")
+                if args.verbose == 0:
+                    print(f"Campaign {campaign_class.__name__} completed successfully")
+                else:
+                    logger.info(f"Campaign {campaign_class.__name__} completed successfully")
                 success_count += 1
             else:
-                logger.error(f"Campaign {campaign_class.__name__} failed")
+                if args.verbose == 0:
+                    print(f"Campaign {campaign_class.__name__} failed")
+                else:
+                    logger.error(f"Campaign {campaign_class.__name__} failed")
         except Exception as e:
-            logger.error(f"Campaign {campaign_class.__name__} error: {e}")
+            if args.verbose == 0:
+                print(f"Campaign {campaign_class.__name__} error: {e}")
+            else:
+                logger.error(f"Campaign {campaign_class.__name__} error: {e}")
     
     # Summary
     total_campaigns = len(campaigns)
-    logger.info(f"Execution complete: {success_count}/{total_campaigns} campaigns successful")
+    if args.verbose == 0:
+        print(f"Execution complete: {success_count}/{total_campaigns} campaigns successful")
+    else:
+        logger.info(f"Execution complete: {success_count}/{total_campaigns} campaigns successful")
     
     return 0 if success_count == total_campaigns else 1
 

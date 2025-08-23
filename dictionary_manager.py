@@ -190,7 +190,7 @@ class DictionaryManager:
                     matches.append(float(adv["weight"]))
                     modes.append(adv.get("mode"))
         if not matches:
-            return 0.5  # Default if no match
+            return None  # No match found, continue to other weight resolution steps
         # Determine mode: per-entry mode takes precedence, else use global_mode
         mode = None
         for m in modes:
@@ -410,7 +410,7 @@ class DictionaryManager:
             properties=properties,
             global_mode=global_mode
         )
-        if isinstance(adv_result, float):
+        if adv_result is not None:
             # Advanced mapping match (campaign/global/user config)
             return adv_result
         # 3. Name-based weight (e.g., 'TCP.dport')

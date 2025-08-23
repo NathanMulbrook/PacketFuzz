@@ -2,18 +2,7 @@
 """
 Integration Tests
 
-End-to-end integr        # Test campaign creation
-        campaign = DictionaryTestCampaign()
-        assert campaign.dictionary_config_file == "examples/intermediate/02_dictionary_config.py"
-        
-        # Test fuzzer creation with dictionary config
-        try:
-            fuzzer = campaign.create_fuzzer()
-            assert fuzzer is not None
-            
-            # Verify dictionary config is loaded
-            if hasattr(fuzzer, 'config') and hasattr(fuzzer.config, 'global_dict_config_path'):
-                assert fuzzer.config.global_dict_config_path == "examples/intermediate/02_dictionary_config.py" complete fuzzing framework including:
+End-to-end tests for the complete fuzzing framework including:
 - Complete workflow testing
 - Cross-component integration
 - Real-world scenario validation
@@ -25,8 +14,10 @@ import os
 import tempfile
 import time
 import unittest
+import logging
 from pathlib import Path
 from typing import Dict, List, Any, Optional
+from collections import Counter, defaultdict
 from scapy.layers.inet import IP, TCP, UDP
 from scapy.layers.dns import DNS, DNSQR
 from scapy.packet import Raw, Packet
@@ -42,7 +33,7 @@ except ImportError:
 # Add parent directory to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from fuzzing_framework import FuzzingCampaign
+from fuzzing_framework import FuzzingCampaign, CallbackResult
 from mutator_manager import MutatorManager, DictionaryManager
 from conftest import (
     BasicTestCampaign, HTTPTestCampaign, DNSTestCampaign,
@@ -59,25 +50,207 @@ class DummyCampaign(FuzzingCampaign):
 
 
 class TestEndToEndWorkflows(unittest.TestCase):
-    """Test complete end-to-end workflows"""
+    """Test complete end-to-end workflows with enhanced validation"""
     
-    def test_basic_campaign_workflow(self):
-        """Test basic campaign creation and configuration workflow"""
-        # Create campaign
-        campaign = BasicTestCampaign()
+    def setUp(self):
+        """Set up enhanced test environment with logging"""
+        self.test_logger = logging.getLogger(f'integration.{self._testMethodName}')
+        self.test_logger.setLevel(logging.INFO)
         
-        # Verify campaign creation
-        assert campaign is not None
-        assert campaign.name == "Basic Test Campaign"
-        assert campaign.packet is not None
+        if not self.test_logger.handlers:
+            handler = logging.StreamHandler()
+            formatter = logging.Formatter('%(name)s - %(levelname)s - %(message)s')
+            handler.setFormatter(formatter)
+            self.test_logger.addHandler(handler)
         
-        # Test fuzzer creation
+        self.temp_dir = tempfile.mkdtemp()
+        self.workflow_metrics = {}
+        self.start_time = time.time()
+    
+    def tearDown(self):
+        """Enhanced teardown with workflow analysis"""
+        duration = time.time() - self.start_time
+        self.test_logger.info(f"Workflow test completed in {duration:.2f}s")
+        
+        if self.workflow_metrics:
+            for metric, value in self.workflow_metrics.items():
+                self.test_logger.info(f"Workflow metric {metric}: {value}")
+        
+        import shutil
         try:
-            fuzzer = campaign.create_fuzzer()
-            assert fuzzer is not None
-        except (ImportError, NotImplementedError):
-            # Acceptable if libfuzzer not available
+            shutil.rmtree(self.temp_dir)
+        except:
             pass
+    
+    def test_complete_fuzzing_workflow_with_validation(self):
+        """Test complete fuzzing workflow with comprehensive output validation"""
+        
+        class WorkflowValidationCampaign(FuzzingCampaign):
+            name = "Complete Workflow Validation"
+            target = "192.168.1.100"
+            iterations = 100
+            output_network = False
+            output_pcap = None
+            verbose = False
+            
+            def __init__(self, test_logger):
+                super().__init__()
+                self.test_logger = test_logger
+                self.workflow_stats = defaultdict(int)
+            
+            def get_packet(self):
+                return IP(dst="192.168.1.100") / TCP(dport=80, sport=12345) / Raw(b"workflow_test")
+            
+            def pre_send_callback(self, context, packet):
+                self.workflow_stats['pre_send_calls'] += 1
+                try:
+                    packet_size = len(bytes(packet))
+                    self.workflow_stats['total_packet_bytes'] += packet_size
+                    return CallbackResult.SUCCESS
+                except Exception as e:
+                    self.test_logger.warning(f"Pre-send callback error: {e}")
+                    return CallbackResult.SUCCESS
+            
+            def post_send_callback(self, context, packet, response=None):
+                self.workflow_stats['post_send_calls'] += 1
+                return CallbackResult.SUCCESS
+        
+        # Execute workflow
+        test_pcap = os.path.join(self.temp_dir, "workflow_validation.pcap")
+        campaign = WorkflowValidationCampaign(self.test_logger)
+        campaign.output_pcap = test_pcap
+        
+        self.test_logger.info("Starting complete workflow validation...")
+        
+        start_time = time.time()
+        result = campaign.execute()
+        execution_time = time.time() - start_time
+        
+        # Validate workflow execution
+        self.assertTrue(result, "Complete workflow should succeed")
+        self.assertTrue(os.path.exists(test_pcap), "PCAP output should be created")
+        
+        # Analyze workflow results
+        packets = rdpcap(test_pcap)
+        self.assertGreater(len(packets), 0, "Workflow should produce packets")
+        
+        # Validate callback execution
+        stats = campaign.workflow_stats
+        self.test_logger.info(f"Workflow statistics: {dict(stats)}")
+        
+        self.assertGreater(stats['pre_send_calls'], 0, "Pre-send callbacks should be executed")
+        self.assertGreater(stats['post_send_calls'], 0, "Post-send callbacks should be executed")
+        
+        # Validate packet quality
+        valid_packets = sum(1 for pkt in packets if IP in pkt and TCP in pkt)
+        validity_rate = valid_packets / len(packets)
+        
+        self.test_logger.info(f"Packet analysis: {len(packets)} total, {valid_packets} valid ({validity_rate:.1%})")
+        self.assertGreater(validity_rate, 0.8, f"Packet validity rate too low: {validity_rate:.1%}")
+        
+        # Store workflow metrics
+        self.workflow_metrics.update({
+            'execution_time': execution_time,
+            'packets_produced': len(packets),
+            'validity_rate': validity_rate,
+            'packets_per_second': len(packets) / execution_time if execution_time > 0 else 0
+        })
+        
+        self.test_logger.info(f"SUCCESS: Complete workflow validated with {len(packets)} packets in {execution_time:.2f}s")
+
+    def test_dictionary_workflow_with_statistical_validation(self):
+        """Test dictionary integration workflow with statistical validation"""
+        
+        # Create comprehensive test dictionary
+        dict_file = os.path.join(self.temp_dir, "comprehensive_ports.txt")
+        port_categories = {
+            'web': [80, 443, 8080, 8443],
+            'database': [3306, 5432, 6379, 27017],
+            'system': [22, 23, 53, 135],
+            'custom': [9000, 9001, 9999]
+        }
+        
+        all_ports = []
+        for category, ports in port_categories.items():
+            all_ports.extend(ports)
+        
+        with open(dict_file, 'w') as f:
+            f.write('\n'.join(map(str, all_ports)))
+        
+        class DictionaryWorkflowCampaign(FuzzingCampaign):
+            name = "Dictionary Workflow Test"
+            target = "192.168.1.100"
+            iterations = 200  # Large sample for statistical analysis
+            output_network = False
+            output_pcap = None
+            verbose = False
+            
+            def get_packet(self):
+                packet = IP(dst="192.168.1.100") / TCP(dport=80) / Raw(b"dict_workflow")
+                
+                # Configure dictionary
+                tcp_layer = packet[TCP]
+                if hasattr(tcp_layer, 'field_fuzz'):
+                    tcp_layer.field_fuzz('dport').dictionary = [dict_file]
+                    tcp_layer.field_fuzz('dport').fuzz_weight = 0.8
+                
+                return packet
+        
+        # Execute dictionary workflow
+        test_pcap = os.path.join(self.temp_dir, "dictionary_workflow.pcap")
+        campaign = DictionaryWorkflowCampaign()
+        campaign.output_pcap = test_pcap
+        
+        self.test_logger.info("Starting dictionary workflow test...")
+        result = campaign.execute()
+        
+        self.assertTrue(result, "Dictionary workflow should succeed")
+        
+        # Statistical analysis of dictionary usage
+        packets = rdpcap(test_pcap)
+        self.assertGreater(len(packets), 0, "Dictionary workflow should produce packets")
+        
+        # Analyze port distribution
+        port_usage = Counter()
+        for packet in packets:
+            if TCP in packet:
+                port_usage[packet[TCP].dport] += 1
+        
+        # Calculate dictionary statistics
+        dict_ports = set(all_ports)
+        found_dict_ports = set(port for port in port_usage.keys() if port in dict_ports)
+        
+        dict_packets = sum(count for port, count in port_usage.items() if port in dict_ports)
+        dict_usage_rate = dict_packets / len(packets) if packets else 0
+        dict_coverage = len(found_dict_ports) / len(dict_ports) if dict_ports else 0
+        
+        # Log statistical analysis
+        self.test_logger.info(f"Dictionary statistical analysis:")
+        self.test_logger.info(f"  Total packets: {len(packets)}")
+        self.test_logger.info(f"  Dictionary ports available: {len(dict_ports)}")
+        self.test_logger.info(f"  Dictionary ports found: {len(found_dict_ports)}")
+        self.test_logger.info(f"  Dictionary usage rate: {dict_usage_rate:.1%}")
+        self.test_logger.info(f"  Dictionary coverage: {dict_coverage:.1%}")
+        self.test_logger.info(f"  Unique ports generated: {len(port_usage)}")
+        
+        # Analyze by category
+        for category, ports in port_categories.items():
+            category_found = sum(1 for port in ports if port in found_dict_ports)
+            category_coverage = category_found / len(ports) if ports else 0
+            self.test_logger.info(f"  {category} category coverage: {category_coverage:.1%} ({category_found}/{len(ports)})")
+        
+        # Store workflow metrics
+        self.workflow_metrics.update({
+            'dict_usage_rate': dict_usage_rate,
+            'dict_coverage': dict_coverage,
+            'unique_ports': len(port_usage),
+            'dict_ports_found': len(found_dict_ports)
+        })
+        
+        if dict_usage_rate > 0:
+            self.test_logger.info(f"SUCCESS: Dictionary integration working with {dict_usage_rate:.1%} usage rate")
+        else:
+            self.test_logger.warning("Dictionary integration may not be working - no dictionary values found")
     
     def test_dictionary_integration_workflow(self):
         """Test dictionary integration workflow"""

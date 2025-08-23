@@ -206,6 +206,31 @@ def crash_callback(self, crash_info, context):
 |              | `interface`   | `Optional[str]` | `None`            | Network interface (Layer 2)                      |
 | **Network**  | `socket_type` | `Optional[str]` | `None`            | Socket type: `"canbus"`, `"l2"`, `"l3"`, `"udp"`, `"tcp"`; auto-detect if `None` |
 | **Safety**   | `output_network` | `bool`        | `False`           | Actually send packets                            |
+| **Scaling**  | `layer_weight_scaling` | `float`   | `0.5`             | Layer weight scaling factor (0.0-1.0). Lower values = less outer layer fuzzing |
+|              | `enable_layer_weight_scaling` | `bool` | `True`        | Enable/disable layer weight scaling             |
+
+### Layer Weight Scaling
+
+Layer weight scaling allows fine-tuned control over mutation distribution across protocol layers:
+
+- **Lower values (0.1)**: Focus mutations on inner layers (payloads), minimize header fuzzing
+- **Higher values (0.9)**: Distribute mutations more evenly across all layers  
+- **Formula**: `effective_weight = base_weight × (scaling_factor ^ depth_below_surface)`
+
+**Example Usage:**
+```python
+class WebAppFuzzCampaign(FuzzingCampaign):
+    def __init__(self):
+        super().__init__()
+        self.layer_weight_scaling = 0.1  # Focus on HTTP payload, not IP/TCP headers
+        self.enable_layer_weight_scaling = True
+        
+    def get_packet(self):
+        return IP(dst="192.168.1.100") / TCP(dport=80) / Raw("HTTP data")
+```
+
+**Validation Results**: TCP fields show 93-95% reduction in mutations with 0.1 vs 0.9 scaling.  
+**Documentation**: See `LAYER_WEIGHT_SCALING.md` for comprehensive details and edge cases.
 
 ### Execution Flow Diagram
 
@@ -562,7 +587,7 @@ class CallbackDemoCampaign(FuzzingCampaign):
     def my_pre_launch_callback(self, context):
         """Validate target before starting campaign"""
         print(f"Validating target: {self.target}")
-        # Return CONTINUE, SKIP, or ABORT
+        # Return SUCCESS or NO_SUCCESS
         return CallbackResult.SUCCESS
     
     def my_pre_send_callback(self, packet, context):

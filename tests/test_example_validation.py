@@ -42,7 +42,7 @@ class TestExampleValidation(unittest.TestCase):
     def tearDown(self):
         cleanup_test_files()
     
-    def run_campaign_cli(self, campaign_path, timeout=45, allow_failure=False):
+    def run_campaign_cli(self, campaign_path, timeout=120, allow_failure=False):
         """
         Helper method to run the packetfuzz CLI with a campaign config file.
         

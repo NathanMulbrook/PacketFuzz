@@ -146,10 +146,12 @@ def run_organized_tests():
     
     # Main test files in recommended execution order
     test_files = [
-        "test_core.py",           # Core framework functionality
+        "test_core.py",           # Core functionality tests
+        "test_callbacks.py",      # Callback system tests 
         "test_campaigns.py",      # Campaign system tests
         "test_pcap_functionality.py",  # PCAP output tests
         "test_pcap_fuzzing.py",   # PCAP-based fuzzing tests (new)
+        "test_packet_pipeline.py",  # Complete packet pipeline tests
         "test_dictionary.py",     # Dictionary management tests  
         "test_mutators.py",       # Mutator functionality tests (new)
         # "test_cli.py",           # CLI interface tests (disabled due to CLI mismatch)

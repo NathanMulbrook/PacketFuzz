@@ -170,7 +170,7 @@ campaign.execute()
 | `FuzzingCampaign` | Base campaign class | `class MyCampaign(FuzzingCampaign):` |
 | `PcapFuzzCampaign` | PCAP-based fuzzing | `class Regression(PcapFuzzCampaign):` |
 | `FuzzField` | Field configuration | `TCP(dport=FuzzField(values=[80, 443]))` |
-| `CallbackResult` | Callback return values | `return CallbackResult.CONTINUE` |
+| `CallbackResult` | Callback return values | `return CallbackResult.SUCCESS` |
 
 ## Documentation
 
