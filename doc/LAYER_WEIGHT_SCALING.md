@@ -27,11 +27,32 @@ Where:
 
 ### Layer Depth Examples
 
-```
-IP / TCP / Raw("payload")
-│    │     └── depth 2 (innermost)
-│    └────── depth 1 (middle)  
-└─────────── depth 0 (outermost)
+```mermaid
+graph TD
+    subgraph "Packet Structure"
+        IP[IP Layer<br/>depth_below = 2<br/>weight = base × scaling²]
+        TCP[TCP Layer<br/>depth_below = 1<br/>weight = base × scaling¹]
+        RAW[Raw Payload<br/>depth_below = 0<br/>weight = base × scaling⁰]
+        
+        IP --> TCP
+        TCP --> RAW
+    end
+    
+    subgraph "Scaling Factor 0.1 Example"
+        IP --> IP_W[1% of base weight<br/>base × 0.01]
+        TCP --> TCP_W[10% of base weight<br/>base × 0.1]
+        RAW --> RAW_W[100% of base weight<br/>base × 1.0]
+    end
+    
+    subgraph "Scaling Factor 0.9 Example"
+        IP --> IP_W2[81% of base weight<br/>base × 0.81]
+        TCP --> TCP_W2[90% of base weight<br/>base × 0.9]
+        RAW --> RAW_W2[100% of base weight<br/>base × 1.0]
+    end
+    
+    style RAW fill:#c8e6c9
+    style RAW_W fill:#c8e6c9
+    style RAW_W2 fill:#c8e6c9
 ```
 
 ## Configuration

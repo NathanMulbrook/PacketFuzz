@@ -23,8 +23,7 @@ class MyCampaign(FuzzingCampaign):
         HTTPRequest(Path=b"/", Method=b"GET")
     )
 
-campaign = MyCampaign()
-campaign.execute()
+# See examples/basic/ for complete working examples
 ```
 
 ### FuzzField Configuration Options
@@ -36,6 +35,8 @@ campaign.execute()
 | `mutators` | `List[str]` | `["libfuzzer"]` | Mutation methods to use | `["libfuzzer", "scapy"]` |
 | `description` | `str` | `""` | Human-readable field description | `"Web server ports"` |
 
+**Examples**: See `examples/basic/03_fuzzfield_options.py` for detailed usage patterns.
+
 ### Mutator Types
 
 | Mutator | Description | Use Case | Performance |
@@ -44,6 +45,8 @@ campaign.execute()
 | `"scapy"` | Scapy's built-in fuzz() | Protocol-aware mutations | Fast |
 | `"dictionary"` | Dictionary-based mutations | Known attack patterns | Medium |
 | `"python"` | Pure Python mutations | Fallback when libFuzzer unavailable | Slow |
+
+**Reference**: See `examples/intermediate/02_mutator_comparison.py` for performance benchmarks.
 
 ### Fuzzing Modes
 
@@ -54,57 +57,36 @@ campaign.execute()
 | `"binary"` | Binary mutation with libFuzzer | Low-level protocol testing | Custom protocol analysis |
 | `"both"` | Combined field + binary fuzzing | Comprehensive testing | Maximum coverage scenarios |
 
-```python
-# Basic FuzzField with values
-FuzzField(values=[80, 443, 8080], description="Web ports")
+**Complete Examples**: Reference `examples/basic/02_campaign_types.py` for fuzzing mode demonstrations.
 
-# With dictionary files
-FuzzField(values=[80, 443], 
-          dictionaries=["fuzzdb/wordlists-misc/common-ports.txt"],
-          description="Network ports")
-
-# With custom mutators
-FuzzField(values=[80], mutators=["libfuzzer"], description="Port")
-
-# Combined approach - maximum coverage
-FuzzField(values=[80, 443, 8080], 
-          dictionaries=["fuzzdb/wordlists-misc/common-ports.txt"],
-          mutators=["libfuzzer", "dictionary"],
-          description="Comprehensive port fuzzing")
-```
+**FuzzField Usage Examples**: 
+- Basic patterns: `examples/basic/03_fuzzfield_options.py`
+- Advanced configurations: `examples/intermediate/01_campaign_inheritance.py`
+- Dictionary integration: `examples/config/user_dictionary_config.py`
 
 
 ## PCAP-Based Fuzzing
 
-PCAP-based fuzzing supports layer extraction, payload repackaging, and multiple fuzzing modes for regression testing and real-world traffic analysis. The fuzzer will read the packet and first attempt to convert the entire packet into scapy objects, if that fails it will fall back to treating the payload as binary data.
+PCAP-based fuzzing supports layer extraction, payload repackaging, and multiple fuzzing modes for regression testing and real-world traffic analysis. 
 
+**Key Features:**
+- Layer extraction and repackaging
+- Multiple fuzzing modes (`none`, `field`, `binary`, `both`)
+- Automatic payload handling (Scapy parsing with binary fallback)
+- Target redirection support
 
-### Layer Extraction & Repackaging
-
-```
-Original PCAP Packet Flow:
-┌──────────┬──────────┬──────────┬──────────────┐
-│ Ethernet │    IP    │   TCP    │ HTTP Payload │
-└──────────┴──────────┴──────────┴──────────────┘
-
-Extract "TCP" → Repackage "IP/TCP":
-┌─────────────┬─────────────┬──────────────┐
-│  New IP     │  New TCP    │ HTTP Payload │
-│ (to target) │ (to target) │   (fuzzed)   │
-└─────────────┴─────────────┴──────────────┘
-```
-
+**Implementation**: `packetfuzz.pcapfuzz.PcapFuzzCampaign`
+**Examples**: `examples/intermediate/03_pcap_fuzzing.py
 ```python
-from packetfuzz.pcapfuzz import PcapFuzzCampaign
-
-# Regression testing - replay without fuzzing
 class RegressionTest(PcapFuzzCampaign):
     pcap_folder = "regression_samples/"
     fuzz_mode = "none"
     target = "192.168.1.100"
+```
 
 #TODO add support for providing a packet structure to package it in
-# Extract and fuzz HTTP payloads  
+# Extract and fuzz HTTP payloads
+```python  
 class HttpPayloadFuzz(PcapFuzzCampaign):
     pcap_folder = "regression_samples/"
     extract_layer = "TCP"  # Extract TCP payload  #TODO not implemented yet
@@ -113,82 +95,64 @@ class HttpPayloadFuzz(PcapFuzzCampaign):
     target = "192.168.1.100"
 ```
 
+## Campaign Execution Flow
+
+The framework follows a structured execution lifecycle with multiple callback points for customization:
+
+```mermaid
+flowchart TD
+    A[Campaign Start] --> B[Pre-Launch Callback]
+    B --> C{Validation Success?}
+    C -->|No| D[Exit with Error]
+    C -->|Yes| E[Initialize Mutator Manager]
+    E --> F[Setup PCAP Output]
+    F --> G[Configure Network Interface]
+    G --> H[Start Iteration Loop]
+    
+    H --> I[Pre-Send Callback]
+    I --> J[Generate/Mutate Packet]
+    J --> K["Custom Send Callback<br/>or Default Send"]
+    K --> L[Capture Response]
+    L --> M[Post-Send Callback]
+    M --> N[Log to PCAP]
+    N --> O{Crash Detected?}
+    O -->|Yes| P[Crash Callback]
+    O -->|No| Q{More Iterations?}
+    P --> Q
+    Q -->|Yes| H
+    Q -->|No| R[Monitor Callback]
+    R --> S[Cleanup & Restore]
+    S --> T[Campaign Complete]
+    
+    style A fill:#e1f5fe
+    style T fill:#c8e6c9
+    style D fill:#ffcdd2
+    style P fill:#ffe0b2
+```
+
+**Key Execution Points:**
+- **Pre-Launch**: Validation, target checking, setup
+- **Per-Iteration**: Packet mutation, sending, response handling
+- **Error Handling**: Crash detection and logging
+- **Cleanup**: Interface restoration, final reporting
+
+**Implementation**: `packetfuzz.fuzzing_framework.FuzzingCampaign.execute()`
+**Examples**: All example campaigns demonstrate the complete execution flow
+
 ## Response Tracking System
 
 ### FuzzHistoryEntry
 
-The framework automatically tracks sent packets, responses, and timing information using `FuzzHistoryEntry` objects:
+The framework automatically tracks sent packets, responses, and timing information using `FuzzHistoryEntry` objects.
 
-```python
-@dataclass
-class FuzzHistoryEntry:
-    """Tracks a single fuzzing iteration with sent packet, response, and crash info"""
-    packet: Optional[Packet] = None
-    timestamp_sent: Optional[datetime] = None
-    timestamp_received: Optional[datetime] = None
-    response: Optional[Any] = None
-    crashed: bool = False
-    crash_info: Optional[CrashInfo] = None
-    iteration: int = -1
-    
-    def get_response_time(self) -> Optional[float]:
-        """Calculate response time in milliseconds if both timestamps are available"""
-        if self.timestamp_sent and self.timestamp_received:
-            delta = self.timestamp_received - self.timestamp_sent
-            return delta.total_seconds() * 1000
-        return None
-```
+**Key Features:**
+- Automatic packet/response correlation
+- Timing analysis and response time calculation  
+- Crash correlation with history entries
+- Configurable history size management (default: 1000 entries)
 
-History entries are stored in the campaign context and accessible in callbacks:
-
-```python
-def post_send_callback(self, packet, response, context):
-    """Access history after packet is sent"""
-    if context.fuzz_history:
-        # Get the most recent history entry
-        entry = context.fuzz_history[-1]
-        
-        # Access timing information
-        response_time = entry.get_response_time()
-        if response_time:
-            print(f"Response time: {response_time:.2f} ms")
-        
-        # Process response packet
-        if entry.response:
-            print(f"Got response: {entry.response.summary()}")
-```
-
-### History Size Management
-
-By default, the campaign context stores up to 1000 history entries to prevent memory issues. You can configure this limit:
-
-```python
-class MyFuzzingCampaign(FuzzingCampaign):
-    # ... other configuration ...
-    
-    def pre_launch_callback(self, context):
-        # Configure history size based on your needs
-        context.max_history_size = 500
-        return True
-```
-
-### Crash Correlation
-
-When a crash occurs, the framework automatically associates it with the history entry that caused it:
-
-```python
-def crash_callback(self, crash_info, context):
-    """Handle crashes with full history context"""
-    if context.fuzz_history:
-        for entry in context.fuzz_history:
-            if entry.crashed and entry.crash_info == crash_info:
-                print(f"Found crash in history for packet {entry.packet.summary()}")
-                print(f"Response time before crash: {entry.get_response_time()} ms")
-
-    pcap_file = "samples/traffic.pcap"
-    target = "192.168.1.100"
-    iterations = 200
-```
+**Implementation**: `packetfuzz.fuzzing_framework.FuzzHistoryEntry`
+**Usage Examples**: `examples/advanced/04_response_analysis.py`
 
 ## Campaign Execution
 
@@ -196,18 +160,23 @@ def crash_callback(self, crash_info, context):
 
 | Category     | Attribute      | Type            | Default           | Description                                      |
 |--------------|---------------|-----------------|-------------------|--------------------------------------------------|
-| **Required** | `name`        | `str`           | `"Unnamed Campaign"` | Campaign identifier                          |
-|              | `target`      | `str`           | `"127.0.0.1"`     | Target IP address                                |
-| **Execution**| `iterations`  | `int`           | `100`             | Number of packets to send                        |
+| **Required** | `name`        | `str`           | `None`            | Campaign identifier                              |
+|              | `target`      | `str`           | `None`            | Target IP address                                |
+| **Execution**| `iterations`  | `int`           | `1000`            | Number of packets to send                        |
 |              | `duration`    | `Optional[int]` | `None`            | Max execution time (seconds)                     |
-|              | `rate_limit`  | `int`           | `1`               | Packets per second                               |
+|              | `rate_limit`  | `float`         | `10.0`            | Packets per second                               |
 | **Output**   | `output_pcap` | `Optional[str]` | `None`            | Output PCAP filename                             |
-|              | `verbose`     | `bool`          | `False`           | Enable detailed logging                          |
-|              | `interface`   | `Optional[str]` | `None`            | Network interface (Layer 2)                      |
-| **Network**  | `socket_type` | `Optional[str]` | `None`            | Socket type: `"canbus"`, `"l2"`, `"l3"`, `"udp"`, `"tcp"`; auto-detect if `None` |
-| **Safety**   | `output_network` | `bool`        | `False`           | Actually send packets                            |
-| **Scaling**  | `layer_weight_scaling` | `float`   | `0.5`             | Layer weight scaling factor (0.0-1.0). Lower values = less outer layer fuzzing |
+|              | `append_pcap` | `bool`          | `False`           | Append to existing PCAP or overwrite            |
+|              | `verbose`     | `bool`          | `True`            | Enable detailed logging                          |
+|              | `interface`   | `str`           | `"eth0"`          | Network interface (Layer 2)                     |
+| **Network**  | `socket_type` | `Optional[str]` | `None`            | Socket type: `"l2"`, `"l3"`, `"tcp"`, `"udp"`, `"canbus"`; auto-detect if `None` |
+|              | `output_network` | `bool`        | `True`            | Actually send packets                            |
+|              | `response_timeout` | `float`     | `2.0`             | Response capture timeout (seconds)               |
+|              | `capture_responses` | `bool`     | `False`           | Enable response capture                          |
+| **Scaling**  | `layer_weight_scaling` | `Optional[float]` | `None`      | Layer weight scaling factor (0.0-1.0). Lower values = less outer layer fuzzing |
 |              | `enable_layer_weight_scaling` | `bool` | `True`        | Enable/disable layer weight scaling             |
+| **Advanced** | `crash_packet_logging` | `bool`   | `True`            | Enable crash packet capture                      |
+|              | `crash_log_directory` | `str`    | `"crash_logs/"`   | Directory for crash artifacts                    |
 
 ### Layer Weight Scaling
 
@@ -229,122 +198,49 @@ class WebAppFuzzCampaign(FuzzingCampaign):
         return IP(dst="192.168.1.100") / TCP(dport=80) / Raw("HTTP data")
 ```
 
-**Validation Results**: TCP fields show 93-95% reduction in mutations with 0.1 vs 0.9 scaling.  
-**Documentation**: See `LAYER_WEIGHT_SCALING.md` for comprehensive details and edge cases.
-
-### Execution Flow Diagram
-
-```
-Campaign Execution Lifecycle:
-┌──────────────────────────────────────────────────────────────────────────────────────────────┐
-│                    CAMPAIGN EXECUTION                                                       │  
-│                                                                                              │
-│  ┌──────────────┐    ┌──────────────┐    ┌────────────────┐    │
-│  │   SETUP      │ →  │   VALIDATE   │ →  │   INITIALIZE   │    │
-│  │              │    │              │    │                │    │
-│  │ • Load config│    │ • Check target│    │ • Setup PCAP   │    │  
-│  │   Parse packet│    │ • Validate packet│ │ • Init mutator│    │
-│  │              │    │              │    │ • Load dicts   │    │
-│  └──────────────┘    └──────────────┘    └────────────────┘    │
-│                                                                                              │
-│         ┌──────────────────────────────────────────────────────────────┐                     │
-│         │           ITERATION LOOP                                    │                     │
-│         │                                                            │                     │
-│         │  ┌──────────┐ → ┌──────────┐ → ┌──────────┐ │               │
-│         │  │  MUTATE  │   │   SEND   │   │  STORE   │ │               │
-│         │  │          │   │          │   │          │ │               │
-│         │  │ • Apply  │   │ • Rate   │   │ • Log    │ │               │
-│         │  │   fuzz   │   │   limit  │   │ • Save   │ │               │
-│         │  │ • Dict   │   │ • Trans- │   │  PCAP    │ │               │
-│         │  │   values │   │   mit    │   │          │ │               │
-│         │  └──────────┘   └──────────┘   └──────────┘ │               │
-│         └──────────────────────────────────────────────────────────────┘                     │
-│                                                                                              │
-│  ┌──────────────┐    ┌────────────────────┐                                                  │
-│  │   CLEANUP    │ ←  │     FINALIZE       │                                                  │
-│  │              │    │                    │                                                  │
-│  │ • Close files│    │ • Write final PCAP │                                                  │
-│  │ • Save logs  │    │ • Generate reports │                                                  │
-│  │ • Cleanup temp│   │ • Call completion  │                                                  │
-│  │              │    │   callbacks        │                                                  │
-│  └──────────────┘    └────────────────────┘                                                  │
-└──────────────────────────────────────────────────────────────────────────────────────────────┘
-```
-
-### Execution Methods
-
-```python
-campaign = MyCampaign()
-
-# Standard execution
-campaign.execute()
-
-# With callback hooks
-def progress_callback(sent: int, total: int):
-    print(f"Progress: {sent}/{total}")
-
-def response_callback(response):
-    print(f"Response: {response.summary()}")
-
-campaign.on_progress = progress_callback
-campaign.on_response = response_callback
-campaign.execute()
-```
+**Documentation**: See `doc/LAYER_WEIGHT_SCALING.md` for comprehensive details and edge cases.
+**Examples**: `examples/advanced/02_layer_weight_scaling.py`
 
 ## Dictionary Management
 
 ### Hierarchy & Resolution
 
-The framework uses a 3-tier hierarchical system for dictionary resolution with sophisticated merging and override capabilities.
+The framework uses a 3-tier hierarchical system for dictionary resolution with sophisticated merging:
 
-```
-Dictionary Resolution Flow:
-┌──────────────────────────────────────────────────────────────────────────────────────────────┐
-│                    DICTIONARY RESOLUTION                                                    │
-│                                                                                              │
-│  ┌──────────────┐    ┌──────────────┐    ┌───────────┐ │
-│  │  FUZZFIELD   │ →  │   CAMPAIGN   │ →  │  DEFAULT  │ │
-│  │ DICTIONARIES │    │  OVERRIDES   │    │ MAPPINGS  │ │
-│  │              │    │              │    │           │ │
-│  │ Inline in    │    │ User config  │    │ Built-in  │ │
-│  │ packet def   │    │ files        │    │ field maps│ │
-│  │              │    │              │    │           │ │
-│  │ Priority: 1  │    │ Priority: 2  │    │ Priority:3│ │
-│  │ (Highest)    │    │ (Medium)     │    │ (Lowest)  │ │
-│  └──────────────┘    └──────────────┘    └───────────┘ │
-│                                                                                              │
-│                            ↓                                                                 │
-│                   ┌──────────────┐                                                          │
-│                   │  MERGE LOGIC │                                                          │
-│                   │              │                                                          │
-│                   │ • Check override flags                                                  │
-│                   │ • Combine lists                                                         │
-│                   │ • Remove dupes                                                          │
-│                   │ • Validate paths                                                        │
-│                   └──────────────┘                                                          │
-│                            ↓                                                                 │
-│                   ┌──────────────┐                                                          │
-│                   │ FINAL DICTIONARY LIST                                                   │
-│                   │      LIST     │                                                          │
-│                   └──────────────┘                                                          │
-└──────────────────────────────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    A[Field Needs Dictionary] --> B{FuzzField Has<br/>Dictionaries?}
+    B -->|Yes| C[Use FuzzField<br/>Dictionaries<br/>Priority: 1 Highest]
+    B -->|No| D{Campaign/CLI<br/>Override Exists?}
+    D -->|Yes| E[Use Campaign/CLI<br/>Configuration<br/>Priority: 2 Medium]
+    D -->|No| F[Use Default<br/>Mappings<br/>Priority: 3 Lowest]
+    
+    C --> G{Override Flag<br/>Set?}
+    E --> G
+    F --> G
+    
+    G -->|Yes| H[Use Only This Source<br/>No Merging]
+    G -->|No| I[Merge All Available<br/>Sources]
+    
+    H --> J[Apply Weight Resolution]
+    I --> J
+    J --> K[Final Dictionary List<br/>& Field Weights]
+    
+    style C fill:#c8e6c9
+    style E fill:#fff3e0
+    style F fill:#f3e5f5
+    style K fill:#e3f2fd
 ```
 
-### Dictionary Resolution Hierarchy
+**Key Features:**
+- Hierarchical merging with override controls
+- Field-specific and pattern-based mappings
+- Weight resolution for mutation prioritization
+- CLI and campaign-level configuration overrides
 
-```
-Priority: HIGH ←────────────────────────────────────→ LOW
-┌─────────────────┬─────────────────┬──────────────────┐
-│  FuzzField      │  Campaign       │    Default       │
-│  Dictionaries   │  Overrides      │   Mappings       │
-├─────────────────┼─────────────────┼──────────────────┤
-│ Inline in       │ User config     │ Built-in field   │
-│ packet def      │ files           │ mappings         │
-│                 │                 │                  │
-│ Highest         │ Medium          │ Lowest           │
-│ Priority        │ Priority        │ Priority         │
-└─────────────────┴─────────────────┴──────────────────┘
-```
+**Implementation**: `packetfuzz.dictionary_manager.DictionaryManager`
+**Configuration**: `packetfuzz.default_mappings`
+**Examples**: `examples/config/user_dictionary_config.py`
 
 
 
@@ -361,136 +257,62 @@ Priority: HIGH ←────────────────────�
 - Inline FuzzField dictionaries always take precedence and are never overridden.
 
 ### Configuration Examples
-#### Default mappings provided with the application
-The default_mappings.py file contains the default dictionary and weights, these should be halfway sane defaults that work for most fuzzing.
-```python
-default_field_mappings = {
-    "TCP.dport": ["fuzzdb/wordlists-misc/common-ports.txt"],
-    "Raw.load": ["fuzzdb/attack-payloads/all-attacks/all-attacks-unix.txt"],
-    "DNS.qname": ["fuzzdb/discovery/dns/dns-names.txt"]
-}
-```
-#### User provided mappings file
-Anything set within a campaing effects only that campaing, unless a child campaign is created from it.
-```python
-USER_DICTIONARY_CONFIG = {
-    "field_mappings": {
-        "TCP.dport": ["custom/ports.txt"],          # Replaces default
-        "Raw.load": ["custom/payloads.txt"]         # Replaces default  
-    },
-    "dictionary_override": {
-        "TCP.dport": True,   # Don't merge with lower priority
-        "Raw.load": False    # Merge with lower priority
-    }
-}
-```
-```python
-class WebAppCampaign(FuzzingCampaign):
-    name = "Custom Dictionary Campaign"
-    target = "192.168.1.100"
-    dictionary_config_file = "examples/config/user_dictionary_config.py"  # Campaign-specific
-    
-    packet = IP() / TCP() / HTTP() / HTTPRequest(
-        Path=b"/",
-        Method=b"GET",
-        dictionaries=["custom/web-ports.txt"]  # Highest priority - field-specific
-    )
-```
-#### Override in campaign defniition
-```python
-class MyCampaign(FuzzingCampaign):
-    dictionary_overrides = {
-        "TCP.dport": ["campaign/specific-ports.txt"]
-    }
-    
-    packet = (
-        IP() / 
-        TCP(dport=FuzzField(
-            values=[80, 443],
-            dictionaries=["inline/priority-ports.txt"]  # Highest priority
-        ))
-    )
-```
 
-#### User provided dicitonary on commandline
-This applies to all campaings that are ran
-```bash
-python -m packetfuzz examples/basic/01_quick_start.py --dictionary-config examples/config/user_dictionary_config.py
-```
+**Default Mappings**: Built-in field-to-dictionary associations in `packetfuzz/default_mappings.py`
+**User Configuration**: Campaign and CLI overrides in `examples/config/user_dictionary_config.py`
+**CLI Usage**: Global dictionary overrides via `--dictionary-config` flag
+
+**Detailed Examples**: 
+- Basic configuration: `examples/basic/04_dictionary_config.py`
+- Advanced overrides: `examples/intermediate/05_dictionary_overrides.py`
 
 ## Weight & Priority Resolution
 
-The framework uses sophisticated weight resolution for field prioritization and dictionary selection. The applicaiton comes with a basic set of weights and dictionaries that should work for most or at least be a good starting point, these can be extended or overridden by the user depending on there needs
+The framework uses sophisticated weight resolution for field prioritization and dictionary selection.
 
 ### Weight Resolution Priority Table
 
-| Priority | Source | Example | Weight Range |
-|----------|--------|---------|--------------|
-| **1 (Highest)** | User-provided in config | `field_weights: {"TCP.dport": 0.95}` | 0.0 - 1.0 |
-| **2** | Advanced field mappings | Property-based rules | 0.7 - 0.9 |
-| **3** | Name-based patterns | Field name matching | 0.6 - 0.8 |
-| **4** | Type-based defaults | Scapy field type | 0.5 - 0.7 |
-| **5 (Lowest)** | Framework default | All unmatched fields | 0.5 |
+| Priority | Source | Weight Range | Description |
+|----------|--------|--------------|-------------|
+| **1 (Highest)** | User-provided in config | 0.0 - 1.0 | Explicit field weights |
+| **2** | Advanced field mappings | 0.7 - 0.9 | Property-based rules |
+| **3** | Name-based patterns | 0.6 - 0.8 | Field name matching |
+| **4** | Type-based defaults | 0.5 - 0.7 | Scapy field type |
+| **5 (Lowest)** | Framework default | 0.5 | All unmatched fields |
 
-### Advanced Weight Examples
-
-```python
-# In user_dictionary_config.py
-USER_DICTIONARY_CONFIG = {
-    "field_weights": {
-        # Explicit field weights (highest priority)
-        "TCP.dport": 0.95,        # Very high - critical attack surface
-        "Raw.load": 0.90,         # High - payload content
-        "IP.dst": 0.30,           # Low - usually fixed target
-    },
-    
-    "property_weights": {
-        # Pattern-based weights (medium priority)
-        ".*port.*": 0.85,         # Any field with 'port' in name
-        ".*addr.*": 0.40,         # Any field with 'addr' in name
-        ".*id$": 0.60,            # Fields ending in 'id'
-    }
-}
-```
+**Implementation**: `packetfuzz.dictionary_manager.get_field_weight()`
+**Examples**: `examples/config/user_dictionary_config.py` for weight configuration patterns
 
 
 ## Network Interface Offload Management
 
-When fuzzing with malformed packets, network interface offload features, both those implemented in drivers, firmware and hardware can interfere by automatically "fixing" corrupted checksums, segmentation, and other intentionally malformed packet attributes before transmission. PacketFuzz provides automatic netowork interface configuration to disable these features during fuzzing campaigns. By default it will restore the previous settings when it exits.
+When fuzzing with malformed packets, network interface offload features can interfere by automatically "fixing" corrupted checksums, segmentation, and other intentionally malformed packet attributes before transmission. PacketFuzz provides automatic network interface configuration to disable these features during fuzzing campaigns.
 
-### Configuration in a Campaign 
+### Campaign Configuration 
 
-```python
-from packetfuzz.fuzzing_framework import FuzzingCampaign
-from scapy.layers.inet import IP, TCP
-
-class MalformedPacketCampaign(FuzzingCampaign):
-    name = "Malformed Packet Test"
-    target = "192.168.1.100"
-    
-    # Enable interface offload management
-    disable_interface_offload = True
-    interface = "eth0"
-    interface_offload_restore = True  # Restore settings when done (default)
-    
-    # Optional: specify which features to disable (None = use defaults)
-    # interface_offload_features = ["tx-checksumming", "tcp-segmentation-offload"]
-    
-    packet = IP() / TCP(chksum=0x0000)  # Invalid checksum
-```
+**Attributes:**
+- `disable_interface_offload: bool = False` - Enable/disable interface offload management
+- `interface: str = "eth0"` - Network interface to configure
+- `interface_offload_restore: bool = True` - Restore settings when done
+- `interface_offload_features: Optional[List[str]] = None` - Specific features to disable
 
 ### CLI Usage
 
 ```bash
 # Enable interface offload management for all campaigns
-sudo packetfuzz --disable-offload campaign_config.py
-
-# Disable interface offload management (keep hardware features enabled)
-python -m packetfuzz --enable-offload campaign_config.py
+sudo python -m packetfuzz --disable-offload campaign_config.py
 
 # Root privileges required for interface configuration
 sudo python -m packetfuzz --disable-offload examples/malformed_packets.py
 ```
+
+**Requirements:**
+- Root privileges for interface configuration
+- `ethtool` command availability
+- Valid network interface
+
+**Implementation**: `packetfuzz.utils.interface_manager`
+**Examples**: `examples/advanced/03_malformed_packets.py`
 
 ### Default Offload Features
 
@@ -502,12 +324,6 @@ When `disable_interface_offload = True`, the following features are disabled by 
 - `generic-segmentation-offload` - Generic segmentation offload (GSO)
 - `generic-receive-offload` - Generic receive offload (GRO)
 - `large-receive-offload` - Large receive offload (LRO)
-
-### Requirements
-
-- **Root privileges**: Interface configuration requires administrator access
-- **ethtool**: System must have `ethtool` command available
-- **Valid interface**: Specified network interface must exist
 
 ### Error Handling
 
@@ -523,7 +339,7 @@ The framework uses **hard fail** behavior by default:
 
 ### Callback System Architecture
 
-The framework provides 6 callback types for comprehensive monitoring and custom logic integration. These callbacks can be optionally implemented in a campaign by the user. When provided they are caled at various points throughout the fuzz campaing execution.
+The framework provides 7 callback types for comprehensive monitoring and custom logic integration.
 
 #### Callback Types & Context
 
@@ -531,185 +347,106 @@ The framework provides 6 callback types for comprehensive monitoring and custom 
 |---------------|--------|------------------|--------------|-----------|
 | `pre_launch_callback` | Before campaign starts | Campaign config | `CallbackResult` | Target validation, setup |
 | `pre_send_callback` | Before each packet | Packet, iteration info | `CallbackResult` | Packet modification, logging |
-| `custom_send_callback` | Sends each packet | Packet, response, timing | `CallbackResult` | Implements custom send functions |
+| `custom_send_callback` | Replaces packet send | Packet, response, timing | `CallbackResult` | Custom send implementations |
 | `post_send_callback` | After each packet | Packet, response, timing | `CallbackResult` | Response analysis, metrics |
 | `crash_callback` | On errors/crashes | Packet, error, context | `CallbackResult` | Error handling, crash logging |
-| `no_success_callback` | On no_success | Packet, error, context | `CallbackResult` | Error handling, crash logging |
+| `no_success_callback` | On callback failures | Packet, error, context | `CallbackResult` | Failure handling |
 | `monitor_callback` | Periodic intervals | Progress, statistics | `CallbackResult` | Progress monitoring, alerts |
-
-
-```
-Campaign Execution Flow with Callbacks:
-┌─────────────────────────────────────────────────────────────────┐
-│                      CAMPAIGN EXECUTION                         │
-│                                                                 │
-│  1. pre_launch_callback()     ← Validate targets, setup        │
-│           │                                                     │
-│           ▼                                                     │
-│  ┌─────────────────┐                                           │
-│  │  For each packet iteration:                                 │
-│  │                                                             │
-│  │  2. pre_send_callback()    ← Modify packet, log            │
-│  │           │                                                 │
-│  │           ▼                                                 │
-│  │  [ SEND PACKET ]           ← Send packet or execute         │
-│  │           │                      custom send callback       │
-│  │           ▼                                                 │
-│  │  3. post_send_callback()   ← Analyze response              │
-│  │           │                                                 │
-│  │           ▼                                                 │
-│  │  4. crash_callback()       ← Handle crashes/errors         │
-│  │     (if crash detected)                                     │
-│  │                                                             │
-│  │  5. monitor_callback()     ← Continuous monitoring         │
-│  │     (every N iterations)                                    │
-│  └─────────────────┘                                           │
-└─────────────────────────────────────────────────────────────────┘
-```
 
 #### Callback Return Values
 
 | Return Value | Description | Effect |
 |--------------|-------------|--------|
 | `SUCCESS` | Normal execution | Continue to next step |
-| `NO_SUCCESS` | This indicates that the callback did not execute correctly, but that it does not indicate a crash or target failure
-| `FAIL_CRASH` | This indicates a target failure, when this is returned the crash callback handler will be executed
+| `NO_SUCCESS` | Callback execution failed (non-critical) | Log and continue |
+| `FAIL_CRASH` | Target failure detected | Trigger crash callback |
 
-#### Callback Implementation Pattern
+**Implementation**: `packetfuzz.fuzzing_framework.CallbackManager`  
+**Return Types**: `packetfuzz.fuzzing_framework.CallbackResult`  
+**Examples**: `examples/intermediate/04_callback_basics.py`
 
-```python
-from packetfuzz.fuzzing_framework import FuzzingCampaign, CallbackResult
+#### Callback Execution Sequence
 
-class CallbackDemoCampaign(FuzzingCampaign):
-    name = "Callback Demo"
-    target = "192.168.1.100"
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant C as Campaign
+    participant CB as CallbackManager
+    participant M as MutatorManager
+    participant N as Network
     
-    def my_pre_launch_callback(self, context):
-        """Validate target before starting campaign"""
-        print(f"Validating target: {self.target}")
-        # Return SUCCESS or NO_SUCCESS
-        return CallbackResult.SUCCESS
+    U->>C: execute()
+    C->>CB: pre_launch_callback()
+    CB-->>C: SUCCESS
     
-    def my_pre_send_callback(self, packet, context):
-        """Modify packet before sending"""
-        print(f"Sending: {packet.summary()}")
-        return CallbackResult.SUCCESS, packet  # Modified packet
+    Note over C: Initialize fuzzer & PCAP
     
-    def my_post_send_callback(self, packet, response, context):
-        """Analyze response after sending"""
-        if response:
-            print(f"Response: {response.summary()}")
-        return CallbackResult.SUCCESS
+    loop For each iteration
+        C->>CB: pre_send_callback(packet, context)
+        CB-->>C: SUCCESS + Modified Packet
+        C->>M: mutate_packet(packet)
+        M-->>C: Mutated Packet
+        
+        alt Custom Send Callback
+            C->>CB: custom_send_callback(packet)
+            CB-->>C: Response + Timing
+        else Default Send
+            C->>N: send_packet(packet)
+            N-->>C: Response
+        end
+        
+        C->>CB: post_send_callback(packet, response, context)
+        CB-->>C: SUCCESS
+        
+        alt Crash Detected
+            C->>CB: crash_callback(packet, error, context)
+            CB-->>C: Log Crash
+        end
+        
+        Note over C: Log to PCAP, Update Stats
+    end
     
-    def my_crash_callback(self, packet, error, context):
-        """Handle crashes and errors"""
-        print(f"Crash detected: {error}")
-        # Log to file, save packet, etc.
-        return CallbackResult.SUCCESS
-    
-    def my_monitor_callback(self, context):
-        """Continuous monitoring during campaign"""
-        print(f"Progress: {context.get('packets_sent', 0)} packets sent")
-        return CallbackResult.SUCCESS
+    C->>CB: monitor_callback(context)
+    CB-->>C: Final Statistics
 ```
 
 ### Field Resolution & Discovery
 
 The framework uses dynamic field discovery to work with any Scapy packet type, including custom protocols.
 
-#### Field Discovery Process
+**Key Features:**
+- Automatic field discovery using Scapy's `fields_desc`
+- Fallback detection via object introspection
+- Custom protocol support
+- Layer-based field mapping
 
-```
-Packet Field Discovery Flow:
-┌──────────────────────────────────────────────────────────────────────────────────────────────┐
-│                    FIELD DISCOVERY PROCESS                                                  │
-│                                                                                              │
-│  Input: Scapy Packet                                                                         │
-│         │                                                                                   │
-│         ▼                                                                                   │
-│  ┌──────────────┐                                                                           │
-│  │ LAYER ANALYSIS│                                                                           │
-│  │              │                                                                           │
-│  │ • Extract all│ ────────────────────────────────────────────────────────────────────────┐ │
-│  │   packet layers│                       │                                               │
-│  │ • Get layer   │                       │                                               │
-│  │   class names │                       │                                               │
-│  └──────────────┘                       │                                               │
-│                                         │                                               │
-│         ┌───────────────────────────────────────────────────────────────────────────────┘ │
-│         │                                                                               │
-│         ▼                                                                               │
-│  ┌──────────────┐    ┌──────────────┐                                                   │
-│  │FIELD DETECTION│    │FALLBACK      │                                                   │
-│  │              │    │DETECTION     │                                                   │
-│  │ • Use Scapy's│    │              │                                                   │
-│  │   fields_desc│ ──▶│ • Scan __dict__│                                                   │
-│  │ • Extract field│   │ • Filter private│                                                   │
-│  │   names & types│   │   attributes  │                                                   │
-│  └──────────────┘    └──────────────┘                                                   │
-│                                         │                                               │
-│         ┌───────────────────────────────────────────────────────────────────────────────┘ │
-│         │                                                                               │
-│         ▼                                                                               │
-│  ┌──────────────┐                                                                       │
-│  │FIELD MAPPING │                                                                       │
-│  │              │                                                                       │
-│  │ • Create layer.│                                                                       │
-│  │   field paths │                                                                       │
-│  │ • Map to      │                                                                       │
-│  │   dictionaries│                                                                       │
-│  │ • Apply weights│                                                                       │
-│  └──────────────┘                                                                       │
-│                                                                                        │
-│  Output: List of fuzzable fields with metadata                                          │
-└──────────────────────────────────────────────────────────────────────────────────────────────┘
-```
+**Field Discovery Process:**
 
-#### Custom Protocol Example
-
-This examples shows how a custom protocol can easily be added by using basic scapy packet crafting.
-
-```python
-from scapy.packet import Packet
-from scapy.fields import ByteField, ShortField, StrField, IPField
-
-# Define custom protocol
-class MyCustomProtocol(Packet):
-    name = "MyCustomProtocol"
-    fields_desc = [
-        ByteField("version", 1),
-        ShortField("command", 0), 
-        IPField("target_ip", "0.0.0.0"),
-        StrField("payload", "")
-    ]
-
-# Framework automatically discovers these fields:
-# MyCustomProtocol.version  → Type: ByteField
-# MyCustomProtocol.command  → Type: ShortField  
-# MyCustomProtocol.target_ip → Type: IPField
-# MyCustomProtocol.payload  → Type: StrField
-
-class CustomProtocolCampaign(FuzzingCampaign):
-    name = "Custom Protocol Test"
-    target = "192.168.1.1"
+```mermaid
+flowchart TD
+    A[Scapy Packet Input] --> B[Extract All Layers]
+    B --> C[For Each Layer]
+    C --> D{Has fields_desc<br/>Attribute?}
+    D -->|Yes| E[Use Scapy Field<br/>Descriptors]
+    D -->|No| F[Scan __dict__<br/>Attributes]
     
-    packet = (
-        IP() /
-        UDP(dport=9999) /
-        MyCustomProtocol(
-            version=FuzzField(values=[1, 2, 255], description="Protocol version"),
-            command=FuzzField(
-                dictionaries=["custom/protocol-commands.txt"],
-                description="Protocol commands"
-            ),
-            payload=FuzzField(
-                dictionaries=["fuzzdb/attack-payloads/all-attacks/all-attacks-unix.txt"],
-                description="Protocol payload"
-            )
-        )
-    )
+    E --> G[Extract Field Names<br/>& Types]
+    F --> H[Filter Private<br/>Attributes]
+    H --> G
+    
+    G --> I[Create layer.field<br/>Mapping Paths]
+    I --> J[Apply Dictionary<br/>Mappings]
+    J --> K[Calculate Field<br/>Weights]
+    K --> L[Generate Fuzzable<br/>Field List]
+    
+    style A fill:#e1f5fe
+    style L fill:#c8e6c9
+    style E fill:#e8f5e8
+    style F fill:#fff3e0
 ```
 
+**Implementation**: `packetfuzz.mutator_manager.field_discovery()`
+**Examples**: `examples/advanced/05_custom_protocols.py`
 
 
 ## Testing
@@ -721,19 +458,83 @@ python -m pytest tests/
 ## API Reference
 
 ### FuzzingCampaign Attributes
-- `name: str` - Campaign name
-- `target: str` - Target IP address  
-- `iterations: int` - Number of packets to send
-- `rate_limit: int` - Packets per second
-- `output_pcap: Optional[str]` - Output PCAP file
-- `packet: Packet` - Packet template to fuzz
+
+| Category | Attribute | Type | Default | Description |
+|----------|-----------|------|---------|-------------|
+| **Basic** | `name` | `Optional[str]` | `None` | Campaign identifier |
+| | `target` | `Optional[Any]` | `None` | Target IP address or list |
+| | `packet` | `Optional[Packet]` | `None` | Packet template to fuzz |
+| | `iterations` | `int` | `1000` | Number of packets to send |
+| **Timing** | `rate_limit` | `float` | `10.0` | Packets per second |
+| | `duration` | `Optional[int]` | `None` | Max execution time (seconds) |
+| | `response_timeout` | `float` | `2.0` | Response capture timeout |
+| | `stats_interval` | `float` | `10.0` | Statistics reporting interval |
+| **Output** | `output_pcap` | `Optional[str]` | `None` | Output PCAP filename |
+| | `append_pcap` | `bool` | `False` | Append to existing PCAP |
+| | `verbose` | `bool` | `True` | Enable detailed logging |
+| | `output_network` | `bool` | `True` | Actually send packets |
+| **Network** | `interface` | `str` | `"eth0"` | Network interface |
+| | `socket_type` | `Optional[str]` | `None` | Socket type (`"l2"`, `"l3"`, `"tcp"`, `"udp"`, `"canbus"`) |
+| | `capture_responses` | `bool` | `False` | Enable response capture |
+| **Scaling** | `layer_weight_scaling` | `Optional[float]` | `None` | Layer weight scaling factor (0.0-1.0) |
+| | `enable_layer_weight_scaling` | `bool` | `True` | Enable layer weight scaling |
+| | `excluded_layers` | `Optional[List[str]]` | `None` | Layer names to exclude from fuzzing |
+| | `fuzz_start_layer` | `Optional[str]` | `None` | Layer to attach PacketFuzzConfig to |
+| **Mutators** | `mutator_preference` | `Optional[List[str]]` | `["libfuzzer"]` | Preferred mutators |
+| **Dictionaries** | `global_dict_config_path` | `Optional[str]` | `None` | Global dictionary config file |
+| | `user_mapping_file` | `Optional[str]` | `None` | User mapping file path |
+| | `mapping_merge_mode` | `str` | `"merge"` | Mapping merge mode (`"merge"` or `"override"`) |
+| | `advanced_field_mapping_overrides` | `Optional[List[dict]]` | `None` | Inline campaign overrides |
+| **Crash Handling** | `crash_packet_logging` | `bool` | `True` | Enable crash packet capture |
+| | `crash_log_directory` | `str` | `"crash_logs/"` | Directory for crash artifacts |
+| | `crash_log_format` | `str` | `"both"` | Log format (`"scapy"`, `"binary"`, `"both"`) |
+| **Interface Offload** | `disable_interface_offload` | `bool` | `False` | Disable network offload features |
+| | `interface_offload_features` | `Optional[List[str]]` | `None` | Specific features to disable |
+| | `interface_offload_restore` | `bool` | `True` | Restore original settings |
+| **Serialization** | `pcap_serialize_failure_mode` | `str` | `"fail"` | Behavior on serialization failure (`"fail"` or `"skip"`) |
+| **Callbacks** | `pre_launch_callback` | `Optional[Callable]` | `None` | Pre-launch callback function |
+| | `pre_send_callback` | `Optional[Callable]` | `None` | Pre-send callback function |
+| | `post_send_callback` | `Optional[Callable]` | `None` | Post-send callback function |
+| | `crash_callback` | `Optional[Callable]` | `None` | Crash callback function |
+| | `no_success_callback` | `Optional[Callable]` | `None` | No-success callback function |
+| | `monitor_callback` | `Optional[Callable]` | `None` | Monitor callback function |
+| | `custom_send_callback` | `Optional[Callable]` | `None` | Custom send callback function |
 
 ### FuzzField Parameters
-- `values: List[Any]` - Static values to use
-- `dictionaries: List[str]` - Dictionary file paths
-- `mutators: List[str]` - Mutation methods (`["libfuzzer"]`, `["scapy"]`, etc.)
-- `description: str` - Field description
 
-### Methods
-- `campaign.execute()` - Run the campaign
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `values` | `List[Any]` | `[]` | Static values to cycle through |
+| `dictionaries` | `List[str]` | `[]` | Dictionary file paths |
+| `mutators` | `List[str]` | `["libfuzzer"]` | Mutation methods |
+| `description` | `str` | `""` | Field description |
+
+### Core Methods
+
+| Method | Return Type | Description |
+|--------|-------------|-------------|
+| `campaign.execute()` | `bool` | Run the campaign |
+| `campaign.validate_campaign()` | `bool` | Validate campaign configuration |
+| `campaign.create_fuzzer(mutator_preference)` | `MutatorManager` | Create fuzzer instance with optional mutator preference |
+| `campaign.get_packet_with_embedded_config()` | `Optional[Packet]` | Get configured packet with embedded FuzzField configs |
+
+## Example Code Reference
+
+The following table shows where to find complete working examples for each feature:
+
+| Feature Category | Feature | Example File | Description |
+|------------------|---------|--------------|-------------|
+| **Basic Usage** | Quick Start | `examples/basic/01_quick_start.py` | Simple campaign setup and execution |
+| | Campaign Types | `examples/basic/02_campaign_types.py` | Different campaign configurations |
+| | FuzzField Basics | `examples/basic/02_fuzzfield_basics.py` | Field-level configuration examples |
+| | PCAP Basics | `examples/basic/03_pcap_basics.py` | Basic PCAP output and analysis |
+| **Intermediate** | Campaign Inheritance | `examples/intermediate/01_campaign_inheritance.py` | Creating campaign hierarchies |
+| | Dictionary Configuration | `examples/intermediate/02_dictionary_config.py` | Advanced dictionary management |
+| | PCAP Regression Testing | `examples/intermediate/03_pcap_regression.py` | PCAP-based fuzzing and regression |
+| | Callback System | `examples/intermediate/04_callback_basics.py` | Implementing campaign callbacks |
+| **Advanced** | Complex Campaigns | `examples/advanced/01_complex_campaigns.py` | Multi-layer, multi-target campaigns |
+| | PCAP Analysis | `examples/advanced/02_pcap_analysis.py` | Advanced PCAP processing and layer extraction |
+| **Configuration** | Dictionary Configs | `examples/config/` | User dictionary and mapping configurations |
+| **Utilities** | Run All Examples | `examples/run_all_examples.py` | Script to execute all example campaigns |
+
 
