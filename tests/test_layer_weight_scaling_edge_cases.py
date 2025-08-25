@@ -16,7 +16,7 @@ import tempfile
 import os
 from pathlib import Path
 from scapy.all import *
-from fuzzing_framework import FuzzingCampaign
+from packetfuzz.fuzzing_framework import FuzzingCampaign
 import logging
 
 logging.getLogger('scapy').setLevel(logging.WARNING)

@@ -17,7 +17,7 @@ import logging
 from scapy.packet import Packet
 
 # Import default configurations
-from default_mappings import (
+from .default_mappings import (
     FIELD_DEFAULT_VALUES,
     FIELD_TYPE_WEIGHTS,
     FIELD_NAME_WEIGHTS,
@@ -103,7 +103,7 @@ class DictionaryManager:
         """
         Expand macro references (e.g., '@string') to their dictionary lists.
         """
-        from default_mappings import MACROS
+        from .default_mappings import MACROS
         if entry.startswith("@"):  # Macro reference
             macro_name = entry[1:]
             return MACROS.get(macro_name, [])

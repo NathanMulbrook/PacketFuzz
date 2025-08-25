@@ -31,8 +31,8 @@ import subprocess
 import shutil
 from datetime import datetime
 from scapy.utils import wrpcap
-from mutator_manager import MutatorManager, FuzzConfig, FuzzMode
-from utils.packet_report import write_packet_report, write_campaign_summary
+from .mutator_manager import MutatorManager, FuzzConfig, FuzzMode
+from .utils.packet_report import write_packet_report, write_campaign_summary
 from pathlib import Path
 from dataclasses import dataclass, field
 
@@ -1269,7 +1269,7 @@ class FuzzingCampaign:
         3. Inline campaign overrides (if provided)
         Merge or override according to mapping_merge_mode.
         """
-        from default_mappings import FIELD_ADVANCED_WEIGHTS
+        from .default_mappings import FIELD_ADVANCED_WEIGHTS
         import importlib.util
         import json
         import os

@@ -12,7 +12,7 @@ from scapy.layers.inet import IP, TCP, UDP
 from scapy.utils import wrpcap
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from pcapfuzz import PcapFuzzCampaign
+from packetfuzz.pcapfuzz import PcapFuzzCampaign
 
 class RegressionTestCampaign(PcapFuzzCampaign):
     """Pure regression testing - replay without fuzzing."""

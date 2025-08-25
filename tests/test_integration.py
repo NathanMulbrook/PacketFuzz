@@ -33,8 +33,8 @@ except ImportError:
 # Add parent directory to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from fuzzing_framework import FuzzingCampaign, CallbackResult
-from mutator_manager import MutatorManager, DictionaryManager
+from packetfuzz.fuzzing_framework import FuzzingCampaign, CallbackResult
+from packetfuzz.mutator_manager import MutatorManager, DictionaryManager
 from conftest import (
     BasicTestCampaign, HTTPTestCampaign, DNSTestCampaign,
     Layer2TestCampaign, DictionaryTestCampaign, PCAPTestCampaign
@@ -763,7 +763,7 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from fuzzing_framework import FuzzingCampaign
+from packetfuzz.fuzzing_framework import FuzzingCampaign
 from scapy.layers.inet import IP, TCP
 
 class CLITestCampaign(FuzzingCampaign):

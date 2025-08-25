@@ -10,7 +10,7 @@ import logging
 from typing import List, Optional, Any
 from scapy.packet import Packet
 from scapy.fields import Field, AnyField
-from mutators.base import BaseMutator
+from .base import BaseMutator
 
 
 class DictionaryOnlyMutator(BaseMutator):

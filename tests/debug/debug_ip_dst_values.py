@@ -6,8 +6,8 @@ from pathlib import Path
 import sys
 sys.path.append(str(Path(__file__).parent))
 
-from fuzzing_framework import FuzzConfig
-from mutator_manager import MutatorManager
+from packetfuzz.fuzzing_framework import FuzzConfig
+from packetfuzz.mutator_manager import MutatorManager
 from scapy.layers.inet import IP, TCP
 from scapy.all import *
 

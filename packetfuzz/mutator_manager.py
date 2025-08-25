@@ -20,8 +20,8 @@ from scapy.fields import Field, BitField, FlagsField, EnumField, StrField, IntFi
 from scapy.packet import Packet, NoPayload
 
 # Local imports
-from dictionary_manager import DictionaryManager
-from packet_extensions import install_packet_extensions
+from .dictionary_manager import DictionaryManager
+from .packet_extensions import install_packet_extensions
 
 # Import default directories
 try:
@@ -29,7 +29,7 @@ try:
 except ImportError:
     # Fallback if circular import - define locally
     DEFAULT_LOG_DIR = "logs"
-from utils.packet_report import write_packet_report
+from .utils.packet_report import write_packet_report
 
 
 logger = logging.getLogger(__name__)
@@ -44,15 +44,15 @@ except ImportError:
 
 # Import mutators for type checking
 try:
-    from mutators.dictionary_only_mutator import DictionaryOnlyMutator
+    from .mutators.dictionary_only_mutator import DictionaryOnlyMutator
 except Exception:
     DictionaryOnlyMutator = None  # type: ignore
 try:
-    from mutators.libfuzzer_mutator import LibFuzzerMutator
+    from .mutators.libfuzzer_mutator import LibFuzzerMutator
 except Exception:
     LibFuzzerMutator = None  # type: ignore
 try:
-    from mutators.scapy_mutator import ScapyMutator
+    from .mutators.scapy_mutator import ScapyMutator
 except Exception:
     ScapyMutator = None  # type: ignore
 
@@ -156,19 +156,19 @@ class MutatorManager:
         self.scapy_mutator = None
         # Always attempt to initialize all mutators, regardless of preference
         try:
-            from mutators.libfuzzer_mutator import LibFuzzerMutator
+            from .mutators.libfuzzer_mutator import LibFuzzerMutator
             self.libfuzzer_mutator = LibFuzzerMutator()
         except Exception as e:
             logger.error(f"Failed to initialize LibFuzzerMutator: {e}")
             self.libfuzzer_mutator = None
         try:
-            from mutators.dictionary_only_mutator import DictionaryOnlyMutator
+            from .mutators.dictionary_only_mutator import DictionaryOnlyMutator
             self.dictionary_only_mutator = DictionaryOnlyMutator()
         except Exception as e:
             logger.error(f"Failed to initialize DictionaryOnlyMutator: {e}")
             self.dictionary_only_mutator = None
         try:
-            from mutators.scapy_mutator import ScapyMutator
+            from .mutators.scapy_mutator import ScapyMutator
             self.scapy_mutator = ScapyMutator()
         except Exception as e:
             logger.error(f"Failed to initialize ScapyMutator: {e}")
@@ -283,7 +283,7 @@ class MutatorManager:
             scaling_factor = self.config.layer_weight_scaling if (self.config.layer_weight_scaling is not None) else None
             if scaling_factor is None:
                 try:
-                    from default_mappings import LAYER_WEIGHT_SCALING as DEFAULT_LAYER_SCALING
+                    from .default_mappings import LAYER_WEIGHT_SCALING as DEFAULT_LAYER_SCALING
                 except Exception:
                     DEFAULT_LAYER_SCALING = 0.9
                 scaling_factor = DEFAULT_LAYER_SCALING
@@ -786,7 +786,7 @@ class MutatorManager:
                     cursor = cursor.payload
                 # Load scaling factor: campaign override via config or default mapping constant
                 try:
-                    from default_mappings import LAYER_WEIGHT_SCALING as DEFAULT_LAYER_SCALING
+                    from .default_mappings import LAYER_WEIGHT_SCALING as DEFAULT_LAYER_SCALING
                 except Exception:
                     DEFAULT_LAYER_SCALING = 0.9
                 scale = self.config.layer_weight_scaling if (self.config.layer_weight_scaling is not None) else DEFAULT_LAYER_SCALING

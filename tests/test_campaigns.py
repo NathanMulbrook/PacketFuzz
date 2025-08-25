@@ -26,8 +26,8 @@ except ImportError:
 # Add parent directory to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from fuzzing_framework import FuzzingCampaign
-from mutator_manager import MutatorManager
+from packetfuzz.fuzzing_framework import FuzzingCampaign
+from packetfuzz.mutator_manager import MutatorManager
 from scapy.all import IP, TCP, UDP, Raw
 from scapy.layers.dns import DNS, DNSQR
 from conftest import (

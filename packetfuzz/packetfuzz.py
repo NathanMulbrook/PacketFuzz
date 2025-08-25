@@ -23,9 +23,9 @@ import os
 # ===========================
 # Local Imports
 # ===========================
-from fuzzing_framework import FuzzingCampaign, logger
-from mutators.libfuzzer_mutator import LibFuzzerMutator
-from dictionary_manager import DictionaryManager
+from .fuzzing_framework import FuzzingCampaign, logger
+from .mutators.libfuzzer_mutator import LibFuzzerMutator
+from .dictionary_manager import DictionaryManager
 
 
 def load_campaigns_from_file(config_file: Path) -> List[Type[FuzzingCampaign]]:
@@ -73,8 +73,8 @@ def check_components():
     - FuzzDB dictionary database
     - Native dictionary support integration
     """
-    from mutators.libfuzzer_mutator import LibFuzzerMutator
-    from dictionary_manager import DictionaryManager
+    from .mutators.libfuzzer_mutator import LibFuzzerMutator
+    from .dictionary_manager import DictionaryManager
     import os
     
     print("Checking component availability...")
@@ -277,7 +277,7 @@ def main():
     
     # Require LibFuzzer if specified
     if args.require_libfuzzer:
-        from mutators.libfuzzer_mutator import LibFuzzerMutator
+        from .mutators.libfuzzer_mutator import LibFuzzerMutator
         mutator = LibFuzzerMutator()
         if not mutator.is_libfuzzer_available():
             logger.error("LibFuzzer extension is required but not available. Compile the extension first.")

@@ -15,7 +15,7 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from fuzzing_framework import FuzzingCampaign, FuzzField
+from packetfuzz.fuzzing_framework import FuzzingCampaign, FuzzField
 from scapy.layers.inet import IP, TCP
 from scapy.layers.http import HTTP, HTTPRequest
 

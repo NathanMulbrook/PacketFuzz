@@ -58,7 +58,7 @@ class TestExampleValidation(unittest.TestCase):
             self.skipTest(f"Campaign file {campaign_path} not found")
             
         result = subprocess.run(
-            [sys.executable, str(self.project_root / "packetfuzz.py"), str(campaign_path), "--disable-network", "--disable-pcap"],
+            [sys.executable, "-m", "packetfuzz.packetfuzz", str(campaign_path), "--disable-network", "--disable-pcap"],
             cwd=str(self.project_root),
             capture_output=True,
             text=True,
@@ -89,6 +89,35 @@ class TestExampleValidation(unittest.TestCase):
                 with self.subTest(campaign_file=campaign_file):
                     success, stdout, stderr = self.run_campaign_cli(campaign_file)
                     self.assertTrue(success, f"{campaign_file.name} failed CLI validation")
+
+    def test_direct_example_execution(self):
+        """Validate that examples can be executed directly without errors."""
+        categories = ["basic", "intermediate", "advanced"]
+        skip_files = ["run_all_examples.py"]  # Skip utility files
+        
+        for category in categories:
+            category_dir = self.examples_dir / category
+            if not category_dir.exists():
+                continue
+            for example_file in sorted(category_dir.glob("*.py")):
+                if example_file.name in skip_files:
+                    continue
+                    
+                with self.subTest(example_file=example_file):
+                    # Execute the example directly with Python
+                    result = subprocess.run(
+                        [sys.executable, str(example_file)],
+                        cwd=str(self.project_root),
+                        capture_output=True,
+                        text=True,
+                        timeout=30  # Shorter timeout for direct execution
+                    )
+                    
+                    # Check if the example ran without crashing
+                    # Some examples might not produce output, so we just check exit code
+                    if result.returncode != 0:
+                        self.fail(f"{example_file.name} failed direct execution (rc={result.returncode}).\n"
+                                f"STDOUT: {result.stdout}\nSTDERR: {result.stderr}")
 
 if __name__ == '__main__':
     # Run example validation tests

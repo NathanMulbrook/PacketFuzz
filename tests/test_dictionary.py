@@ -29,14 +29,14 @@ except ImportError:
 # Add parent directory to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from dictionary_manager import DictionaryManager
-from default_mappings import (
+from packetfuzz.dictionary_manager import DictionaryManager
+from packetfuzz.default_mappings import (
     FIELD_DEFAULT_VALUES
 )
-from fuzzing_framework import FuzzingCampaign
+from packetfuzz.fuzzing_framework import FuzzingCampaign
 
 # Import packet extensions to enable field_fuzz() method
-import packet_extensions
+import packetfuzz.packet_extensions
 
 # Import from conftest with proper path handling
 try:
@@ -340,7 +340,7 @@ class TestCLIDictionaryConfiguration(unittest.TestCase):
                     except Exception:
                         pass
             result = subprocess.run(
-                ["python", "packetfuzz.py"] + remapped,
+                ["python", "-m", "packetfuzz.packetfuzz"] + remapped,
                 capture_output=True,
                 text=True,
                 timeout=20,
@@ -449,7 +449,7 @@ class TestDictionaryOnlyMutator(unittest.TestCase):
         from scapy.layers.inet import TCP
         tcp_packet = TCP()
         # Patch FIELD_ADVANCED_WEIGHTS for test
-        from default_mappings import FIELD_ADVANCED_WEIGHTS
+        from packetfuzz.default_mappings import FIELD_ADVANCED_WEIGHTS
         original_weights = FIELD_ADVANCED_WEIGHTS[:]
         try:
             FIELD_ADVANCED_WEIGHTS[:] = [

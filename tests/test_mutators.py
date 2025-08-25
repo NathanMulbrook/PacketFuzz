@@ -16,7 +16,7 @@ from unittest.mock import patch
 
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from fuzzing_framework import FuzzingCampaign
+from packetfuzz.fuzzing_framework import FuzzingCampaign
 Campaign = FuzzingCampaign
 
 
@@ -26,8 +26,8 @@ class TestMutatorAvailability(unittest.TestCase):
     def test_mutator_imports(self):
         """Test that mutator modules can be imported"""
         try:
-            from mutators.base import BaseMutator
-            from mutators.dictionary_only_mutator import DictionaryOnlyMutator
+            from packetfuzz.mutators.base import BaseMutator
+            from packetfuzz.mutators.dictionary_only_mutator import DictionaryOnlyMutator
             self.assertTrue(True)  # If we get here, imports worked
         except ImportError as e:
             self.fail(f"Could not import basic mutators: {e}")
@@ -35,7 +35,7 @@ class TestMutatorAvailability(unittest.TestCase):
     def test_libfuzzer_import(self):
         """Test LibFuzzer mutator import (may fail if extension not built)"""
         try:
-            from mutators.libfuzzer_mutator import LibFuzzerMutator
+            from packetfuzz.mutators.libfuzzer_mutator import LibFuzzerMutator
             self.libfuzzer_importable = True
         except ImportError:
             self.libfuzzer_importable = False
@@ -47,7 +47,7 @@ class TestDictionaryOnlyMutator(unittest.TestCase):
     
     def setUp(self):
         try:
-            from mutators.dictionary_only_mutator import DictionaryOnlyMutator
+            from packetfuzz.mutators.dictionary_only_mutator import DictionaryOnlyMutator
             self.mutator = DictionaryOnlyMutator()
         except ImportError:
             self.skipTest("Dictionary mutator not available")
@@ -73,7 +73,7 @@ class TestLibFuzzerMutator(unittest.TestCase):
     def setUp(self):
         """Set up LibFuzzer mutator if available"""
         try:
-            from mutators.libfuzzer_mutator import LibFuzzerMutator
+            from packetfuzz.mutators.libfuzzer_mutator import LibFuzzerMutator
             self.mutator = LibFuzzerMutator()
             self.libfuzzer_available = True
         except (ImportError, RuntimeError) as e:
@@ -191,7 +191,7 @@ class TestMutatorIntegration(unittest.TestCase):
     def test_mutator_manager_creation(self):
         """Test that MutatorManager can be created with different preferences"""
         try:
-            from mutator_manager import MutatorManager, FuzzConfig
+            from packetfuzz.mutator_manager import MutatorManager, FuzzConfig
             
             # Test with libfuzzer preference
             config = FuzzConfig(mutator_preference=["libfuzzer"])
@@ -213,7 +213,7 @@ class TestMutatorIntegration(unittest.TestCase):
     def test_dictionary_manager_integration(self):
         """Test basic dictionary manager functionality"""
         try:
-            from dictionary_manager import DictionaryManager
+            from packetfuzz.dictionary_manager import DictionaryManager
             manager = DictionaryManager()
             self.assertIsNotNone(manager)
         except ImportError:
@@ -226,7 +226,7 @@ class TestMutatorErrors(unittest.TestCase):
     def test_libfuzzer_missing_library(self):
         """Test graceful handling when LibFuzzer library is missing"""
         try:
-            from mutators.libfuzzer_mutator import LibFuzzerMutator
+            from packetfuzz.mutators.libfuzzer_mutator import LibFuzzerMutator
         except ImportError:
             self.skipTest("LibFuzzer mutator not importable")
         
@@ -244,7 +244,7 @@ class TestScapyMutator(unittest.TestCase):
     def test_scapy_mutator_import(self):
         """Test that ScapyMutator can be imported and used"""
         try:
-            from mutators.scapy_mutator import ScapyMutator
+            from packetfuzz.mutators.scapy_mutator import ScapyMutator
             mutator = ScapyMutator()
             self.assertIsNotNone(mutator)
             # Test mutate_field with new typed signature returns something

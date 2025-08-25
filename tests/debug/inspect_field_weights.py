@@ -9,7 +9,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from scapy.all import *
-from fuzzing_framework import FuzzingCampaign
+from packetfuzz.fuzzing_framework import FuzzingCampaign
 
 class WeightInspectionCampaign(FuzzingCampaign):
     def __init__(self, scaling_factor: float):

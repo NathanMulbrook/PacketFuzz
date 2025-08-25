@@ -9,9 +9,9 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import logging
 from scapy.all import IP, TCP
-from fuzzing_framework import FuzzingFramework
-from mutator_manager import MutatorManager
-import default_mappings
+from packetfuzz.fuzzing_framework import FuzzingFramework
+from packetfuzz.mutator_manager import MutatorManager
+import packetfuzz.default_mappings
 
 # Set up logging to see the debug messages
 logging.basicConfig(level=logging.DEBUG, format='%(levelname)s:%(name)s:%(message)s')

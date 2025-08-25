@@ -13,7 +13,7 @@ import logging
 logging.basicConfig(level=logging.DEBUG)
 
 from scapy.all import *
-from fuzzing_framework import FuzzingCampaign
+from packetfuzz.fuzzing_framework import FuzzingCampaign
 
 class DebugScalingCampaign(FuzzingCampaign):
     def __init__(self, scaling_factor: float):

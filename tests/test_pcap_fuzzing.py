@@ -16,7 +16,7 @@ from scapy.all import IP, UDP, TCP, Ether, Raw, wrpcap
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from pcapfuzz import PcapFuzzCampaign, pcap_fuzz
+from packetfuzz.pcapfuzz import PcapFuzzCampaign, pcap_fuzz
 from conftest import cleanup_test_files
 
 
@@ -250,7 +250,7 @@ class TestPcapFuzzCampaign(unittest.TestCase):
         
         self.assertIsNone(processed)
     
-    @patch('pcapfuzz.rdpcap')
+    @patch('packetfuzz.pcapfuzz.rdpcap')
     def test_get_packet_with_embedded_config(self, mock_rdpcap):
         """Test getting packet from PCAP files."""
         campaign = PcapFuzzCampaign()
@@ -299,7 +299,7 @@ class TestPcapFuzzStandalone(unittest.TestCase):
         """Clean up test environment."""
         shutil.rmtree(self.temp_dir)
     
-    @patch('pcapfuzz.PcapFuzzCampaign')
+    @patch('packetfuzz.pcapfuzz.PcapFuzzCampaign')
     def test_pcap_fuzz_basic(self, mock_campaign_class):
         """Test basic pcap_fuzz function usage."""
         mock_campaign = MagicMock()
@@ -315,7 +315,7 @@ class TestPcapFuzzStandalone(unittest.TestCase):
         mock_campaign.execute.assert_called_once()
         self.assertTrue(result)
     
-    @patch('pcapfuzz.PcapFuzzCampaign')
+    @patch('packetfuzz.pcapfuzz.PcapFuzzCampaign')
     def test_pcap_fuzz_with_kwargs(self, mock_campaign_class):
         """Test pcap_fuzz function with additional arguments."""
         mock_campaign = MagicMock()

@@ -40,7 +40,7 @@ def test_ip_dst_in_campaign():
         print(f"Campaign enable_layer_weight_scaling: {getattr(campaign, 'enable_layer_weight_scaling', 'NOT SET')}")
         
         # Run the campaign
-        from fuzzing_framework import FuzzingFramework
+        from packetfuzz.fuzzing_framework import FuzzingFramework
         framework = FuzzingFramework()
         framework.run_campaign(campaign)
         

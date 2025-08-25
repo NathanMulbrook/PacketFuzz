@@ -26,14 +26,14 @@ except ImportError:
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from fuzzing_framework import FuzzingCampaign, FuzzField, FuzzMutator, CallbackResult
+from packetfuzz.fuzzing_framework import FuzzingCampaign, FuzzField, FuzzMutator, CallbackResult
 Campaign = FuzzingCampaign
-from mutator_manager import MutatorManager, FuzzConfig, FuzzMode
+from packetfuzz.mutator_manager import MutatorManager, FuzzConfig, FuzzMode
 from scapy.all import IP, TCP, UDP, DNS, DNSQR, Raw
 from scapy.utils import rdpcap, wrpcap
 
 # Import packet extensions to enable field_fuzz() method
-import packet_extensions
+import packetfuzz.packet_extensions
 
 # Import from conftest with robust fallback similar to test_dictionary.py
 import importlib.util
@@ -605,7 +605,7 @@ class TestConfigurationPersistence(unittest.TestCase):
         
     def test_fuzz_history_entry(self):
         """Test FuzzHistoryEntry class for response capture"""
-        from fuzzing_framework import FuzzHistoryEntry
+        from packetfuzz.fuzzing_framework import FuzzHistoryEntry
         from datetime import datetime, timedelta
         
         # Create a test packet

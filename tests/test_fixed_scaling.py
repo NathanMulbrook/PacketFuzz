@@ -4,7 +4,7 @@ Test the fixed layer weight scaling logic.
 """
 
 from scapy.all import *
-from fuzzing_framework import FuzzingCampaign
+from packetfuzz.fuzzing_framework import FuzzingCampaign
 
 class TestScalingCampaign(FuzzingCampaign):
     def __init__(self, scaling_factor: float):

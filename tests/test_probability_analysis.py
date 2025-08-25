@@ -9,7 +9,7 @@ import pytest
 logging.basicConfig(level=logging.INFO)  # Reduce debug noise
 
 from scapy.all import *
-from fuzzing_framework import FuzzingCampaign
+from packetfuzz.fuzzing_framework import FuzzingCampaign
 
 class LayerScalingTestCampaign(FuzzingCampaign):
     def __init__(self, scaling_factor):

@@ -38,8 +38,8 @@ Example Usage:
 from scapy.all import rdpcap, sendp, Raw
 from scapy.layers.inet import IP, UDP, TCP
 from scapy.packet import Packet
-from mutator_manager import MutatorManager, FuzzConfig, FuzzMode
-from fuzzing_framework import FuzzingCampaign, CallbackResult, CampaignContext
+from .mutator_manager import MutatorManager, FuzzConfig, FuzzMode
+from .fuzzing_framework import FuzzingCampaign, CallbackResult, CampaignContext
 from typing import Optional, Callable, List
 import os
 import logging

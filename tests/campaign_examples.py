@@ -2,7 +2,7 @@
 Minimal example campaign file for CLI and test validation.
 """
 from scapy.layers.inet import IP, TCP
-from fuzzing_framework import FuzzingCampaign
+from packetfuzz.fuzzing_framework import FuzzingCampaign
 
 class MinimalTestCampaign(FuzzingCampaign):
     name = "MinimalTestCampaign"

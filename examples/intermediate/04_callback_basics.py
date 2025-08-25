@@ -16,7 +16,7 @@ from scapy.packet import Raw
 from scapy.layers.http import HTTP, HTTPRequest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from fuzzing_framework import FuzzingCampaign, FuzzField, CallbackResult
+from packetfuzz.fuzzing_framework import FuzzingCampaign, FuzzField, CallbackResult
 
 def tcp_pre_send_callback(context, packet):
     """Modify TCP packets before sending."""

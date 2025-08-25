@@ -9,7 +9,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import logging
 from scapy.all import IP, TCP
-from mutator_manager import MutatorManager
+from packetfuzz.mutator_manager import MutatorManager
 import types
 
 # Enable debug logging to see the retry behavior

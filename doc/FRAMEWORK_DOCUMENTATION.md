@@ -6,7 +6,7 @@ Create campaigns using class inheritance with embedded packet configuration. The
 ### Basic Campaign Structure
 
 ```python
-from fuzzing_framework import FuzzingCampaign, FuzzField
+from packetfuzz.fuzzing_framework import FuzzingCampaign, FuzzField
 from scapy.layers.inet import IP, TCP
 from scapy.layers.http import HTTP, HTTPRequest
 
@@ -95,7 +95,7 @@ Extract "TCP" → Repackage "IP/TCP":
 ```
 
 ```python
-from pcapfuzz import PcapFuzzCampaign
+from packetfuzz.pcapfuzz import PcapFuzzCampaign
 
 # Regression testing - replay without fuzzing
 class RegressionTest(PcapFuzzCampaign):
@@ -461,7 +461,7 @@ When fuzzing with malformed packets, network interface offload features, both th
 ### Configuration in a Campaign 
 
 ```python
-from fuzzing_framework import FuzzingCampaign
+from packetfuzz.fuzzing_framework import FuzzingCampaign
 from scapy.layers.inet import IP, TCP
 
 class MalformedPacketCampaign(FuzzingCampaign):
@@ -578,7 +578,7 @@ Campaign Execution Flow with Callbacks:
 #### Callback Implementation Pattern
 
 ```python
-from fuzzing_framework import FuzzingCampaign, CallbackResult
+from packetfuzz.fuzzing_framework import FuzzingCampaign, CallbackResult
 
 class CallbackDemoCampaign(FuzzingCampaign):
     name = "Callback Demo"

@@ -24,7 +24,7 @@ import os
 from pathlib import Path
 from collections import defaultdict, Counter
 from scapy.all import *
-from fuzzing_framework import FuzzingCampaign
+from packetfuzz.fuzzing_framework import FuzzingCampaign
 import logging
 
 # Reduce logging noise for cleaner test output

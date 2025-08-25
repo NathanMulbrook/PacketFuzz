@@ -32,11 +32,11 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from scapy.all import IP, TCP, UDP, Raw, rdpcap, wrpcap
 from scapy.layers.dns import DNS, DNSQR
-from fuzzing_framework import FuzzingCampaign, CallbackResult
-from mutator_manager import MutatorManager, FuzzConfig, FuzzMode
+from packetfuzz.fuzzing_framework import FuzzingCampaign, CallbackResult
+from packetfuzz.mutator_manager import MutatorManager, FuzzConfig, FuzzMode
 
 # Import packet extensions for field_fuzz functionality
-import packet_extensions
+import packetfuzz.packet_extensions
 
 # Try to import pytest for better test reporting
 try:

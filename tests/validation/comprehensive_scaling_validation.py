@@ -13,7 +13,7 @@ import tempfile
 import os
 from collections import defaultdict
 from scapy.all import *
-from fuzzing_framework import FuzzingCampaign
+from packetfuzz.fuzzing_framework import FuzzingCampaign
 import logging
 
 logging.getLogger('scapy').setLevel(logging.WARNING)

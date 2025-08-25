@@ -30,8 +30,8 @@ from scapy.layers.http import HTTP
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from pcapfuzz import PcapFuzzCampaign
-from fuzzing_framework import CallbackResult
+from packetfuzz.pcapfuzz import PcapFuzzCampaign
+from packetfuzz.fuzzing_framework import CallbackResult
 
 # Import from tests directory
 try:

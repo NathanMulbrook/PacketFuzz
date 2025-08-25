@@ -34,7 +34,7 @@ except ImportError:
 # Add the parent directory to sys.path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from fuzzing_framework import FuzzingCampaign
+from packetfuzz.fuzzing_framework import FuzzingCampaign
 from scapy.all import IP, TCP, UDP, DNS, DNSQR, Ether, ARP, Raw
 
 
@@ -317,7 +317,7 @@ def temp_config_file():
     """Fixture providing a temporary configuration file"""
     with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
         f.write('''
-from fuzzing_framework import FuzzingCampaign
+from packetfuzz.fuzzing_framework import FuzzingCampaign
 from scapy.layers.inet import IP, TCP
 
 class TempTestCampaign(FuzzingCampaign):

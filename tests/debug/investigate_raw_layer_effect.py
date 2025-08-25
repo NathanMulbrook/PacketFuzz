@@ -8,8 +8,8 @@ import sys
 # Add the root project directory to Python path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from fuzzing_framework import FuzzConfig
-from mutator_manager import MutatorManager
+from packetfuzz.fuzzing_framework import FuzzConfig
+from packetfuzz.mutator_manager import MutatorManager
 from scapy.layers.inet import IP, TCP
 from scapy.all import *
 import random
