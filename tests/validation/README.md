@@ -12,7 +12,7 @@ These tools can be run directly to validate framework functionality:
 
 ```bash
 cd /path/to/PacketFuzz
-python utils/validation/comprehensive_scaling_validation.py
+python tests/validation/comprehensive_scaling_validation.py
 ```
 
 These validation tools are more comprehensive than unit tests and are used to validate complex behavior across multiple scenarios.

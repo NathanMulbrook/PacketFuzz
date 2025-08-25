@@ -10,7 +10,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import logging
 from scapy.all import IP, TCP, Raw
 import tempfile
-from test_field_level_scaling import LayerWeightScalingTestCampaign
+from ..test_field_level_scaling import LayerWeightScalingTestCampaign
 
 # Reduce logging noise
 logging.basicConfig(level=logging.WARNING)

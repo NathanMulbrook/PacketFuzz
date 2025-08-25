@@ -23,8 +23,9 @@ class DebugLayerScalingCampaign(FuzzingCampaign):
         return IP(dst="127.0.0.1")/TCP(dport=80)/Raw("test payload")
 
 import pytest
+
+@pytest.mark.skip(reason="Debug helper not part of automated suite; fixture provided only in notebooks")
 def test_scaling_factor(scaling_factor):
-    @pytest.mark.skip(reason="Debug helper not part of automated suite; fixture provided only in notebooks")
     print(f"\n{'='*50}")
     print(f"Testing with scaling_factor = {scaling_factor}")
     print(f"{'='*50}")

@@ -20,13 +20,13 @@ class LayerScalingTestCampaign(FuzzingCampaign):
     def get_packet(self):
         return IP(dst="127.0.0.1")/TCP(dport=80)/Raw("test payload")
 
+@pytest.mark.skip(reason="Debug helper relies on external 'scaling_factor' fixture; not part of CI suite")
 def test_skip_probability(scaling_factor, trials=1000):
     """Test how often each layer is skipped with a given scaling factor"""
     print(f"\n{'='*60}")
     print(f"Testing skip probability with scaling_factor = {scaling_factor}")
     print(f"Running {trials} trials...")
     print(f"{'='*60}")
-    @pytest.mark.skip(reason="Debug helper relies on external 'scaling_factor' fixture; not part of CI suite")
     
     campaign = LayerScalingTestCampaign(scaling_factor)
     mutator_mgr = campaign.create_fuzzer()
