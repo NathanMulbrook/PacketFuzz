@@ -415,7 +415,7 @@ class MyCampaign(FuzzingCampaign):
 #### User provided dicitonary on commandline
 This applies to all campaings that are ran
 ```bash
-packetfuzz examples/basic/01_quick_start.py --dictionary-config examples/config/user_dictionary_config.py
+python -m packetfuzz examples/basic/01_quick_start.py --dictionary-config examples/config/user_dictionary_config.py
 ```
 
 ## Weight & Priority Resolution
@@ -486,10 +486,10 @@ class MalformedPacketCampaign(FuzzingCampaign):
 sudo packetfuzz --disable-offload campaign_config.py
 
 # Disable interface offload management (keep hardware features enabled)
-packetfuzz --enable-offload campaign_config.py
+python -m packetfuzz --enable-offload campaign_config.py
 
 # Root privileges required for interface configuration
-sudo python packetfuzz.py --disable-offload examples/malformed_packets.py
+sudo python -m packetfuzz --disable-offload examples/malformed_packets.py
 ```
 
 ### Default Offload Features
@@ -715,7 +715,7 @@ class CustomProtocolCampaign(FuzzingCampaign):
 ## Testing
 
 ```bash
-python tests/run_all_tests.py
+python -m pytest tests/
 ```
 
 ## API Reference

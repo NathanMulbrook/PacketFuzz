@@ -23,13 +23,6 @@ from scapy.layers.dns import DNS, DNSQR
 from scapy.packet import Raw, Packet
 from scapy.utils import rdpcap
 
-# Try to import pytest, fall back to unittest if not available
-try:
-    import pytest
-    PYTEST_AVAILABLE = True
-except ImportError:
-    PYTEST_AVAILABLE = False
-
 # Add parent directory to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
@@ -784,12 +777,11 @@ CAMPAIGNS = [CLITestCampaign]
             
             # Test CLI execution with PCAP
             try:
-                script_path = Path(__file__).parent.parent / "packetfuzz.py"
                 result = subprocess.run([
-                    sys.executable, str(script_path),
+                    sys.executable, "-m", "packetfuzz",
                     str(campaign_file),
                     "--verbose"
-                ], capture_output=True, text=True, timeout=30)
+                ], capture_output=True, text=True, timeout=30, cwd=str(Path(__file__).parent.parent))
                 
                 # Should succeed
                 assert result.returncode == 0, f"CLI should succeed, got stderr: {result.stderr}"
@@ -852,6 +844,4 @@ CAMPAIGNS = [CLITestCampaign]
             assert len(packets2) == expected2, f"Second file should have {expected2} packets"
 
 
-if __name__ == "__main__":
-    import unittest
-    unittest.main()
+

@@ -16,7 +16,7 @@ For detailed usage information, please see the [framework documentation](FRAMEWO
 ┌─────────────────────────────────────────────────────────────────┐
 │                      PacketFuzzING FRAMEWORK                    │
 ├─────────────────────────────────────────────────────────────────┤
-│  CLI Interface (packetfuzz.py)                               │
+│  CLI Interface (python -m packetfuzz)                       │
 │  ├─ Campaign Discovery & Execution                             │
 │  └─ Dictionary Configuration Overrides                        │
 ├─────────────────────────────────────────────────────────────────┤
@@ -52,7 +52,7 @@ PacketFuzz/
 │   ├── advanced/               # Advanced features and patterns
 │   └── intermediate/           # Intermediate features
 ├── tests/                      # Test suite (unit, integration, example validation)
-│   └── run_all_tests.py        # Main test runner
+│   └── test_*.py               # Test files for pytest
 ├── fuzzdb/                     # FuzzDB dictionary database
 ├── mutators/                   # Mutation engine components
 ├── utils/                      # Project utilities
@@ -61,7 +61,12 @@ PacketFuzz/
 ├── default_mappings.py         # Default field-to-dictionary mappings
 ├── dictionary_manager.py       # Dictionary management and overrides
 ├── mutator_manager.py          # Core fuzzing engine and Scapy integration
-├── packetfuzz.py               # Command-line interface
+├── packetfuzz/                 # Main package directory
+│   ├── __init__.py            # Package initialization
+│   ├── __main__.py            # CLI entry point (python -m packetfuzz)
+│   ├── cli.py                 # Command-line interface implementation
+│   ├── fuzzing_framework.py   # Core fuzzing engine
+│   └── ...
 ├── FRAMEWORK_DOCUMENTATION.md  # API and usage documentation
 ├── requirements.txt            # Python dependencies
 └── setup.py                    # Package setup
@@ -77,7 +82,7 @@ Instalation is not necessarily required, the application can be executed from th
 
 2. **Run tests:**
    ```bash
-   python tests/run_all_tests.py
+   python -m pytest tests/
    ```
 
 3. **Try examples:**
@@ -98,7 +103,7 @@ Instalation is not necessarily required, the application can be executed from th
 ### Command-Line Usage
 
 ```text
-packetfuzz [OPTIONS] <campaign_config.py>
+python -m packetfuzz [OPTIONS] <campaign_config.py>
 ```
 
 **Arguments:**
@@ -120,22 +125,22 @@ packetfuzz [OPTIONS] <campaign_config.py>
 **Examples:**
 ```bash
 # List campaigns
-packetfuzz examples/basic/01_quick_start.py --list-campaigns
+python -m packetfuzz examples/basic/01_quick_start.py --list-campaigns
 
 # Execute campaigns
-packetfuzz examples/basic/01_quick_start.py
+python -m packetfuzz examples/basic/01_quick_start.py
 
 # Use a custom dictionary config
-packetfuzz examples/basic/01_quick_start.py --dictionary-config examples/config/user_dictionary_config.py
+python -m packetfuzz examples/basic/01_quick_start.py --dictionary-config examples/config/user_dictionary_config.py
 
 # Enable PCAP output to a specific file
-packetfuzz examples/basic/01_quick_start.py --pcap-file output.pcap
+python -m packetfuzz examples/basic/01_quick_start.py --pcap-file output.pcap
 
 # Validate campaigns without sending packets
-packetfuzz examples/basic/01_quick_start.py --disable-network --verbose
+python -m packetfuzz examples/basic/01_quick_start.py --disable-network --verbose
 
 # Check component availability
-packetfuzz
+python -m packetfuzz
 
 ### Programmatic Usage
 ```python
@@ -174,7 +179,7 @@ campaign.execute()
 
 ## Documentation
 
-- `FRAMEWORK_DOCUMENTATION.md` - Complete API documentation  
+- `doc/FRAMEWORK_DOCUMENTATION.md` - Complete API documentation  
 - `examples/` - Working code examples
 - `tests/` - Test suite
 
@@ -187,7 +192,7 @@ campaign.execute()
 
 ```bash
 # Enable verbose logging
-packetfuzz examples/basic/01_quick_start.py --verbose
+python -m packetfuzz examples/basic/01_quick_start.py --verbose
 
 # Test with minimal iterations
 python -c "

@@ -13,12 +13,6 @@ import time
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 
-try:
-    import pytest
-    PYTEST_AVAILABLE = True
-except ImportError:
-    PYTEST_AVAILABLE = False
-
 import unittest
 
 # Add parent directory to path
@@ -529,10 +523,4 @@ class TestPCAPFunctionalityUnit(TestPCAPFunctionality):
     # All test methods are inherited from TestPCAPFunctionality
 
 
-if __name__ == "__main__":
-    # Support both pytest and unittest execution
-    if PYTEST_AVAILABLE:
-        pytest.main([__file__])
-    else:
-        import unittest
-        unittest.main()
+

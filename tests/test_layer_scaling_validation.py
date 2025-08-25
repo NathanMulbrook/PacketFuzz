@@ -233,9 +233,4 @@ class TestLayerWeightScaling(unittest.TestCase):
         print(f"  - Inner layer (Raw) mutation rate is unaffected by scaling")
         print(f"  - The differences are statistically significant")
 
-if __name__ == "__main__":
-    # Configure logging for test output
-    logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
-    
-    # Run the tests
-    unittest.main(verbosity=2)
+

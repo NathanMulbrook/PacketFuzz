@@ -415,21 +415,3 @@ class TestPcapFuzzIntegration(unittest.TestCase):
         if processed:  # Type guard
             self.assertTrue(processed.haslayer(IP))
             self.assertTrue(processed.haslayer(TCP))
-
-
-if __name__ == '__main__':
-    # Create test suite
-    loader = unittest.TestLoader()
-    suite = unittest.TestSuite()
-    
-    # Add test classes
-    suite.addTests(loader.loadTestsFromTestCase(TestPcapFuzzCampaign))
-    suite.addTests(loader.loadTestsFromTestCase(TestPcapFuzzStandalone))
-    suite.addTests(loader.loadTestsFromTestCase(TestPcapFuzzIntegration))
-    
-    # Run tests
-    runner = unittest.TextTestRunner(verbosity=2)
-    result = runner.run(suite)
-    
-    # Exit with error code if tests failed
-    sys.exit(0 if result.wasSuccessful() else 1)

@@ -96,8 +96,3 @@ def test_scaling_factor(scaling_factor):
     finally:
         if os.path.exists(tmp_path):
             os.unlink(tmp_path)
-
-if __name__ == "__main__":
-    # Test both values the user mentioned
-    test_scaling_factor(0.9)
-    test_scaling_factor(0.1)

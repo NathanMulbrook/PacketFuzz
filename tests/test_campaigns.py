@@ -16,13 +16,6 @@ import tempfile
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 
-# Try to import pytest, fall back to unittest if not available
-try:
-    import pytest
-    PYTEST_AVAILABLE = True
-except ImportError:
-    PYTEST_AVAILABLE = False
-
 # Add parent directory to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
@@ -403,15 +396,3 @@ class DummyTestCampaign(FuzzingCampaign):
     output_network = False
     def build_packets(self):
         return [IP(dst=self.target)/TCP(dport=int(80))/Raw(load=b"test")]  # Ensure dport is int
-
-
-if __name__ == '__main__':
-    # Run tests with pytest if available, otherwise use unittest
-    if PYTEST_AVAILABLE:
-        try:
-            pytest.main([__file__, '-v'])
-        except SystemExit:
-            pass
-    else:
-        import unittest
-        unittest.main(verbosity=2)

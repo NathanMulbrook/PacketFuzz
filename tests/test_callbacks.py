@@ -179,6 +179,3 @@ class CallbackTest(unittest.TestCase):
         self.assertEqual(context.fuzz_history[0].iteration, 2)
         self.assertEqual(context.fuzz_history[1].iteration, 3)
         self.assertEqual(context.fuzz_history[2].iteration, 4)
-
-if __name__ == '__main__':
-    unittest.main()

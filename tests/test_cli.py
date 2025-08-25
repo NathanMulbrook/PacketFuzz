@@ -17,13 +17,6 @@ import tempfile
 from pathlib import Path
 from typing import List, Tuple
 
-# Try to import pytest, fall back to unittest if not available
-try:
-    import pytest
-    PYTEST_AVAILABLE = True
-except ImportError:
-    PYTEST_AVAILABLE = False
-
 # Add parent directory to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
@@ -57,7 +50,7 @@ class CLITestBase(unittest.TestCase):
                     except Exception:
                         pass
             result = subprocess.run(
-                ["python", "packetfuzz.py"] + remapped,
+                ["python", "-m", "packetfuzz"] + remapped,
                 capture_output=True,
                 text=True,
                 timeout=timeout,
@@ -558,13 +551,4 @@ class TestIntegrationScenarios(CLITestBase):
                     assert False, f"Unexpected CLI failure: {stderr}"
 
 
-if __name__ == '__main__':
-    # Run tests with pytest if available, otherwise use unittest
-    if PYTEST_AVAILABLE:
-        try:
-            pytest.main([__file__, '-v'])
-        except SystemExit:
-            pass
-    else:
-        import unittest
-        unittest.main(verbosity=2)
+

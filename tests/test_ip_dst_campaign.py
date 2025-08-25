@@ -100,6 +100,3 @@ def test_ip_dst_campaign():
             print('[PASS] CORRECT: 0.9 scaling produces more mutations than 0.1')
         else:
             print('✗ INCORRECT: 0.1 scaling produces more mutations than 0.9')
-
-if __name__ == '__main__':
-    test_ip_dst_campaign()

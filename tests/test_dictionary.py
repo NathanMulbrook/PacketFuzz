@@ -19,13 +19,6 @@ from pathlib import Path
 from typing import Dict, List, Any
 from scapy.all import IP, TCP, UDP, DNS, DNSQR, Raw
 
-# Try to import pytest, fall back to unittest if not available
-try:
-    import pytest
-    PYTEST_AVAILABLE = True
-except ImportError:
-    PYTEST_AVAILABLE = False
-
 # Add parent directory to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
@@ -340,7 +333,7 @@ class TestCLIDictionaryConfiguration(unittest.TestCase):
                     except Exception:
                         pass
             result = subprocess.run(
-                ["python", "-m", "packetfuzz.packetfuzz"] + remapped,
+                ["python", "-m", "packetfuzz"] + remapped,
                 capture_output=True,
                 text=True,
                 timeout=20,
@@ -504,15 +497,3 @@ class TestDictionaryOnlyMutator(unittest.TestCase):
         # The second part of the test involves complex advanced mapping manipulation
         # which may not work as expected. For now, just verify basic functionality works.
         assert len(dicts) > 0
-
-
-if __name__ == '__main__':
-    # Run tests with pytest if available, otherwise use unittest
-    if PYTEST_AVAILABLE:
-        try:
-            pytest.main([__file__, '-v'])
-        except SystemExit:
-            pass
-    else:
-        import unittest
-        unittest.main(verbosity=2)

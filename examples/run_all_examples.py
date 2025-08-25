@@ -25,8 +25,8 @@ def run_campaign_file_cli(file_path):
     try:
         print(f"Validating {file_path} with packetfuzz CLI...")
         result = subprocess.run([
-            sys.executable, "../packetfuzz.py", file_path, "--disable-network"
-        ], capture_output=True, text=True, cwd=os.path.dirname(__file__))
+            sys.executable, "-m", "packetfuzz", file_path, "--disable-network"
+        ], capture_output=True, text=True, cwd=os.path.dirname(os.path.dirname(__file__)))
         if result.returncode == 0:
             print(f"{os.path.basename(file_path)} validated successfully\n")
             return True

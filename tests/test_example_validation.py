@@ -58,7 +58,7 @@ class TestExampleValidation(unittest.TestCase):
             self.skipTest(f"Campaign file {campaign_path} not found")
             
         result = subprocess.run(
-            [sys.executable, "-m", "packetfuzz.packetfuzz", str(campaign_path), "--disable-network", "--disable-pcap"],
+            [sys.executable, "-m", "packetfuzz", str(campaign_path), "--disable-network", "--disable-pcap"],
             cwd=str(self.project_root),
             capture_output=True,
             text=True,
@@ -118,22 +118,3 @@ class TestExampleValidation(unittest.TestCase):
                     if result.returncode != 0:
                         self.fail(f"{example_file.name} failed direct execution (rc={result.returncode}).\n"
                                 f"STDOUT: {result.stdout}\nSTDERR: {result.stderr}")
-
-if __name__ == '__main__':
-    # Run example validation tests
-    print("=" * 60)
-    print("Example Validation Tests")
-    print("=" * 60)
-    print()
-    print("PURPOSE: Validate examples work correctly for user education")
-    print("NOTE: These are NOT functional tests of the framework!")
-    print("      Examples are purely for demonstration and learning.")
-    print()
-    print("This validation ensures:")
-    print("  - All examples execute without errors")
-    print("  - Framework API changes don't break examples")  
-    print("  - Examples remain useful for user education")
-    print("  - Import statements work correctly in examples")
-    print()
-    
-    unittest.main(verbosity=2)

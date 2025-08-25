@@ -38,13 +38,6 @@ from packetfuzz.mutator_manager import MutatorManager, FuzzConfig, FuzzMode
 # Import packet extensions for field_fuzz functionality
 import packetfuzz.packet_extensions
 
-# Try to import pytest for better test reporting
-try:
-    import pytest
-    PYTEST_AVAILABLE = True
-except ImportError:
-    PYTEST_AVAILABLE = False
-
 
 class FuzzerValidationTestCase(unittest.TestCase):
     """Base class for fuzzer validation tests with enhanced logging and analysis"""
@@ -569,14 +562,3 @@ class TestFuzzerReliabilityAndPerformance(FuzzerValidationTestCase):
         
         self.test_logger.info(f"Error resilience summary: {graceful_scenarios}/{len(error_scenarios)} scenarios handled gracefully")
         self.assertGreater(resilience_rate, 0.5, f"Error resilience too low: {resilience_rate:.1%}")
-
-
-if __name__ == "__main__":
-    # Configure logging for test execution
-    logging.basicConfig(level=logging.INFO, format='%(levelname)s - %(message)s')
-    
-    # Run tests with pytest if available, otherwise unittest
-    if PYTEST_AVAILABLE:
-        pytest.main([__file__, '-v', '-s'])
-    else:
-        unittest.main(verbosity=2)

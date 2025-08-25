@@ -62,5 +62,4 @@ def test_scaling_logic():
     print(f"  - With 0.1 scaling, IP layer should have very low mutation rates")
     print(f"  - With 0.9 scaling, IP layer should have moderately reduced mutation rates")
 
-if __name__ == "__main__":
-    test_scaling_logic()
+

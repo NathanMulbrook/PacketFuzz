@@ -80,7 +80,7 @@ This diverse packet set ensures consistent and reproducible test results while c
 
 ## Integration with Test Suite
 
-The test is integrated into the main test runner (`tests/run_all_tests.py`) and runs as part of the complete test suite. It uses the same patterns and utilities as other tests in the project.
+The test is integrated into the pytest test suite and runs as part of the complete test suite. It uses the same patterns and utilities as other tests in the project.
 
 ## Environmental Considerations
 

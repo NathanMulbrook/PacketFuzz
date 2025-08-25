@@ -68,20 +68,6 @@ def test_skip_probability(scaling_factor, trials=1000):
         'tcp_skip_rate': tcp_skip_rate, 
         'raw_skip_rate': raw_skip_rate
     }
-
-if __name__ == "__main__":
-    # Test the user's values
-    results_09 = test_skip_probability(0.9)
-    results_01 = test_skip_probability(0.1)
-    
-    print(f"\n{'='*60}")
-    print("COMPARISON SUMMARY")
-    print(f"{'='*60}")
-    print(f"Layer       | 0.9 scaling | 0.1 scaling | Difference")
-    print(f"------------|-------------|-------------|------------")
-    print(f"IP (depth=2)| {results_09['ip_skip_rate']:8.1f}%   | {results_01['ip_skip_rate']:8.1f}%   | {abs(results_09['ip_skip_rate'] - results_01['ip_skip_rate']):6.1f}%")
-    print(f"TCP (depth=1)| {results_09['tcp_skip_rate']:8.1f}%   | {results_01['tcp_skip_rate']:8.1f}%   | {abs(results_09['tcp_skip_rate'] - results_01['tcp_skip_rate']):6.1f}%")
-    print(f"Raw (depth=0)| {results_09['raw_skip_rate']:8.1f}%   | {results_01['raw_skip_rate']:8.1f}%   | {abs(results_09['raw_skip_rate'] - results_01['raw_skip_rate']):6.1f}%")
     
     print(f"\nCONCLUSION:")
     print(f"Layer weight scaling IS working. The differences are probabilistic.")

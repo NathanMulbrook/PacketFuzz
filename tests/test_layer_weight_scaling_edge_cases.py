@@ -250,10 +250,3 @@ class TestLayerWeightScalingEdgeCases(unittest.TestCase):
         finally:
             for campaign in campaigns:
                 campaign.cleanup()
-
-if __name__ == "__main__":
-    # Configure logging for test output
-    logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
-    
-    # Run the tests
-    unittest.main(verbosity=2)

@@ -293,9 +293,4 @@ class TestLayerWeightScalingCorrected(unittest.TestCase):
                 result = field_results[field_key]
                 print(f"  - {field_key}: {result['rate_high']:.1f}% -> {result['rate_low']:.1f}% (minimal difference)")
 
-if __name__ == "__main__":
-    # Configure logging for test output
-    logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
-    
-    # Run the tests
-    unittest.main(verbosity=2)
+

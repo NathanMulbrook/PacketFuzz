@@ -264,10 +264,4 @@ class DummyMutatorCampaign(Campaign):
         return [IP(dst=self.target)/UDP(dport=int(53))/Raw(load=b"test")]  # Ensure dport is int
 
 
-if __name__ == '__main__':
-    # Set up logging to reduce noise during testing
-    import logging
-    logging.getLogger().setLevel(logging.WARNING)
-    
-    # Run the tests
-    unittest.main(verbosity=2)
+

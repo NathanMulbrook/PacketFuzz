@@ -748,7 +748,3 @@ class TestPacketPipeline(unittest.TestCase):
         valid_count = sum(1 for p in output_packets if p.haslayer(IP))
         validity_rate = valid_count / len(output_packets) if output_packets else 0
         self.assertGreater(validity_rate, 0.7, "Should maintain high validity despite errors")
-
-
-if __name__ == '__main__':
-    unittest.main()
