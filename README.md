@@ -12,7 +12,7 @@ For detailed usage information, please see the [framework documentation](FRAMEWO
 
 ## Architecture Overview
 
-```mermaid
+.. mermaid::
 graph TB
     subgraph "PacketFuzz Framework"
         CLI[CLI Interface<br/>python -m packetfuzz]
