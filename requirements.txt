@@ -14,8 +14,10 @@ netifaces>=0.11.0
 # LibFuzzer integration (install separately if needed)
 # scapy-libfuzzer>=1.0.0
 
+# === Testing Dependencies ===
+pytest>=7.0.0          # Test framework
+
 # === Development Dependencies (optional) ===
-# pytest>=7.0.0        # For additional testing
 # black>=22.0.0         # Code formatting
 # mypy>=0.991           # Type checking  
 # flake8>=5.0.0         # Linting

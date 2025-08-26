@@ -25,7 +25,6 @@ class QuickStartCampaign(FuzzingCampaign):
     target = "192.168.1.100"
     iterations = 1000
     verbose = False
-    output_pcap = "basic_quick_start.pcap"
     packet = IP() / TCP() / HTTP() / HTTPRequest(Path=b"/", Method=b"GET")
 
 # Register campaign(s) for framework and CLI discovery

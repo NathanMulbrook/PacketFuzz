@@ -10,6 +10,5 @@ class MinimalTestCampaign(FuzzingCampaign):
     packet = IP(dst="127.0.0.1")/TCP(dport=80)
     iterations = 1
     output_network = False
-    output_pcap = None
 
 CAMPAIGNS = [MinimalTestCampaign]

@@ -12,7 +12,7 @@ setup(
     version="2.0.0",
     description="Modern class-based network protocol fuzzing framework built on Scapy",
     python_requires=">=3.10",
-    install_requires=["scapy"],
+    install_requires=["scapy", "pytest>=7.0.0"],
     packages=find_packages(),
     entry_points={
         "console_scripts": [

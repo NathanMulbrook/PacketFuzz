@@ -44,10 +44,12 @@ DEFAULT_RATE_LIMIT = 500.0
 DEFAULT_RESPONSE_TIMEOUT = 2.0
 DEFAULT_STATS_INTERVAL = 10.0
 
-# Default directories
-DEFAULT_PCAP_DIR = "pcaps"
-DEFAULT_LOG_DIR = "logs"
-DEFAULT_CRASH_LOG_DIR = "crash_logs"
+# Centralized output directory structure
+DEFAULT_ARTIFACTS_DIR = Path(__file__).parent.parent / "artifacts"
+DEFAULT_PCAP_DIR = DEFAULT_ARTIFACTS_DIR / "pcaps"
+DEFAULT_LOG_DIR = DEFAULT_ARTIFACTS_DIR / "logs"
+DEFAULT_CRASH_LOG_DIR = DEFAULT_ARTIFACTS_DIR / "crash_logs"
+DEFAULT_REPORT_DIR = "artifacts/reports"
 
 # Default interface offload features to disable for malformed packet fuzzing
 DEFAULT_OFFLOAD_FEATURES = [
@@ -77,7 +79,7 @@ if not logging.getLogger().handlers:
             handlers=[fh, logging.StreamHandler()]
         )
     except Exception as e:
-        print("[ERROR] Failed to initialize file logging at logs/packetfuzz.log.")
+        print(f"[ERROR] Failed to initialize file logging at {DEFAULT_LOG_DIR}/packetfuzz.log.")
         print("        Please ensure you have write permissions and no root-owned logs remain.")
         print(f"        Details: {e}")
         raise SystemExit(2)
@@ -727,9 +729,17 @@ class FuzzingCampaign:
         Falls back to current directory if specified path is invalid.
         """
         if not self.output_pcap:
-            return None
-            
-        pcap_path = Path(self.output_pcap)
+            # Generate smart default based on campaign name
+            if hasattr(self, 'name') and self.name:
+                # Convert campaign name to valid filename
+                safe_name = "".join(c.lower() if c.isalnum() else "_" for c in self.name)
+                safe_name = safe_name.strip("_")
+                filename = f"{safe_name}.pcap"
+            else:
+                filename = DEFAULT_PCAP_FILENAME
+            pcap_path = Path(filename)
+        else:
+            pcap_path = Path(self.output_pcap)
         
         # If it's just a filename (no directory), use default pcaps directory
         if pcap_path.parent == Path('.'):

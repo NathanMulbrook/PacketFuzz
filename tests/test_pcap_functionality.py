@@ -64,7 +64,7 @@ class TestPCAPFunctionality(unittest.TestCase):
             rate_limit = 100.0  # Fast for testing
             verbose = True
             output_network = False
-            output_pcap = None  # Will be set dynamically
+            # output_pcap will be set dynamically
             
             packet = IP(dst="192.168.1.1") / TCP(dport=80) / Raw(load=b"Test data")
         

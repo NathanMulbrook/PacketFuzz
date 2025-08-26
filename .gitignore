@@ -30,12 +30,10 @@ venv.bak/
 
 *.json
 *.pcap
-pcaps/
-logs/
+# Centralized artifacts directory
+artifacts/
+*.report.txt
 crash_logs/*
-tests/crash_logs/*
-tests/logs/*
-tests/test_execution.log
 *.log
 fuzzed_packets_report.txt
 fuzz_fields_input_report.txt

@@ -17,7 +17,7 @@ def write_campaign_summary(
     campaign_context: Optional[Any],
     file_path: Optional[str] = None,
     extra: Optional[Dict[str, Any]] = None,
-    log_dir: str = "logs",
+    log_dir: str = "artifacts/logs",
 ) -> Optional[str]:
     """
     Write a concise end-of-campaign summary log.

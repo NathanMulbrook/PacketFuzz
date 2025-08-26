@@ -24,8 +24,8 @@ class SimpleMessageProtocol(Packet):
         ByteField("version", 1),
         ByteField("message_type", 1),
         ShortField("sequence_id", 0),
-        FieldLenField("payload_length", None, length_of="payload"),
-        StrLenField("payload", b"", length_from=lambda pkt: pkt.payload_length)
+        FieldLenField("payload_length", None, length_of="data"),
+        StrLenField("data", b"", length_from=lambda pkt: pkt.payload_length)
     ]
 
 # Bind custom protocol to UDP port 12345
@@ -67,19 +67,37 @@ class SimpleProtocolFuzzCampaign(FuzzingCampaign):
     packet = (
         IP() / 
         UDP(dport=12345) /
-        SimpleMessageProtocol(
-            version=FuzzField(values=[1, 2, 255]),  # Test version handling
-            message_type=FuzzField(values=[0, 1, 2, 15, 255]),  # Various message types
-            sequence_id=FuzzField(values=[0, 1, 65535]),  # Boundary values
-            payload=FuzzField(values=[
-                b"",  # Empty payload
-                b"Hello, World!",  # Normal payload
-                b"A" * 100,  # Large payload
-                b"\x00\x01\x02\x03",  # Binary payload
-                b"X" * 1000  # Very large payload
-            ])
-        )
+        SimpleMessageProtocol()
     )
+    
+    def __init__(self):
+        super().__init__()
+        # Configure fuzzing using embedded configuration
+        if hasattr(self.packet, '__getitem__') or hasattr(self.packet, 'getlayer'):
+            try:
+                smp_layer = self.packet[SimpleMessageProtocol]
+                # Configure field fuzzing
+                smp_layer.field_fuzz('version').default_values = [1, 2, 255]
+                smp_layer.field_fuzz('version').description = "Version handling test"
+                
+                smp_layer.field_fuzz('message_type').default_values = [0, 1, 2, 15, 255]
+                smp_layer.field_fuzz('message_type').description = "Various message types"
+                
+                smp_layer.field_fuzz('sequence_id').default_values = [0, 1, 65535]
+                smp_layer.field_fuzz('sequence_id').description = "Boundary values"
+                
+                smp_layer.field_fuzz('data').default_values = [
+                    b"",  # Empty payload
+                    b"Hello, World!",  # Normal payload
+                    b"A" * 100,  # Large payload
+                    b"\x00\x01\x02\x03",  # Binary payload
+                    b"X" * 1000  # Very large payload
+                ]
+                smp_layer.field_fuzz('data').description = "Payload fuzzing"
+            except Exception as e:
+                print(f"Warning: Could not configure field fuzzing: {e}")
+                # Fallback: create packet without FuzzField objects
+                pass
     
     def post_send_callback(self, context, packet, response=None):
         """Log custom protocol fuzzing results."""
@@ -102,29 +120,41 @@ class RPCProtocolFuzzCampaign(FuzzingCampaign):
     packet = (
         IP() / 
         TCP(dport=54321) /
-        CustomRPCHeader(
-            magic=FuzzField(values=[
+        CustomRPCHeader() /
+        CustomRPCData()
+    )
+    
+    def __init__(self):
+        super().__init__()
+        # Configure fuzzing using embedded configuration
+        try:
+            rpc_header = self.packet[CustomRPCHeader] 
+            rpc_data = self.packet[CustomRPCData]
+            
+            # Configure RPC header fuzzing
+            rpc_header.field_fuzz('magic').default_values = [
                 0x52504301,  # Correct magic
-                0x52504300,  # Wrong version
+                0x52504300,  # Wrong version  
                 0x00000000,  # Zero magic
                 0xFFFFFFFF   # Invalid magic
-            ]),
-            version=FuzzField(values=[1, 2, 0, 255]),
-            operation=FuzzField(values=[0, 1, 2, 10, 255]),
-            request_id=FuzzField(values=[0, 1, 0xFFFF]),
-            data_length=FuzzField(values=[0, 10, 100, 0xFFFF])
-        ) /
-        CustomRPCData(
-            data=FuzzField(values=[
+            ]
+            
+            rpc_header.field_fuzz('version').default_values = [1, 2, 0, 255]
+            rpc_header.field_fuzz('operation').default_values = [0, 1, 2, 10, 255] 
+            rpc_header.field_fuzz('request_id').default_values = [0, 1, 0xFFFF]
+            rpc_header.field_fuzz('data_length').default_values = [0, 10, 100, 0xFFFF]
+            
+            # Configure RPC data fuzzing
+            rpc_data.field_fuzz('data').default_values = [
                 b"",
-                b"normal_data",
+                b"normal_data", 
                 b"A" * 50,
                 b"\x00" * 20,
                 b"malformed_json{invalid",
                 b"X" * 200
-            ])
-        )
-    )
+            ]
+        except Exception as e:
+            print(f"Warning: Could not configure RPC field fuzzing: {e}")
     
     def pre_send_callback(self, context, packet):
         """Validate RPC packet consistency."""
@@ -175,7 +205,7 @@ class ProtocolStateMachineCampaign(FuzzingCampaign):
                        version=1,
                        message_type=1,  # CONNECT
                        sequence_id=0,
-                       payload=f"SESSION_INIT_{self.session_id}".encode()
+                       data=f"SESSION_INIT_{self.session_id}".encode()
                    ))
         
         elif self.state == "CONNECTING":
@@ -194,7 +224,7 @@ class ProtocolStateMachineCampaign(FuzzingCampaign):
                        version=1,
                        message_type=2,  # AUTH
                        sequence_id=1,
-                       payload=random.choice(auth_values)
+                       data=random.choice(auth_values)
                    ))
         
         elif self.state == "AUTHENTICATING":
@@ -212,7 +242,7 @@ class ProtocolStateMachineCampaign(FuzzingCampaign):
                        version=1,
                        message_type=3,  # DATA_REQUEST
                        sequence_id=2,
-                       payload=random.choice(request_values)
+                       data=random.choice(request_values)
                    ))
         
         else:  # CONNECTED
@@ -226,7 +256,7 @@ class ProtocolStateMachineCampaign(FuzzingCampaign):
                        version=1,
                        message_type=4,  # DISCONNECT
                        sequence_id=3,
-                       payload=b"BYE"
+                       data=b"BYE"
                    ))
     
     def execute(self):
@@ -239,7 +269,7 @@ class ProtocolStateMachineCampaign(FuzzingCampaign):
             
             # In a real scenario, you would send the packet and analyze responses
             # For demo purposes, we just show the packet structure
-            packet.show2()  # Show packet details
+            packet.show()  # Show packet details
             
             if self.output_pcap:
                 # Write to pcap if specified
@@ -254,7 +284,7 @@ def demonstrate_protocol_parsing():
     # Create sample packets
     smp_packet = (IP() / UDP(dport=12345) / 
                  SimpleMessageProtocol(version=1, message_type=2, 
-                                     sequence_id=100, payload=b"Hello"))
+                                     sequence_id=100, data=b"Hello"))
     
     rpc_packet = (IP() / TCP(dport=54321) / 
                  CustomRPCHeader(magic=0x52504301, version=1, operation=5,
@@ -262,13 +292,13 @@ def demonstrate_protocol_parsing():
                  CustomRPCData(data=b"test_data_1"))
     
     print("Simple Message Protocol packet:")
-    smp_packet.show2()
+    smp_packet.show()
     
     print("\nCustom RPC Protocol packet:")
-    rpc_packet.show2()
+    rpc_packet.show()
     
     # Demonstrate field access
-    print(f"\nSMP Payload: {smp_packet[SimpleMessageProtocol].payload}")
+    print(f"\nSMP Data: {smp_packet[SimpleMessageProtocol].data}")
     print(f"RPC Operation: {rpc_packet[CustomRPCHeader].operation}")
     print(f"RPC Data: {rpc_packet[CustomRPCData].data}")
 

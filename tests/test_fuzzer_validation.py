@@ -195,7 +195,6 @@ class TestFuzzerMutationQuality(FuzzerValidationTestCase):
             target = "192.168.1.100"
             iterations = 100  # Sufficient sample size
             output_network = False
-            output_pcap = None
             verbose = False
             
             def get_packet(self):
@@ -266,7 +265,6 @@ class TestFuzzerMutationQuality(FuzzerValidationTestCase):
             target = "192.168.1.100"
             iterations = 200  # Larger sample for dictionary analysis
             output_network = False
-            output_pcap = None
             verbose = False
             
             def get_packet(self):
@@ -336,7 +334,6 @@ class TestFuzzerMutationQuality(FuzzerValidationTestCase):
             target = "192.168.1.100"
             iterations = 150
             output_network = False
-            output_pcap = None
             verbose = False
             
             def get_packet(self):
@@ -420,7 +417,6 @@ class TestFuzzerReliabilityAndPerformance(FuzzerValidationTestCase):
             target = "192.168.1.100"
             iterations = 500  # Large scale test
             output_network = False
-            output_pcap = None
             verbose = False
             
             def get_packet(self):
@@ -478,7 +474,6 @@ class TestFuzzerReliabilityAndPerformance(FuzzerValidationTestCase):
             target = "192.168.1.100"
             iterations = 50
             output_network = False
-            output_pcap = None
             verbose = True
             
             def __init__(self, error_scenario="normal"):

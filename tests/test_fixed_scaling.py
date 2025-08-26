@@ -6,7 +6,7 @@ Test the fixed layer weight scaling logic.
 from scapy.all import *
 from packetfuzz.fuzzing_framework import FuzzingCampaign
 
-class TestScalingCampaign(FuzzingCampaign):
+class ScalingCampaign(FuzzingCampaign):
     def __init__(self, scaling_factor: float):
         super().__init__()
         self.layer_weight_scaling = scaling_factor
@@ -26,7 +26,7 @@ def test_scaling_logic():
     for scaling_factor in [0.9, 0.5, 0.1]:
         print(f"\nScaling factor: {scaling_factor}")
         
-        campaign = TestScalingCampaign(scaling_factor)
+        campaign = ScalingCampaign(scaling_factor)
         mutator_mgr = campaign.create_fuzzer()
         packet = campaign.get_packet()
         

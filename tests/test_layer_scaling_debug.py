@@ -24,7 +24,7 @@ class DebugLayerScalingCampaign(FuzzingCampaign):
 
 import pytest
 
-@pytest.mark.skip(reason="Debug helper not part of automated suite; fixture provided only in notebooks")
+@pytest.mark.parametrize("scaling_factor", [0.1, 0.5, 0.9])
 def test_scaling_factor(scaling_factor):
     print(f"\n{'='*50}")
     print(f"Testing with scaling_factor = {scaling_factor}")
@@ -72,10 +72,7 @@ def test_scaling_factor(scaling_factor):
         campaign.rate_limit = 5
         
         print("Running campaign...")
-        # This should generate some packets
-        # campaign.run()
-        
-        # Instead of running the full campaign, let's just test mutations directly
+        # Test mutations directly instead of running full campaign
         for i in range(5):
             mutated_packets = mutator_mgr.fuzz_packet(packet, iterations=1)
             if mutated_packets:
@@ -91,7 +88,10 @@ def test_scaling_factor(scaling_factor):
         
         print(f"Total unique packet variations: {len(unique_packets)}")
         
-        print("NOTE: Campaign.run() not tested due to method availability")
+        # Verify that the scaling factor is properly configured
+        assert campaign.layer_weight_scaling == scaling_factor
+        assert mutator_mgr.config.layer_weight_scaling == scaling_factor
+        assert mutator_mgr.config.enable_layer_weight_scaling == True
             
     finally:
         if os.path.exists(tmp_path):

@@ -20,8 +20,8 @@ class LayerScalingTestCampaign(FuzzingCampaign):
     def get_packet(self):
         return IP(dst="127.0.0.1")/TCP(dport=80)/Raw("test payload")
 
-@pytest.mark.skip(reason="Debug helper relies on external 'scaling_factor' fixture; not part of CI suite")
-def test_skip_probability(scaling_factor, trials=1000):
+@pytest.mark.parametrize("scaling_factor", [0.1, 0.5, 0.9])
+def test_skip_probability(scaling_factor, trials=100):  # Reduced trials for faster testing
     """Test how often each layer is skipped with a given scaling factor"""
     print(f"\n{'='*60}")
     print(f"Testing skip probability with scaling_factor = {scaling_factor}")
@@ -63,12 +63,18 @@ def test_skip_probability(scaling_factor, trials=1000):
     print(f"TCP layer (depth=1): {tcp_skips:4d}/{trials} skips = {tcp_skip_rate:5.1f}% skip rate") 
     print(f"Raw layer (depth=0): {raw_skips:4d}/{trials} skips = {raw_skip_rate:5.1f}% skip rate")
     
-    return {
-        'ip_skip_rate': ip_skip_rate,
-        'tcp_skip_rate': tcp_skip_rate, 
-        'raw_skip_rate': raw_skip_rate
-    }
+    # Add assertions to validate the behavior
+    if scaling_factor < 0.5:
+        # Lower scaling factors should skip outer layers more often
+        assert ip_skip_rate > raw_skip_rate, f"IP (outer) should skip more than Raw (inner) with low scaling factor {scaling_factor}"
+        # TCP should also skip more than Raw, but less than IP
+        assert tcp_skip_rate > raw_skip_rate, f"TCP should skip more than Raw with low scaling factor {scaling_factor}"
+    elif scaling_factor > 0.5:
+        # Higher scaling factors should still skip outer layers more, but less drastically
+        assert ip_skip_rate > raw_skip_rate, f"IP (outer) should still skip more than Raw (inner) even with high scaling factor {scaling_factor}"
+        # But the difference should be smaller than with low scaling factors
     
     print(f"\nCONCLUSION:")
     print(f"Layer weight scaling IS working. The differences are probabilistic.")
-    print(f"With 0.9 scaling, outer layers are fuzzed more often than with 0.1 scaling.")
+    print(f"With scaling_factor={scaling_factor}, outer layers skip more than inner layers.")
+    print(f"Lower scaling factors create larger differences between layers.")
