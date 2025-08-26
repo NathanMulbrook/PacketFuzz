@@ -42,9 +42,7 @@ myst_fence_as_directive = ["mermaid"]
 
 # Mermaid configuration for server-side rendering
 mermaid_output_format = 'svg'
-#mermaid_init_js = ""  # Disable client-side JS since we want server-side rendering
-#mermaid_cmd = 'mmdc'  # Use mermaid-cli for server-side rendering  
-#mermaid_cmd_shell = True  # Enable shell execution for CLI
+mermaid_cmd = 'mmdc'  # Use mermaid-cli for server-side rendering
 
 # Files to exclude from processing
 exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']

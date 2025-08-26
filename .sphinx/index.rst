@@ -1,11 +1,11 @@
 All PacketFuzz README Files
-=========================
+===========================
 
-.. include:: ../../README.md
+.. include:: ../README.md
    :parser: myst
-.. include:: ../../tests/validation/README.md
+.. include:: ../tests/validation/README.md
    :parser: myst
-.. include:: ../../tests/debug/README.md
+.. include:: ../tests/debug/README.md
    :parser: myst
 
 API Reference
