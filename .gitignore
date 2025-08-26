@@ -44,8 +44,8 @@ fuzz_fields_output_report.txt
 /debug_*.py
 
 # Documentation builds (Sphinx)
-docs/_build/
-docs/.doctrees/
+.sphinx/_build/
+.sphinx/.doctrees/
 *.doctree
 
 # IDE and editor files

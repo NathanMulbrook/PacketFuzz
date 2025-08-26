@@ -1,5 +1,4 @@
 # Configuration file for the Sphinx documentation builder.
-# https://www.sphinx-doc.org/en/master/usage/configuration.html
 
 import os
 import sys
@@ -21,19 +20,16 @@ extensions = [
     'sphinx.ext.viewcode',      # Source code links
     'sphinx.ext.intersphinx',   # Cross-project references
     'myst_parser',              # Markdown support
-    'sphinxcontrib.mermaid',    # Architecture diagrams
 ]
 
 # Source file types  
-source_suffix = ['.rst', '.md']
+source_suffix = {
+    '.rst': None,
+    '.md': 'myst',
+}
 
-# MyST configuration for Markdown support
-myst_enable_extensions = [
-    "strikethrough",
-    "tasklist",
-    "colon_fence",
-    "linkify",
-]
+# Files to exclude from processing
+exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
 
 # The master toctree document
 master_doc = 'index'
@@ -43,32 +39,25 @@ html_theme = 'sphinx_rtd_theme'
 html_static_path = ['_static']
 html_title = f"{project} Documentation"
 
-# Add version switcher to the template
-html_context = {
-    'display_github': True,
-    'github_user': 'NathanMulbrook',
-    'github_repo': 'PacketFuzz',
-    'github_version': 'main',
-    'conf_py_path': '/docs/',
-}
-
-# -- Options for autodoc ----------------------------------------------------
+# -- Extension configuration -------------------------------------------------
+# AutoDoc configuration
+autodoc_member_order = 'bysource'
 autodoc_default_options = {
     'members': True,
-    'undoc-members': True,
-    'show-inheritance': True,
+    'member-order': 'bysource',
     'special-members': '__init__',
+    'undoc-members': True,
+    'exclude-members': '__weakref__'
 }
 
-# Don't show typehints in the signature (show them in the description instead)
-autodoc_typehints = 'description'
-
-# -- Intersphinx configuration ----------------------------------------------
+# Intersphinx configuration
 intersphinx_mapping = {
-    'python': ('https://docs.python.org/3', None),
+    'python': ('https://docs.python.org/3/', None),
     'scapy': ('https://scapy.readthedocs.io/en/latest/', None),
 }
 
-# -- Mermaid configuration --------------------------------------------------
-mermaid_output_format = 'raw'
-mermaid_init_js = "mermaid.initialize({startOnLoad:true});"
+# Napoleon settings for docstring parsing
+napoleon_google_docstring = True
+napoleon_numpy_docstring = True
+napoleon_include_init_with_doc = False
+napoleon_include_private_with_doc = False
