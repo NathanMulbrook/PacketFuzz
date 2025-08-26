@@ -1,85 +1,98 @@
 name: Documentation
 
-
-
 on:
   push:
-    branches: [ master, dev ]
+    branches: [master, dev]
   pull_request:
-    branches: [ master, dev ]
+    branches: [master, dev]
 
-# Grant GITHUB_TOKEN the minimal permissions required for Pages deployment
+# Minimal permissions for GitHub Pages deployment
 permissions:
   contents: write      # Read repository contents
-#  pages: write       # Deploy to GitHub Pages
+#  pages: write       # Deploy to GitHub Pages  
 #  id-token: write    # Required for OIDC authentication
 
-# Allow only one concurrent deployment
+# Ensure only one deployment runs at a time
 concurrency:
   group: "pages"
   cancel-in-progress: false
 
 jobs:
+  # Build and deploy documentation to GitHub Pages
   build-and-deploy:
-    if: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/dev') }}
+    name: Build and Deploy Documentation
     runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/dev') }}
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     
     steps:
-    - name: Checkout
-      uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-    - name: Setup Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.11'
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
 
-    - name: Install dependencies
-      run: |
-        pip install -r requirements.txt
-        pip install sphinx myst-parser sphinx-rtd-theme sphinxcontrib-mermaid
+      - name: Install Python dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install sphinx myst-parser sphinx-rtd-theme sphinxcontrib-mermaid
 
-    - name: Build documentation
-      run: |
-        cd .sphinx
-        sphinx-build -b html . _build/html
+      - name: Build Sphinx documentation
+        run: |
+          cd .sphinx
+          sphinx-build -b html . _build/html
 
-    - name: Setup Pages
-      uses: actions/configure-pages@v4
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v4
 
-    - name: Upload artifact
-      uses: actions/upload-pages-artifact@v3
-      with:
-        path: .sphinx/_build/html
+      - name: Upload documentation artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: .sphinx/_build/html
 
-    - name: Deploy to GitHub Pages
-      id: deployment
-      uses: actions/deploy-pages@v4
-      with:
-        # Deploy dev branch to a preview subdirectory
-  destination_dir: ${{ github.ref == 'refs/heads/master' && '' || format('branches/{0}', github.ref_name) }}
+      - name: Determine deployment directory
+        id: setdir
+        run: |
+          if [[ "$GITHUB_REF" == "refs/heads/master" ]]; then
+            echo "dir=" >> $GITHUB_OUTPUT
+            echo "Deploying to root (production)"
+          else
+            branch_name="${GITHUB_REF##*/}"
+            echo "dir=branches/$branch_name" >> $GITHUB_OUTPUT
+            echo "Deploying to branches/$branch_name (preview)"
+          fi
 
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+        with:
+          destination_dir: ${{ steps.setdir.outputs.dir }}
+
+  # Test documentation build on pull requests
   test-build:
+    name: Test Documentation Build
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
     
     steps:
-    - name: Checkout
-      uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-    - name: Setup Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.11'
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
 
-    - name: Install dependencies
-      run: |
-        pip install -r requirements.txt
-        pip install sphinx myst-parser sphinx-rtd-theme sphinxcontrib-mermaid
+      - name: Install Python dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install sphinx myst-parser sphinx-rtd-theme sphinxcontrib-mermaid
 
-    - name: Test documentation build
-      run: |
-        cd docs
-        sphinx-build -b html . _build/html -W
+      - name: Test Sphinx documentation build
+        run: |
+          cd .sphinx
+          sphinx-build -b html . _build/html -W
