@@ -8,9 +8,9 @@ on:
 
 # Minimal permissions for GitHub Pages deployment
 permissions:
-  contents: write      # Read repository contents
-#  pages: write       # Deploy to GitHub Pages  
-#  id-token: write    # Required for OIDC authentication
+  contents: read       # Read repository contents
+  pages: write         # Deploy to GitHub Pages  
+  id-token: write      # Required for OIDC authentication
 
 # Ensure only one deployment runs at a time
 concurrency:
