@@ -1,10 +1,11 @@
 name: Documentation
 
+
 on:
   push:
-    branches: [ main, code-cleanup-and-documentation ]
+    branches: [ main, dev ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, dev ]
 
 # Grant GITHUB_TOKEN the minimal permissions required for Pages deployment
 permissions:
@@ -20,7 +21,7 @@ concurrency:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -55,6 +56,9 @@ jobs:
     - name: Deploy to GitHub Pages
       id: deployment
       uses: actions/deploy-pages@v4
+      with:
+        # Deploy dev branch to a preview subdirectory
+        destination_dir: ${{ github.ref == 'refs/heads/main' && '' || format('branches/{0}', github.ref_name) }}
 
   test-build:
     runs-on: ubuntu-latest
