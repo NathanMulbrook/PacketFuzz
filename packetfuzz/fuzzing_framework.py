@@ -122,6 +122,7 @@ class CrashInfo:
 @dataclass
 class FuzzHistoryEntry:
     """Tracks a single fuzzing iteration with sent packet, response, and crash info"""
+    # Core fuzzing data
     packet: Optional[Packet] = None
     timestamp_sent: Optional[datetime] = None
     timestamp_received: Optional[datetime] = None
@@ -130,12 +131,95 @@ class FuzzHistoryEntry:
     crash_info: Optional[CrashInfo] = None
     iteration: int = -1
     
+    # Serialization tracking
+    packet_bytes: Optional[bytes] = None  # Serialized packet bytes (for PCAP replay)
+    serialization_failed: bool = False  # True if packet couldn't be serialized
+    serialization_error: Optional[str] = None  # Error message if serialization failed
+    
+    # Network and protocol information (for reporting)
+    target_host: Optional[str] = None
+    target_port: Optional[int] = None
+    protocol: Optional[str] = None  # e.g., "HTTP", "FTP", "TCP", "UDP"
+    
+    # Payload information (for analysis)
+    payload_size: Optional[int] = None
+    payload_hash: Optional[str] = None  # Hash of the payload for deduplication
+    mutation_applied: Optional[str] = None  # Type of mutation applied
+    
+    # Response information (for validation)
+    response_size: Optional[int] = None
+    response_status: Optional[str] = None  # HTTP status, error code, etc.
+    response_headers: Optional[dict] = None  # For HTTP-like protocols
+    
+    # Campaign context (for reporting)
+    campaign_name: Optional[str] = None
+    test_case_id: Optional[str] = None  # User-defined test case identifier
+    
+    # Additional metadata
+    notes: Optional[str] = None  # User or system notes about this iteration
+    tags: List[str] = field(default_factory=list)  # Custom tags for categorization
+    
     def get_response_time(self) -> Optional[float]:
         """Calculate response time in milliseconds if both timestamps are available"""
         if self.timestamp_sent and self.timestamp_received:
             delta = self.timestamp_received - self.timestamp_sent
             return delta.total_seconds() * 1000
         return None
+    
+    def get_packet_bytes(self) -> Optional[bytes]:
+        """Get serialized packet bytes, attempting serialization if not cached"""
+        if self.packet_bytes is not None:
+            return self.packet_bytes
+        
+        if self.packet is not None and not self.serialization_failed:
+            try:
+                self.packet_bytes = bytes(self.packet)
+                return self.packet_bytes
+            except Exception as e:
+                self.serialization_failed = True
+                self.serialization_error = str(e)
+        
+        return None
+    
+    def get_payload_hash(self) -> Optional[str]:
+        """Generate hash of packet bytes for deduplication"""
+        if self.payload_hash is not None:
+            return self.payload_hash
+        
+        packet_bytes = self.get_packet_bytes()
+        if packet_bytes:
+            import hashlib
+            self.payload_hash = hashlib.sha256(packet_bytes).hexdigest()[:16]  # Short hash
+            return self.payload_hash
+        
+        return None
+    
+    def to_dict(self) -> dict:
+        """Convert to dictionary for JSON serialization and reporting"""
+        return {
+            'iteration': self.iteration,
+            'timestamp_sent': self.timestamp_sent.isoformat() if self.timestamp_sent else None,
+            'timestamp_received': self.timestamp_received.isoformat() if self.timestamp_received else None,
+            'response_time_ms': self.get_response_time(),
+            'crashed': self.crashed,
+            'serialization_failed': self.serialization_failed,
+            'serialization_error': self.serialization_error,
+            'target_host': self.target_host,
+            'target_port': self.target_port,
+            'protocol': self.protocol,
+            'payload_size': self.payload_size,
+            'payload_hash': self.get_payload_hash(),
+            'mutation_applied': self.mutation_applied,
+            'response_size': self.response_size,
+            'response_status': self.response_status,
+            'response_headers': self.response_headers,
+            'campaign_name': self.campaign_name,
+            'test_case_id': self.test_case_id,
+            'notes': self.notes,
+            'tags': self.tags,
+            'crash_id': self.crash_info.crash_id if self.crash_info else None,
+            'crash_source': self.crash_info.crash_source if self.crash_info else None
+        }
 
 #TODO evaluate if this is needed
 @dataclass
@@ -153,7 +237,6 @@ class CampaignContext:
     shared_data: dict = field(default_factory=dict)  # User data sharing between callbacks
     start_time: float = field(default_factory=time.time)
     fuzz_history: List[FuzzHistoryEntry] = field(default_factory=list)
-    fuzz_history_errors: List[Packet] = field(default_factory=list)
     max_history_size: int = 1000  # Limit history size to prevent memory issues
     socket: Optional[Any] = None  # Placeholder for socket object if needed
 
@@ -777,6 +860,57 @@ class FuzzingCampaign:
             
         return pcap_path
 
+    def _extract_protocol(self, packet: Optional[Packet]) -> Optional[str]:
+        """Extract protocol information from a packet for reporting."""
+        if not packet:
+            return None
+        
+        # Check for common protocol layers (highest to lowest level)
+        from scapy.layers.inet import IP, TCP, UDP, ICMP
+        from scapy.layers.l2 import Ether, ARP
+        try:
+            from scapy.layers.http import HTTP, HTTPRequest, HTTPResponse
+            if packet.haslayer(HTTPRequest) or packet.haslayer(HTTPResponse):
+                return "HTTP"
+        except ImportError:
+            pass
+        
+        # Check for transport layer protocols
+        if packet.haslayer(TCP):
+            return "TCP"
+        elif packet.haslayer(UDP):
+            return "UDP"
+        elif packet.haslayer(ICMP):
+            return "ICMP"
+        
+        # Check for network layer
+        elif packet.haslayer(IP):
+            return "IP"
+        elif packet.haslayer(ARP):
+            return "ARP"
+        
+        # Check for data link layer
+        elif packet.haslayer(Ether):
+            return "Ethernet"
+        
+        # Return the highest layer if no specific protocol detected
+        return packet.__class__.__name__ if packet else None
+
+    def _extract_target_port(self, packet: Optional[Packet]) -> Optional[int]:
+        """Extract target port from a packet for reporting."""
+        if not packet:
+            return None
+        
+        from scapy.layers.inet import TCP, UDP
+        
+        # Check for TCP/UDP destination port
+        if packet.haslayer(TCP):
+            return packet[TCP].dport
+        elif packet.haslayer(UDP):
+            return packet[UDP].dport
+        
+        return None
+
     def execute(self) -> bool:
         """
         Execute the fuzzing campaign with full callback support.
@@ -1061,11 +1195,16 @@ class FuzzingCampaign:
                         self.callback_manager.handle_no_success("custom_send", self.context, fuzzed_packets[iteration]) 
                 # Default packet sending behavior (if no custom send callback)
                 elif fuzzed_packets[iteration] is not None:
-                    # Create history entry for this iteration
+                    # Create history entry for this iteration with enhanced metadata
+                    packet = fuzzed_packets[iteration]
                     history_entry = FuzzHistoryEntry(
-                        packet=fuzzed_packets[iteration],
+                        packet=packet,
                         timestamp_sent=datetime.now(),
-                        iteration=iteration
+                        iteration=iteration,
+                        campaign_name=self.name,  # Add campaign name
+                        target_host=getattr(self, 'target', None),  # Add target if available
+                        protocol=self._extract_protocol(packet),  # Extract protocol info
+                        target_port=self._extract_target_port(packet),  # Extract target port
                     )
                     
                     # Manage history size limit
@@ -1118,24 +1257,27 @@ class FuzzingCampaign:
                         try:
                             #TODO make sure there are no fuzz fields left, they should have been replaced with values.
                             pkt_bytes = bytes(pkt)
+                            # Store serialized bytes in history entry
+                            if self.context and self.context.fuzz_history:
+                                self.context.fuzz_history[-1].packet_bytes = pkt_bytes
+                                self.context.fuzz_history[-1].payload_size = len(pkt_bytes)
                         except Exception as e:
                             serialize_error = e
                             logger.error(f"[SERIALIZE] Failed to serialize mutated packet: {e}")
                             serialize_failure_count += 1
-                            # Append the failed packet to error history for reporting
-                            try:
-                                if self.context is not None:
-                                    self.context.fuzz_history_errors.append(pkt)
-                                    # Also collect structured failure info for consolidated summary
-                                    if not hasattr(self.context, 'serialize_failures'):
-                                        self.context.serialize_failures = []  # type: ignore[attr-defined]
-                                    self.context.serialize_failures.append({  # type: ignore[attr-defined]
-                                        'iteration': iteration,
-                                        'packet': pkt,
-                                        'error': str(e)
-                                    })
-                            except Exception:
-                                pass
+                            
+                            # Mark serialization failure in history entry
+                            if self.context and self.context.fuzz_history:
+                                self.context.fuzz_history[-1].serialization_failed = True
+                                self.context.fuzz_history[-1].serialization_error = str(e)
+                                # Also collect structured failure info for consolidated summary
+                                if not hasattr(self.context, 'serialize_failures'):
+                                    self.context.serialize_failures = []  # type: ignore[attr-defined]
+                                self.context.serialize_failures.append({  # type: ignore[attr-defined]
+                                    'iteration': iteration,
+                                    'packet': pkt,
+                                    'error': str(e)
+                                })
 
                             if self.context:
                                 self.context.stats['serialize_failure_count'] = serialize_failure_count

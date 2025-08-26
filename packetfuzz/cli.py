@@ -3,6 +3,30 @@
 PacketFuzz - Main Entry Point
 
 This script provides a command-line interface for running fuzzing campaigns.
+
+Environment Variable Support:
+The CLI supports environment variables for all major configuration options.
+Environment variables are applied as defaults when CLI arguments are not provided.
+CLI arguments always take precedence over environment variables.
+
+Supported Environment Variables:
+- PACKETFUZZ_CONFIG_FILE: Path to campaign configuration file
+- PACKETFUZZ_VERBOSE: Verbosity level (0, 1, 2) or "true" for level 1
+- PACKETFUZZ_ENABLE_NETWORK: Set to "true" to enable network transmission
+- PACKETFUZZ_DISABLE_NETWORK: Set to "true" to disable network transmission
+- PACKETFUZZ_PCAP_FILE: Path to PCAP output file
+- PACKETFUZZ_ENABLE_PCAP: Set to "true" to enable PCAP output
+- PACKETFUZZ_DISABLE_PCAP: Set to "true" to disable PCAP output
+- PACKETFUZZ_DICTIONARY_CONFIG: Path to dictionary configuration file
+- PACKETFUZZ_DISABLE_OFFLOAD: Set to "true" to disable hardware offload
+- PACKETFUZZ_ENABLE_OFFLOAD: Set to "true" to enable hardware offload
+
+Example usage with environment variables:
+  export PACKETFUZZ_CONFIG_FILE="campaign.py"
+  export PACKETFUZZ_DISABLE_NETWORK="true"
+  export PACKETFUZZ_PCAP_FILE="output.pcap"
+  export PACKETFUZZ_VERBOSE="2"
+  packetfuzz
 """
 
 # ===========================
@@ -122,7 +146,7 @@ def check_components():
 
 def apply_cli_overrides(campaign, args):
     """
-    Apply CLI flag overrides to a campaign instance.
+    Apply CLI flag and environment variable overrides to a campaign instance.
     
     Args:
         campaign: FuzzingCampaign instance to modify
@@ -182,21 +206,39 @@ def apply_cli_overrides(campaign, args):
 
 def main():
     """Main entry point for the packetfuzz CLI."""
+    # Environment variable defaults
+    env_defaults = {
+        'config_file': os.getenv('PACKETFUZZ_CONFIG_FILE'),
+        'verbose': int(os.getenv('PACKETFUZZ_VERBOSE', '0')),
+        'pcap_file': os.getenv('PACKETFUZZ_PCAP_FILE'),
+        'dictionary_config': os.getenv('PACKETFUZZ_DICTIONARY_CONFIG'),
+        'enable_network': os.getenv('PACKETFUZZ_ENABLE_NETWORK') == 'true',
+        'disable_network': os.getenv('PACKETFUZZ_DISABLE_NETWORK') == 'true',
+        'enable_pcap': os.getenv('PACKETFUZZ_ENABLE_PCAP') == 'true',
+        'disable_pcap': os.getenv('PACKETFUZZ_DISABLE_PCAP') == 'true',
+        'disable_offload': os.getenv('PACKETFUZZ_DISABLE_OFFLOAD') == 'true',
+    }
+    
     parser = argparse.ArgumentParser(
-        description="PacketFuzzer - Advanced Network Protocol Fuzzing Framework"
+        description="PacketFuzzer - Advanced Network Protocol Fuzzing Framework",
+        epilog="Environment variables (PACKETFUZZ_*) can be used as defaults for all options. "
+               "CLI arguments take precedence over environment variables.",
+        formatter_class=argparse.RawDescriptionHelpFormatter
     )
     parser.add_argument(
         "config_file",
         type=Path,
         nargs='?',
-        help="Path to campaign configuration file"
+        default=env_defaults['config_file'],
+        help="Path to campaign configuration file (or set PACKETFUZZ_CONFIG_FILE)"
     )
     parser.add_argument(
         "-v",
         "--verbose",
         action="count",
-        default=0,
-        help="Increase verbosity: -v (show config details), -vv (full debug mode)."
+        default=env_defaults['verbose'],
+        help="Increase verbosity: -v (show config details), -vv (full debug mode). "
+             "Can also set PACKETFUZZ_VERBOSE=1 or PACKETFUZZ_VERBOSE=2"
     )
     parser.add_argument(
         "--list-campaigns",
@@ -221,19 +263,23 @@ def main():
     network_group.add_argument(
         "--enable-network",
         action="store_true",
-        help="Enable network transmission (overrides campaign configuration)."
+        help="Enable network transmission (overrides campaign configuration). "
+             "Can also set PACKETFUZZ_ENABLE_NETWORK=true"
     )
     network_group.add_argument(
         "--disable-network",
         action="store_true",
-        help="Disable network transmission (overrides campaign configuration)."
+        help="Disable network transmission (overrides campaign configuration). "
+             "Can also set PACKETFUZZ_DISABLE_NETWORK=true"
     )
     
     output_group = parser.add_argument_group("Output Control")
     output_group.add_argument(
         "--pcap-file",
         type=Path,
-        help="PCAP output file path (enables PCAP output if specified)."
+        default=env_defaults['pcap_file'],
+        help="PCAP output file path (enables PCAP output if specified). "
+             "Can also set PACKETFUZZ_PCAP_FILE"
     )
     
     parser.add_argument(
@@ -249,6 +295,7 @@ def main():
     parser.add_argument(
         "--dictionary-config",
         type=Path,
+        default=env_defaults['dictionary_config'],
         help="Path to user dictionary configuration file (overrides campaign settings)."
     )
     
@@ -266,6 +313,18 @@ def main():
     )
     
     args = parser.parse_args()
+    
+    # Apply environment variable defaults for boolean flags (only if not set by CLI)
+    if not args.enable_network and not args.disable_network and env_defaults['enable_network']:
+        args.enable_network = True
+    if not args.enable_network and not args.disable_network and env_defaults['disable_network']:
+        args.disable_network = True
+    if not args.enable_pcap and not args.disable_pcap and env_defaults['enable_pcap']:
+        args.enable_pcap = True
+    if not args.enable_pcap and not args.disable_pcap and env_defaults['disable_pcap']:
+        args.disable_pcap = True
+    if not args.disable_offload and env_defaults['disable_offload']:
+        args.disable_offload = True
     
     # Component availability check
     if args.check_components:

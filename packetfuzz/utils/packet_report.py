@@ -140,10 +140,17 @@ def write_campaign_summary(
                         failed.append((it, pkt, err))
                 except Exception:
                     pass
-            # Fallbacks from history
-            if hasattr(campaign_context, "fuzz_history_errors"):
-                for idx, pkt in enumerate(getattr(campaign_context, "fuzz_history_errors") or []):
-                    failed.append((idx, pkt, None))
+            
+            # Get serialization failures from unified fuzz_history
+            if hasattr(campaign_context, "fuzz_history"):
+                for entry in getattr(campaign_context, "fuzz_history") or []:
+                    if getattr(entry, 'serialization_failed', False):
+                        failed.append((
+                            getattr(entry, 'iteration', -1), 
+                            getattr(entry, 'packet', None), 
+                            getattr(entry, 'serialization_error', None)
+                        ))
+            
             # Single consolidated file
             if failed:
                 summary_path = f"{log_dir}/serialize_failures.txt"
