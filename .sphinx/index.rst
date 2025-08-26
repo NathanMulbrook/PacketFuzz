@@ -4,31 +4,31 @@ PacketFuzz Documentation
 Welcome to PacketFuzz - a comprehensive network packet fuzzing framework.
 
 .. include:: ../README.md
-   :parser: myst_parser.sphinx_
+   :parser: myst
 
 Command Line Interface
 ======================
 
 .. include:: ../docs/CLI.md
-   :parser: myst_parser.sphinx_
+   :parser: myst
 
 Framework Guide
 ===============
 
 .. include:: ../docs/FRAMEWORK.md
-   :parser: myst_parser.sphinx_
+   :parser: myst
 
 Dictionary Management
 =====================
 
 .. include:: ../docs/DICTIONARIES.md
-   :parser: myst_parser.sphinx_
+   :parser: myst
 
 Examples
 ========
 
 .. include:: ../docs/EXAMPLES.md
-   :parser: myst_parser.sphinx_
+   :parser: myst
 
 API Reference
 -------------
