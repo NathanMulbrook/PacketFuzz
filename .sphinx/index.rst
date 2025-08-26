@@ -1,47 +1,60 @@
-PacketFuzz Documentation
-========================
+All PacketFuzz README Files
+=========================
 
-Welcome to PacketFuzz - a comprehensive network packet fuzzing framework.
-
-.. include:: ../README.md
+.. include:: ../../README.md
    :parser: myst
-
-Command Line Interface
-======================
-
-.. include:: ../docs/CLI.md
+.. include:: ../../tests/validation/README.md
    :parser: myst
-
-Framework Guide
-===============
-
-.. include:: ../docs/FRAMEWORK.md
-   :parser: myst
-
-Dictionary Management
-=====================
-
-.. include:: ../docs/DICTIONARIES.md
-   :parser: myst
-
-Examples
-========
-
-.. include:: ../docs/EXAMPLES.md
+.. include:: ../../tests/debug/README.md
    :parser: myst
 
 API Reference
--------------
+=============
 
-.. toctree::
-   :maxdepth: 2
-   :caption: API Documentation:
-   
-   api/index
+PacketFuzz Core Modules
+-----------------------
 
-Indices and tables
-==================
+.. automodule:: packetfuzz
+   :members:
+   :undoc-members:
+   :show-inheritance:
 
-* :ref:`genindex`
-* :ref:`modindex`
-* :ref:`search`
+Campaign Framework
+------------------
+
+.. automodule:: packetfuzz.fuzzing_framework
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+PCAP Fuzzing
+------------
+
+.. automodule:: packetfuzz.pcapfuzz
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Mutator Manager
+---------------
+
+.. automodule:: packetfuzz.mutator_manager
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Dictionary Manager
+------------------
+
+.. automodule:: packetfuzz.dictionary_manager
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Utilities
+---------
+
+.. automodule:: packetfuzz.utils
+   :members:
+   :undoc-members:
+   :show-inheritance:

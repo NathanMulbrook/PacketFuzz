@@ -53,8 +53,7 @@ exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
 suppress_warnings = ['misc.highlighting_failure', 'myst.header']
 
 # The master toctree document
-master_doc = 'index'
-
+master_doc = '.sphinx/index'
 # -- Options for HTML output ------------------------------------------------
 html_theme = 'sphinx_rtd_theme'
 html_static_path = ['_static']
