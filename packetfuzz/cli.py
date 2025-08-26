@@ -11,12 +11,15 @@ CLI arguments always take precedence over environment variables.
 
 Supported Environment Variables:
 - PACKETFUZZ_CONFIG_FILE: Path to campaign configuration file
-- PACKETFUZZ_VERBOSE: Verbosity level (0, 1, 2) or "true" for level 1
+- PACKETFUZZ_VERBOSE: Verbosity level (0, 1, 2, etc.) for both console and file output
+- PACKETFUZZ_CONSOLE_VERBOSITY: Console verbosity level (overrides PACKETFUZZ_VERBOSE for console)
+- PACKETFUZZ_FILE_VERBOSITY: File verbosity level (overrides PACKETFUZZ_VERBOSE for file)
 - PACKETFUZZ_ENABLE_NETWORK: Set to "true" to enable network transmission
 - PACKETFUZZ_DISABLE_NETWORK: Set to "true" to disable network transmission
 - PACKETFUZZ_PCAP_FILE: Path to PCAP output file
 - PACKETFUZZ_ENABLE_PCAP: Set to "true" to enable PCAP output
 - PACKETFUZZ_DISABLE_PCAP: Set to "true" to disable PCAP output
+- PACKETFUZZ_REPORT_FORMATS: Comma-separated list of report formats (html,json,csv,sarif,markdown,yaml,all)
 - PACKETFUZZ_DICTIONARY_CONFIG: Path to dictionary configuration file
 - PACKETFUZZ_DISABLE_OFFLOAD: Set to "true" to disable hardware offload
 - PACKETFUZZ_ENABLE_OFFLOAD: Set to "true" to enable hardware offload
@@ -187,17 +190,75 @@ def apply_cli_overrides(campaign, args):
     
     # Verbose
     if hasattr(campaign, 'verbose'):
-        campaign.verbose = args.verbose
-    # Set root logger level based on verbosity so all module loggers inherit
+        campaign.verbose = max(args.verbose, 
+                             getattr(args, 'console_verbosity', 0) or 0,
+                             getattr(args, 'file_verbosity', 0) or 0,
+                             getattr(args, 'log_verbosity', 0) or 0)
+    
+    # Report formats
+    if args.report_formats:
+        # Handle 'all' option
+        if 'all' in args.report_formats:
+            campaign.report_formats = ['html', 'json', 'csv', 'sarif', 'markdown', 'yaml']
+        else:
+            campaign.report_formats = args.report_formats
+    
+    # Configure separate console and file logging levels
     import logging
-    # 0 = WARNING (basic progress via print), 1 = INFO (config details), 2+ = DEBUG (full debug)
-    if args.verbose >= 2:
-        logging.getLogger().setLevel(logging.DEBUG)
-    elif args.verbose >= 1:
-        logging.getLogger().setLevel(logging.INFO)
+    
+    # Helper to get int from environment variable
+    def env_int(var): 
+        val = os.getenv(var)
+        return int(val) if val else 0
+    
+    # Determine verbosity levels with precedence: explicit flags > counting flags > environment > default
+    console_verbosity = (getattr(args, 'console_verbosity', None) or 
+                        (args.verbose if args.verbose > 0 else 0) or
+                        env_int('PACKETFUZZ_CONSOLE_VERBOSITY') or
+                        env_int('PACKETFUZZ_VERBOSE'))
+    
+    file_verbosity = (getattr(args, 'file_verbosity', None) or 
+                     (getattr(args, 'log_verbosity', 0) if getattr(args, 'log_verbosity', 0) > 0 else 0) or
+                     (args.verbose if args.verbose > 0 else 0) or
+                     env_int('PACKETFUZZ_FILE_VERBOSITY') or
+                     env_int('PACKETFUZZ_LOG_VERBOSITY') or
+                     env_int('PACKETFUZZ_VERBOSE'))
+    
+    # Convert verbosity to log levels
+    def verbosity_to_level(verbosity):
+        return logging.DEBUG if verbosity >= 2 else logging.INFO if verbosity >= 1 else logging.WARNING
+    
+    console_level = verbosity_to_level(console_verbosity)
+    file_level = verbosity_to_level(file_verbosity)
+    
+    # Configure logging - set root to the most verbose level needed
+    root_logger = logging.getLogger()
+    root_logger.setLevel(min(console_level, file_level))
+    
+    # Update or create console handler
+    console_handler = next((h for h in root_logger.handlers 
+                           if isinstance(h, logging.StreamHandler) and h.stream.name in ['<stdout>', '<stderr>']), None)
+    if console_handler:
+        console_handler.setLevel(console_level)
     else:
-        # Level 0: Use WARNING level for logger, essential messages via print
-        logging.getLogger().setLevel(logging.WARNING)
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(console_level)
+        console_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+        root_logger.addHandler(console_handler)
+    
+    # Update existing file handler if present
+    for handler in root_logger.handlers:
+        if isinstance(handler, logging.FileHandler):
+            handler.setLevel(file_level)
+    
+    # Log configuration if verbosity is high enough
+    if max(console_verbosity, file_verbosity) >= 2:
+        logger.debug(f"Logging configured - Console: {logging.getLevelName(console_level)}, "
+                    f"File: {logging.getLevelName(file_level)} "
+                    f"(console verbosity: {console_verbosity}, file verbosity: {file_verbosity})")
+    elif max(console_verbosity, file_verbosity) >= 1:
+        logger.info(f"Logging enabled - Console: {logging.getLevelName(console_level)}, "
+                   f"File: {logging.getLevelName(file_level)}")
 
 
 # ===========================
@@ -210,8 +271,12 @@ def main():
     env_defaults = {
         'config_file': os.getenv('PACKETFUZZ_CONFIG_FILE'),
         'verbose': int(os.getenv('PACKETFUZZ_VERBOSE', '0')),
+        'log_verbosity': int(os.getenv('PACKETFUZZ_LOG_VERBOSITY', '0')),
+        'console_verbosity': int(os.getenv('PACKETFUZZ_CONSOLE_VERBOSITY', '0')) if os.getenv('PACKETFUZZ_CONSOLE_VERBOSITY') else None,
+        'file_verbosity': int(os.getenv('PACKETFUZZ_FILE_VERBOSITY', '0')) if os.getenv('PACKETFUZZ_FILE_VERBOSITY') else None,
         'pcap_file': os.getenv('PACKETFUZZ_PCAP_FILE'),
         'dictionary_config': os.getenv('PACKETFUZZ_DICTIONARY_CONFIG'),
+        'report_formats': [f.strip() for f in os.getenv('PACKETFUZZ_REPORT_FORMATS', 'json').split(',') if f.strip()],
         'enable_network': os.getenv('PACKETFUZZ_ENABLE_NETWORK') == 'true',
         'disable_network': os.getenv('PACKETFUZZ_DISABLE_NETWORK') == 'true',
         'enable_pcap': os.getenv('PACKETFUZZ_ENABLE_PCAP') == 'true',
@@ -237,8 +302,34 @@ def main():
         "--verbose",
         action="count",
         default=env_defaults['verbose'],
-        help="Increase verbosity: -v (show config details), -vv (full debug mode). "
+        help="Increase verbosity for both console and file: -v (INFO), -vv (DEBUG), -vvv+ (more detailed). "
              "Can also set PACKETFUZZ_VERBOSE=1 or PACKETFUZZ_VERBOSE=2"
+    )
+    parser.add_argument(
+        "-l",
+        action="count",
+        default=0,
+        dest="log_verbosity",
+        help="Increase log file verbosity: -l (INFO), -ll (DEBUG), -lll+ (more detailed). "
+             "Overrides -v for file output."
+    )
+    parser.add_argument(
+        "--console-verbosity",
+        type=int,
+        choices=range(0, 6),
+        metavar="0-5",
+        default=env_defaults['console_verbosity'],
+        help="Set console verbosity level (0=WARNING, 1=INFO, 2+=DEBUG). Overrides -v for console output. "
+             "Can also set PACKETFUZZ_CONSOLE_VERBOSITY"
+    )
+    parser.add_argument(
+        "--file-verbosity", 
+        type=int,
+        choices=range(0, 6),
+        metavar="0-5",
+        default=env_defaults['file_verbosity'],
+        help="Set file verbosity level (0=WARNING, 1=INFO, 2+=DEBUG). Overrides -v for file output. "
+             "Can also set PACKETFUZZ_FILE_VERBOSITY"
     )
     parser.add_argument(
         "--list-campaigns",
@@ -280,6 +371,14 @@ def main():
         default=env_defaults['pcap_file'],
         help="PCAP output file path (enables PCAP output if specified). "
              "Can also set PACKETFUZZ_PCAP_FILE"
+    )
+    output_group.add_argument(
+        "--report-formats",
+        nargs='+',
+        choices=['html', 'json', 'csv', 'sarif', 'markdown', 'yaml', 'all'],
+        default=env_defaults['report_formats'],
+        help="Report output formats (can specify multiple). Use 'all' for all formats. "
+             "Can also set PACKETFUZZ_REPORT_FORMATS as comma-separated list (default: json)"
     )
     
     parser.add_argument(

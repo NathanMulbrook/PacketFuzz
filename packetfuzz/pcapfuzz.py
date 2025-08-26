@@ -49,6 +49,7 @@ from scapy.packet import Packet
 # Local imports
 from .fuzzing_framework import CallbackResult, CampaignContext, FuzzingCampaign
 from .mutator_manager import FuzzConfig, FuzzMode, MutatorManager
+from .utils.packet_processing import PacketProcessingConfig, process_packet
 
 logger = logging.getLogger(__name__)
 
@@ -63,10 +64,6 @@ class PcapFuzzCampaign(FuzzingCampaign):
     
     # Configuration attributes
     pcap_folder: str = "regression_samples/"
-    extract_at_layer: Optional[str] = None      # e.g., "UDP", "TCP", "IP", "Ethernet"
-    include_layers: Optional[List[str]] = None  # e.g., ["HTTP", "DNS"] - only these layers
-    exclude_layers: Optional[List[str]] = None  # e.g., ["Raw"] - exclude these layers
-    repackage_template: Optional[Packet] = None # e.g., IP(dst="192.168.1.1") / UDP(dport=53)
     fuzz_mode: str = "field"                    # "field", "binary", "both", or "none"
     
     def __init__(self):
@@ -75,12 +72,56 @@ class PcapFuzzCampaign(FuzzingCampaign):
         self.target = "192.168.1.100"  # Default target, can be overridden
         self.packet = None  # Will be set dynamically from PCAP files
         self.append_pcap = True  # PCAP campaigns aggregate multiple packets, so use append mode
+        
+        # Initialize packet processing configuration and attributes
+        self._processing_config = PacketProcessingConfig()
+        self._extract_at_layer: Optional[str] = None      # e.g., "UDP", "TCP", "IP", "Ethernet"
+        self._include_layers: Optional[List[str]] = None  # e.g., ["HTTP", "DNS"] - only these layers
+        self._exclude_layers: Optional[List[str]] = None  # e.g., ["Raw"] - exclude these layers
+        self._repackage_template: Optional[Packet] = None # e.g., IP(dst="192.168.1.1") / UDP(dport=53)
+    
+    # Properties for configuration attributes that sync with processing config
+    @property
+    def extract_at_layer(self) -> Optional[str]:
+        return self._extract_at_layer
+    
+    @extract_at_layer.setter
+    def extract_at_layer(self, value: Optional[str]) -> None:
+        self._extract_at_layer = value
+        self._processing_config.extract_at_layer = value
+    
+    @property
+    def include_layers(self) -> Optional[List[str]]:
+        return self._include_layers
+    
+    @include_layers.setter
+    def include_layers(self, value: Optional[List[str]]) -> None:
+        self._include_layers = value
+        self._processing_config.include_layers = value
+    
+    @property
+    def exclude_layers(self) -> Optional[List[str]]:
+        return self._exclude_layers
+    
+    @exclude_layers.setter
+    def exclude_layers(self, value: Optional[List[str]]) -> None:
+        self._exclude_layers = value
+        self._processing_config.exclude_layers = value
+    
+    @property
+    def repackage_template(self) -> Optional[Packet]:
+        return self._repackage_template
+    
+    @repackage_template.setter
+    def repackage_template(self, value: Optional[Packet]) -> None:
+        self._repackage_template = value
+        self._processing_config.repackage_template = value
 
     # Backward-compatibility accessors for legacy example/config attributes
     # Legacy: extract_layer -> Current: extract_at_layer
     @property
     def extract_layer(self) -> Optional[str]:  # type: ignore[override]
-        return getattr(self, 'extract_at_layer', None)
+        return self.extract_at_layer
 
     @extract_layer.setter
     def extract_layer(self, value: Optional[str]) -> None:
@@ -113,121 +154,17 @@ class PcapFuzzCampaign(FuzzingCampaign):
         v = value.upper().strip()
         try:
             if v == "IP/UDP":
-                self.repackage_template = IP()/UDP()
+                template = IP()/UDP()
             elif v == "IP/TCP":
-                self.repackage_template = IP()/TCP()
+                template = IP()/TCP()
             elif v == "IP":
-                self.repackage_template = IP()
+                template = IP()
             else:
                 # Unknown string; leave unset so payload passes through unchanged
-                self.repackage_template = None
+                template = None
+            self.repackage_template = template
         except Exception:
             self.repackage_template = None
-    
-    def _extract_layers(self, packet: Packet) -> Optional[Packet]:
-        """
-        Extract layers based on extraction rules.
-        
-        Args:
-            packet: The packet to extract from
-            
-        Returns:
-            The extracted layers or None if extraction failed
-        """
-        # Step 1: Find extraction point
-        if self.extract_at_layer:
-            layer = packet
-            while layer and layer.name != self.extract_at_layer:
-                layer = layer.payload
-            if not layer or layer.name != self.extract_at_layer:
-                return None
-            extracted = layer.payload if layer.payload else None
-        else:
-            extracted = packet
-        
-        if not extracted:
-            return None
-        
-        # Step 2: Apply include/exclude filters
-        if self.include_layers:
-            result = self._filter_include_layers(extracted, self.include_layers)
-        elif self.exclude_layers:
-            result = self._filter_exclude_layers(extracted, self.exclude_layers)
-        else:
-            result = extracted
-        
-        return result
-    
-    def _filter_include_layers(self, packet: Packet, include: List[str]) -> Optional[Packet]:
-        """Keep only specified layers."""
-        current = packet
-        result = None
-        
-        while current:
-            if current.name in include:
-                if result is None:
-                    result = current.copy()
-                    result.payload = None
-                else:
-                    tail = result
-                    while tail.payload:
-                        tail = tail.payload
-                    tail.payload = current.copy()
-                    tail.payload.payload = None
-            current = current.payload
-        
-        return result
-    
-    def _filter_exclude_layers(self, packet: Packet, exclude: List[str]) -> Optional[Packet]:
-        """Remove specified layers."""
-        if packet.name in exclude:
-            return self._filter_exclude_layers(packet.payload, exclude) if packet.payload else None
-        
-        result = packet.copy()
-        result.payload = None
-        
-        if packet.payload:
-            filtered_payload = self._filter_exclude_layers(packet.payload, exclude)
-            if filtered_payload:
-                result.payload = filtered_payload
-        
-        return result
-    
-    def _repackage_payload(self, payload: Packet, template: Optional[Packet]) -> Packet:
-        """
-        Repackage extracted payload using user-provided template.
-        
-        Args:
-            payload: The extracted payload to repackage
-            template: The packet template to wrap the payload in (or None for no repackaging)
-            
-        Returns:
-            The repackaged packet or original payload if no template
-        """
-        if template is None:
-            return payload
-            
-        repackaged = template.copy()
-        # Find the deepest layer in template and attach payload
-        tail = repackaged
-        while tail.payload:
-            tail = tail.payload
-        tail.payload = payload
-        return repackaged
-    
-    def _convert_to_scapy(self, data: bytes) -> Packet:
-        """Convert raw bytes back to Scapy packet for field-aware fuzzing."""
-        try:
-            #TODO Update this to be more extensive and attempt to parse more protocols, this should attempt to return as much as possible in a capy packet
-            # Try to parse as common packet types
-            pkt = IP(data)  # Most common case
-            return pkt
-        except:
-            try:
-                # Fallback to raw packet
-                return Raw(data)
-            except:
-                return Raw(data)
     
     def get_packet_with_embedded_config(self) -> Optional[Packet]:
         """
@@ -249,24 +186,8 @@ class PcapFuzzCampaign(FuzzingCampaign):
         Returns:
             The processed packet ready for fuzzing, or None if processing failed
         """
-        pkt = original_pkt
-        
-        # Step 1: Extract layers if specified
-        if self.extract_at_layer or self.include_layers or self.exclude_layers:
-            extracted = self._extract_layers(pkt)
-            if not extracted:
-                return None
-            pkt = extracted
-        
-        # Step 2: Repackage if specified
-        if self.repackage_template:
-            pkt = self._repackage_payload(pkt, self.repackage_template)
-        
-        # Step 3: Convert to Scapy object if working with raw data
-        if isinstance(pkt, bytes):
-            pkt = self._convert_to_scapy(pkt)
-        
-        return pkt
+        # Use utility function for packet processing
+        return process_packet(original_pkt, self._processing_config)
     
     def execute(self):
         """

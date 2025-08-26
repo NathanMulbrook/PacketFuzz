@@ -39,7 +39,7 @@ from scapy.utils import wrpcap
 
 # Local imports
 from .mutator_manager import FuzzConfig, FuzzMode, MutatorManager
-from .utils.packet_report import write_campaign_summary, write_packet_report
+from .utils.packet_report import ReportingEngine, ReportLevel, write_crash_report, generate_campaign_reports, write_fuzz_history_dump
 
 # Constants
 DEFAULT_INTERFACE = "eth0"
@@ -375,11 +375,10 @@ class CallbackManager:
                 metadata["packet_summary"] = crash_info.packet.summary()
                 pcap_path = crash_dir / f"{crash_id}.pcap"
                 report_path = crash_dir / f"{crash_id}_report.txt"
-                # Write combined report (handles PCAP internally)
-                write_packet_report(
+                # Write crash report using new focused function
+                write_crash_report(
                     packet=crash_info.packet,
                     file_path=str(report_path),
-                    mode="w",
                     metadata=metadata,
                     campaign_context=context,
                     crash_info=crash_info,
@@ -707,6 +706,9 @@ class FuzzingCampaign:
     interface_offload_features: Optional[List[str]] = None     # Specific features to disable (None = use defaults)
     interface_offload_restore: bool = True                     # Restore original settings after campaign
 
+    # Reporting configuration
+    report_formats: List[str] = ['json']                       # List of report formats to generate (html, json, csv, sarif, markdown, yaml)
+
     # --- Socket logic additions ---
     socket_type: Optional[str] = None    # User can specify: 'l2', 'l3', 'tcp', 'udp', "canbus" or None for auto
     # Behavior when mutated packet fails to serialize to bytes
@@ -958,11 +960,11 @@ class FuzzingCampaign:
 
             # Display campaign information
             if self.verbose:
-                logger.info("Starting campaign: %s", self.name or 'Unnamed Campaign')
-                logger.info("   Target: %s", self.target)
-                logger.info("   Iterations: %s", self.iterations)
-                logger.info("   Layer: %s", self.socket_type)
-                logger.info("   Rate limit: %s packets/sec", self.rate_limit)
+                logger.info(f"Starting campaign: {self.name or 'Unnamed Campaign'}")
+                logger.info(f"   Target: {self.target}")
+                logger.info(f"   Iterations: {self.iterations}")
+                logger.info(f"   Layer: {self.socket_type}")
+                logger.info(f"   Rate limit: {self.rate_limit} packets/sec")
                 if hasattr(packet, 'has_fuzz_config') and packet.has_fuzz_config():  # type: ignore[attr-defined]
                     logger.info("   ### Packet has embedded fuzzing configuration")
                 if self.pre_launch_callback or self.pre_send_callback or self.post_send_callback or self.crash_callback or self.no_success_callback or self.monitor_callback:
@@ -991,7 +993,41 @@ class FuzzingCampaign:
         finally:
             # Always write a concise campaign summary at the end
             try:
-                write_campaign_summary(self, self.context)
+                # Use the main reporting engine for campaign summaries
+                generate_campaign_reports(
+                    campaign=self,
+                    campaign_context=self.context,
+                    level="executive",
+                    output_formats=self.report_formats,
+                    output_directory=None  # Auto-generated path
+                )
+                
+                # For very verbose runs (verbosity >= 3), dump the entire packet history
+                if hasattr(self, 'verbose') and isinstance(self.verbose, int) and self.verbose >= 3:
+                    if self.context and self.context.fuzz_history:
+                        from datetime import datetime
+                        
+                        # Create logs directory if it doesn't exist
+                        log_dir = Path("artifacts/logs")
+                        log_dir.mkdir(parents=True, exist_ok=True)
+                        
+                        # Generate filename with timestamp
+                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        campaign_name = getattr(self, 'name', 'unknown_campaign')
+                        dump_filename = f"fuzz_history_{campaign_name}_{timestamp}.log"
+                        dump_path = log_dir / dump_filename
+                        
+                        # Write the packet history dump
+                        write_fuzz_history_dump(
+                            fuzz_history=self.context.fuzz_history,
+                            file_path=str(dump_path),
+                            verbose_level=self.verbose,
+                            title=f"Packet History Dump - {campaign_name}"
+                        )
+                        
+                        if self.verbose:
+                            logger.info(f"Packet history dump written to: {dump_path}")
+                    
             except Exception as _e:
                 # Do not fail execution due to logging errors
                 if self.verbose:

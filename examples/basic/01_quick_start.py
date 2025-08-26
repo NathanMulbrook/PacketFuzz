@@ -30,8 +30,9 @@ class QuickStartCampaign(FuzzingCampaign):
     name = "Quick Start"
     target = "192.168.1.100"
     iterations = 1000
-    verbose = False
+    verbose = False  # Disable verbose mode to show the difference
     packet = IP() / TCP() / HTTP() / HTTPRequest(Path=b"/", Method=b"GET")
+    report_formats = ['html', 'json', 'csv', 'sarif', 'markdown', 'yaml']  # All formats
 
 # Register campaign(s) for framework and CLI discovery
 CAMPAIGNS = [QuickStartCampaign]

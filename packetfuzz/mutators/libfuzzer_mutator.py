@@ -54,7 +54,7 @@ class LibFuzzerMutator(BaseMutator):
         except Exception as e:
             if "LibFuzzer extension library not found" in str(e):
                 raise
-            logger.error("Could not load libFuzzer extension: %s", e)
+            logger.error(f"Could not load libFuzzer extension: {e}")
             raise RuntimeError("LibFuzzer extension failed to load. Check compilation.")
     
     def _find_library_path(self) -> Optional[str]:
@@ -127,7 +127,7 @@ class LibFuzzerMutator(BaseMutator):
                 return False
             elif result == 0:
                 if dictionaries:
-                    logger.error("No dictionaries loaded, but non-empty dictionary list was provided! (entries: %d)", len(dictionaries))
+                    logger.error(f"No dictionaries loaded, but non-empty dictionary list was provided! (entries: {len(dictionaries)})")
                 else:
                     logger.info("No dictionaries loaded (empty list or None provided).")
                 return True
