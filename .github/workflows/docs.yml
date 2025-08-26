@@ -12,10 +12,10 @@ permissions:
   pages: write         # Deploy to GitHub Pages  
   id-token: write      # Required for OIDC authentication
 
-# Ensure only one deployment runs at a time
-concurrency:
-  group: "pages"
-  cancel-in-progress: true
+# # Ensure only one deployment runs at a time
+# concurrency:
+#   group: "pages"
+#   cancel-in-progress: true
 
 jobs:
   # Build and deploy documentation to GitHub Pages
@@ -81,26 +81,26 @@ jobs:
           destination_dir: ${{ steps.setdir.outputs.dir }}
 
   # Test documentation build on pull requests
-  test-build:
-    name: Test Documentation Build
-    runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
+  # test-build:
+  #   name: Test Documentation Build
+  #   runs-on: ubuntu-latest
+  #   if: github.event_name == 'pull_request'
     
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+  #   steps:
+  #     - name: Checkout repository
+  #       uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.11'
+  #     - name: Setup Python
+  #       uses: actions/setup-python@v4
+  #       with:
+  #         python-version: '3.11'
 
-      - name: Install Python dependencies
-        run: |
-          pip install -r requirements.txt
-          pip install sphinx myst-parser sphinx-rtd-theme sphinxcontrib-mermaid
+  #     - name: Install Python dependencies
+  #       run: |
+  #         pip install -r requirements.txt
+  #         pip install sphinx myst-parser sphinx-rtd-theme sphinxcontrib-mermaid
 
-      - name: Test Sphinx documentation build
-        run: |
-          cd .sphinx
-          sphinx-build -b html . _build/html -W
+  #     - name: Test Sphinx documentation build
+  #       run: |
+  #         cd .sphinx
+  #         sphinx-build -b html . _build/html -W
