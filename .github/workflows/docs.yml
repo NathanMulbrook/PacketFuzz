@@ -1,0 +1,62 @@
+name: Documentation
+
+on:
+  push:
+    branches: [ main, code-cleanup-and-documentation ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies
+      run: |
+        pip install -r requirements.txt
+        pip install sphinx myst-parser sphinx-rtd-theme sphinxcontrib-mermaid
+
+    - name: Build documentation
+      run: |
+        cd docs
+        sphinx-build -b html . _build/html
+
+    - name: Deploy to GitHub Pages
+      uses: peaceiris/actions-gh-pages@v3
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        publish_dir: docs/_build/html
+        destination_dir: ${{ github.ref == 'refs/heads/main' && '' || format('branches/{0}', github.ref_name) }}
+        keep_files: true
+
+  test-build:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies
+      run: |
+        pip install -r requirements.txt
+        pip install sphinx myst-parser sphinx-rtd-theme sphinxcontrib-mermaid
+
+    - name: Test documentation build
+      run: |
+        cd docs
+        sphinx-build -b html . _build/html -W

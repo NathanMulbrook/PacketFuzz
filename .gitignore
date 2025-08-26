@@ -42,3 +42,15 @@ fuzz_fields_output_report.txt
 # Temporary test and debug files in root directory
 /test_*.py
 /debug_*.py
+
+# Documentation builds (Sphinx)
+docs/_build/
+docs/.doctrees/
+*.doctree
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
