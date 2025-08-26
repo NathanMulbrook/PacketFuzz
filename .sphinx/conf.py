@@ -20,6 +20,7 @@ extensions = [
     'sphinx.ext.viewcode',      # Source code links
     'sphinx.ext.intersphinx',   # Cross-project references
     'myst_parser',              # Markdown support
+    'sphinxcontrib.mermaid',    # Mermaid diagram support
 ]
 
 # Source file types  
@@ -28,8 +29,28 @@ source_suffix = {
     '.md': 'myst',
 }
 
+# MyST configuration for Markdown support
+myst_enable_extensions = [
+    "strikethrough",
+    "tasklist", 
+    "colon_fence",
+    "linkify",
+]
+
+# Configure mermaid to use the directive instead of code blocks
+myst_fence_as_directive = ["mermaid"]
+
+# Mermaid configuration for server-side rendering
+mermaid_output_format = 'svg'
+#mermaid_init_js = ""  # Disable client-side JS since we want server-side rendering
+#mermaid_cmd = 'mmdc'  # Use mermaid-cli for server-side rendering  
+#mermaid_cmd_shell = True  # Enable shell execution for CLI
+
 # Files to exclude from processing
 exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
+
+# Suppress warnings for unknown lexer names (like mermaid)
+suppress_warnings = ['misc.highlighting_failure', 'myst.header']
 
 # The master toctree document
 master_doc = 'index'
