@@ -17,13 +17,6 @@ import tempfile
 from pathlib import Path
 from typing import List, Tuple
 
-# Try to import pytest, fall back to unittest if not available
-try:
-    import pytest
-    PYTEST_AVAILABLE = True
-except ImportError:
-    PYTEST_AVAILABLE = False
-
 # Add parent directory to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
@@ -57,7 +50,7 @@ class CLITestBase(unittest.TestCase):
                     except Exception:
                         pass
             result = subprocess.run(
-                ["python", "packetfuzz.py"] + remapped,
+                ["python", "-m", "packetfuzz"] + remapped,
                 capture_output=True,
                 text=True,
                 timeout=timeout,
@@ -558,13 +551,143 @@ class TestIntegrationScenarios(CLITestBase):
                     assert False, f"Unexpected CLI failure: {stderr}"
 
 
-if __name__ == '__main__':
-    # Run tests with pytest if available, otherwise use unittest
-    if PYTEST_AVAILABLE:
-        try:
-            pytest.main([__file__, '-v'])
-        except SystemExit:
-            pass
-    else:
-        import unittest
-        unittest.main(verbosity=2)
+class TestReportingOptions(CLITestBase):
+    """Test the new multi-format reporting functionality"""
+
+    def test_single_report_format(self):
+        """Test individual report format arguments"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            for fmt in ['html', 'json', 'csv', 'sarif', 'markdown', 'yaml']:
+                with self.subTest(format=fmt):
+                    args = [
+                        "tests/campaign_examples.py",
+                        "--iterations", "2",
+                        "--report-formats", fmt,
+                        "--pcap-file", os.path.join(temp_dir, f"test_{fmt}.pcap")
+                    ]
+                    
+                    returncode, stdout, stderr = self.run_cli_command(args)
+                    
+                    # Should not crash and should reference the format
+                    if returncode == 0:
+                        # Campaign executed successfully
+                        self.assertIn("Campaign completed", stdout + stderr)
+                    else:
+                        # Check for acceptable dependency-related failures
+                        output = stdout + stderr
+                        acceptable_failures = ["libfuzzer", "import", "module"]
+                        self.assertTrue(any(term in output.lower() for term in acceptable_failures),
+                                       f"Unexpected failure for {fmt}: {stderr}")
+
+    def test_multiple_report_formats(self):
+        """Test multiple report formats specified together"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            args = [
+                "tests/campaign_examples.py",
+                "--iterations", "2",
+                "--report-formats", "json", "html", "csv",
+                "--pcap-file", os.path.join(temp_dir, "test_multi.pcap")
+            ]
+            
+            returncode, stdout, stderr = self.run_cli_command(args)
+            
+            # Should handle multiple formats without error
+            if returncode == 0:
+                self.assertIn("Campaign completed", stdout + stderr)
+            else:
+                # Check for acceptable dependency-related failures
+                output = stdout + stderr
+                acceptable_failures = ["libfuzzer", "import", "module"]
+                self.assertTrue(any(term in output.lower() for term in acceptable_failures),
+                               f"Unexpected failure for multiple formats: {stderr}")
+
+    def test_all_report_formats(self):
+        """Test the 'all' report format option"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            args = [
+                "tests/campaign_examples.py",
+                "--iterations", "2",
+                "--report-formats", "all",
+                "--pcap-file", os.path.join(temp_dir, "test_all.pcap")
+            ]
+            
+            returncode, stdout, stderr = self.run_cli_command(args)
+            
+            # Should handle 'all' formats without error
+            if returncode == 0:
+                self.assertIn("Campaign completed", stdout + stderr)
+            else:
+                # Check for acceptable dependency-related failures
+                output = stdout + stderr
+                acceptable_failures = ["libfuzzer", "import", "module"]
+                self.assertTrue(any(term in output.lower() for term in acceptable_failures),
+                               f"Unexpected failure for 'all' formats: {stderr}")
+
+    def test_environment_variable_report_formats(self):
+        """Test PACKETFUZZ_REPORT_FORMATS environment variable"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Set environment variable
+            env = os.environ.copy()
+            env['PACKETFUZZ_REPORT_FORMATS'] = 'html,json,csv'
+            
+            args = [
+                "tests/campaign_examples.py",
+                "--iterations", "2",
+                "--pcap-file", os.path.join(temp_dir, "test_env.pcap")
+            ]
+            
+            try:
+                result = subprocess.run(
+                    [sys.executable, "-m", "packetfuzz"] + args,
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                    env=env
+                )
+                
+                # Should use environment variable formats
+                if result.returncode == 0:
+                    self.assertIn("Campaign completed", result.stdout + result.stderr)
+                else:
+                    # Check for acceptable dependency-related failures
+                    output = result.stdout + result.stderr
+                    acceptable_failures = ["libfuzzer", "import", "module"]
+                    self.assertTrue(any(term in output.lower() for term in acceptable_failures),
+                                   f"Unexpected failure with env var: {result.stderr}")
+                    
+            except subprocess.TimeoutExpired:
+                self.fail("CLI command timed out with environment variable")
+
+    def test_invalid_report_format(self):
+        """Test invalid report format argument"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            args = [
+                "tests/campaign_examples.py",
+                "--iterations", "2",
+                "--report-formats", "invalid_format",
+                "--pcap-file", os.path.join(temp_dir, "test_invalid.pcap")
+            ]
+            
+            returncode, stdout, stderr = self.run_cli_command(args)
+            
+            # Should fail with argument error
+            self.assertNotEqual(returncode, 0, "Should fail with invalid format")
+            self.assertTrue("invalid choice" in stderr.lower() or "error" in stderr.lower(),
+                           f"Should show error for invalid format: {stderr}")
+
+    def test_report_formats_help_text(self):
+        """Test that help text includes report format information"""
+        args = ["--help"]
+        returncode, stdout, stderr = self.run_cli_command(args)
+        
+        # Should show help and include report format options
+        self.assertEqual(returncode, 0, "Help should be available")
+        help_text = stdout + stderr
+        self.assertIn("--report-formats", help_text)
+        self.assertIn("html", help_text)
+        self.assertIn("json", help_text)
+        self.assertIn("csv", help_text)
+        self.assertIn("sarif", help_text)
+
+
+

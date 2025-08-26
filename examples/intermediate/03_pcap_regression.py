@@ -12,7 +12,7 @@ from scapy.layers.inet import IP, TCP, UDP
 from scapy.utils import wrpcap
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from pcapfuzz import PcapFuzzCampaign
+from packetfuzz.pcapfuzz import PcapFuzzCampaign
 
 class RegressionTestCampaign(PcapFuzzCampaign):
     """Pure regression testing - replay without fuzzing."""
@@ -80,7 +80,7 @@ def create_sample_pcaps():
     ]
     wrpcap(f"{sample_dir}/dns_sample.pcap", dns_packets)
     
-    print("✓ Created sample PCAP files in regression_samples/")
+    print("[PASS] Created sample PCAP files in regression_samples/")
 
 # Campaign registry
 CAMPAIGNS = [
@@ -123,7 +123,7 @@ def main():
         results.append(result)
         
         if result:
-            print(f"   ✓ Success - {campaign.output_pcap}")
+            print(f"   [PASS] Success - {campaign.output_pcap}")
         else:
             print(f"   ✗ Failed")
         print()

@@ -24,9 +24,11 @@ def run_campaign_file_cli(file_path):
     """Run packetfuzz CLI on a campaign file with --disable-network and return success status."""
     try:
         print(f"Validating {file_path} with packetfuzz CLI...")
+        # Convert relative path to be relative to PacketFuzz root directory
+        examples_relative_path = os.path.join("examples", file_path)
         result = subprocess.run([
-            sys.executable, "../packetfuzz.py", file_path, "--disable-network"
-        ], capture_output=True, text=True, cwd=os.path.dirname(__file__))
+            sys.executable, "-m", "packetfuzz", examples_relative_path, "--disable-network"
+        ], capture_output=True, text=True, cwd=os.path.dirname(os.path.dirname(__file__)))
         if result.returncode == 0:
             print(f"{os.path.basename(file_path)} validated successfully\n")
             return True

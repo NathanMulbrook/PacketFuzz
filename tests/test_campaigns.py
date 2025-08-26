@@ -16,18 +16,11 @@ import tempfile
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 
-# Try to import pytest, fall back to unittest if not available
-try:
-    import pytest
-    PYTEST_AVAILABLE = True
-except ImportError:
-    PYTEST_AVAILABLE = False
-
 # Add parent directory to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from fuzzing_framework import FuzzingCampaign
-from mutator_manager import MutatorManager
+from packetfuzz.fuzzing_framework import FuzzingCampaign
+from packetfuzz.mutator_manager import MutatorManager
 from scapy.all import IP, TCP, UDP, Raw
 from scapy.layers.dns import DNS, DNSQR
 from conftest import (
@@ -396,6 +389,63 @@ class TestCampaignConfiguration:
         campaign.verbose = True
         assert campaign.verbose == True
 
+    def test_report_formats_attribute(self):
+        """Test report_formats attribute configuration"""
+        campaign = BasicTestCampaign()
+        
+        # Should have report_formats attribute
+        assert hasattr(campaign, 'report_formats')
+        assert isinstance(campaign.report_formats, list)
+        
+        # Default should be json
+        assert campaign.report_formats == ['json']
+        
+        # Should be able to modify
+        campaign.report_formats = ['html', 'csv']
+        assert campaign.report_formats == ['html', 'csv']
+
+    def test_single_report_format_configuration(self):
+        """Test configuring single report format"""
+        campaign = BasicTestCampaign()
+        
+        # Test each supported format
+        for fmt in ['html', 'json', 'csv', 'sarif', 'markdown', 'yaml']:
+            campaign.report_formats = [fmt]
+            assert campaign.report_formats == [fmt]
+
+    def test_multiple_report_formats_configuration(self):
+        """Test configuring multiple report formats"""
+        campaign = BasicTestCampaign()
+        
+        # Test multiple formats
+        formats = ['html', 'json', 'csv']
+        campaign.report_formats = formats
+        assert campaign.report_formats == formats
+        
+        # Test all formats
+        all_formats = ['html', 'json', 'csv', 'sarif', 'markdown', 'yaml']
+        campaign.report_formats = all_formats
+        assert campaign.report_formats == all_formats
+
+    def test_report_formats_with_execution(self):
+        """Test report formats work with campaign execution"""
+        import tempfile
+        
+        with tempfile.TemporaryDirectory() as temp_dir:
+            campaign = BasicTestCampaign()
+            campaign.iterations = 2  # Keep it small for testing
+            campaign.report_formats = ['json', 'html']
+            campaign.output_pcap = os.path.join(temp_dir, "test_report.pcap")
+            
+            try:
+                result = campaign.execute()
+                # Campaign should complete successfully regardless of report formats
+                assert result is True or result is None  # Some campaigns return None
+            except Exception as e:
+                # Some tests may fail due to missing dependencies, that's acceptable
+                if "libfuzzer" not in str(e).lower():
+                    raise
+
 
 class DummyTestCampaign(FuzzingCampaign):
     name = "dummy_test"
@@ -403,15 +453,3 @@ class DummyTestCampaign(FuzzingCampaign):
     output_network = False
     def build_packets(self):
         return [IP(dst=self.target)/TCP(dport=int(80))/Raw(load=b"test")]  # Ensure dport is int
-
-
-if __name__ == '__main__':
-    # Run tests with pytest if available, otherwise use unittest
-    if PYTEST_AVAILABLE:
-        try:
-            pytest.main([__file__, '-v'])
-        except SystemExit:
-            pass
-    else:
-        import unittest
-        unittest.main(verbosity=2)

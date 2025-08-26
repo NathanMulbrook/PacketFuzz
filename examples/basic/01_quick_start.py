@@ -11,22 +11,28 @@ or simply:
     python3 examples/basic/01_quick_start.py
 """
 
-import sys
+# Standard library imports
 import os
+import sys
+
+# Path setup for examples
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from fuzzing_framework import FuzzingCampaign, FuzzField
-from scapy.layers.inet import IP, TCP
+# Third-party imports
 from scapy.layers.http import HTTP, HTTPRequest
+from scapy.layers.inet import IP, TCP
+
+# Local imports
+from packetfuzz.fuzzing_framework import FuzzField, FuzzingCampaign
 
 class QuickStartCampaign(FuzzingCampaign):
     """Minimal fuzzing campaign - just the essentials."""
     name = "Quick Start"
     target = "192.168.1.100"
     iterations = 1000
-    verbose = False
-    output_pcap = "basic_quick_start.pcap"
+    verbose = False  # Disable verbose mode to show the difference
     packet = IP() / TCP() / HTTP() / HTTPRequest(Path=b"/", Method=b"GET")
+    report_formats = ['html', 'json', 'csv', 'sarif', 'markdown', 'yaml']  # All formats
 
 # Register campaign(s) for framework and CLI discovery
 CAMPAIGNS = [QuickStartCampaign]

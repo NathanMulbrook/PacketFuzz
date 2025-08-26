@@ -14,8 +14,17 @@ netifaces>=0.11.0
 # LibFuzzer integration (install separately if needed)
 # scapy-libfuzzer>=1.0.0
 
+# === Testing Dependencies ===
+pytest>=7.0.0          # Test framework
+
+# === Documentation Dependencies ===
+sphinx>=5.0.0          # Documentation generator
+myst-parser>=0.18.0    # Markdown support for Sphinx
+sphinx-rtd-theme>=1.2.0 # Read the Docs theme
+sphinxcontrib-mermaid>=0.7.0 # Mermaid diagram support
+linkify-it-py>=2.0.0   # Linkify support for MyST
+
 # === Development Dependencies (optional) ===
-# pytest>=7.0.0        # For additional testing
 # black>=22.0.0         # Code formatting
 # mypy>=0.991           # Type checking  
 # flake8>=5.0.0         # Linting

@@ -13,8 +13,8 @@ from scapy.layers.dns import DNS
 from scapy.utils import wrpcap
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from pcapfuzz import PcapFuzzCampaign
-from fuzzing_framework import CallbackResult
+from packetfuzz.pcapfuzz import PcapFuzzCampaign
+from packetfuzz.fuzzing_framework import CallbackResult
 
 class AdvancedHTTPExtractionCampaign(PcapFuzzCampaign):
     """Extract HTTP payloads with intelligent fuzzing and analysis."""
@@ -46,7 +46,7 @@ class AdvancedHTTPExtractionCampaign(PcapFuzzCampaign):
             for method in [b"GET", b"POST", b"PUT", b"DELETE", b"HEAD", b"OPTIONS"]:
                 if packet_bytes.startswith(method):
                     self.http_methods.add(method.decode())
-                    print(f"🌐 HTTP {method.decode()} request")
+                    print(f"HTTP {method.decode()} request")
                     break
             
             # Inject attack patterns
@@ -65,7 +65,7 @@ class AdvancedHTTPExtractionCampaign(PcapFuzzCampaign):
                 packet_bytes = packet_bytes.replace(b"\r\n\r\n", b"\r\n" + headers + b"\r\n")
                 if TCP in packet and hasattr(packet[TCP], 'load'):
                     packet[TCP].load = packet_bytes[packet_bytes.find(b"GET"):]
-                    print(f"🔧 Added fuzzing headers")
+                    print(f"Added fuzzing headers")
         
         return CallbackResult.SUCCESS
     
@@ -80,7 +80,7 @@ class AdvancedHTTPExtractionCampaign(PcapFuzzCampaign):
                     code_start = response_data.find(b"HTTP/1.") + 9
                     code = response_data[code_start:code_start+3].decode()
                     self.response_codes[code] = self.response_codes.get(code, 0) + 1
-                    print(f"📊 HTTP {code} response")
+                    print(f"HTTP {code} response")
                 except:
                     pass
             
@@ -96,7 +96,7 @@ class AdvancedHTTPExtractionCampaign(PcapFuzzCampaign):
             
             for pattern, description in interesting_patterns:
                 if pattern in response_data.lower():
-                    print(f"🚨 Found {description}")
+                    print(f"Found {description}")
                     context.shared_data['interesting_responses'] = context.shared_data.get('interesting_responses', 0) + 1
         
         return CallbackResult.SUCCESS
@@ -142,7 +142,7 @@ class AdvancedBinaryAnalysisCampaign(PcapFuzzCampaign):
             unique_bytes = len(set(payload))
             if unique_bytes > len(payload) * 0.7:  # High diversity
                 self.binary_stats['high_entropy'] += 1
-                print(f"🎲 High entropy payload ({unique_bytes} unique bytes)")
+                print(f"High entropy payload ({unique_bytes} unique bytes)")
             
             print(f"🔢 Binary stats: {len(payload)} bytes, {null_count} nulls, {printable_count} printable")
         
@@ -183,7 +183,7 @@ class AdvancedLayerFuzzCampaign(PcapFuzzCampaign):
                 packet[IP].ttl = random.choice([0, 1, 255, 64])
                 packet[IP].flags = random.choice([0, 1, 2, 4])
                 self.layer_mutations['IP'] += 1
-                print(f"🌐 Modified IP layer (TTL={packet[IP].ttl})")
+                print(f"Modified IP layer (TTL={packet[IP].ttl})")
         
         # Protocol switching
         if TCP in packet and random.random() < 0.2:
@@ -202,7 +202,7 @@ class AdvancedLayerFuzzCampaign(PcapFuzzCampaign):
             # DNS-specific modifications
             if packet[UDP].dport == 53:
                 self.layer_mutations['DNS'] += 1
-                print(f"🌐 DNS packet to port 53")
+                print(f"DNS packet to port 53")
             else:
                 self.layer_mutations['UDP'] += 1
         
@@ -214,13 +214,13 @@ class AdvancedLayerFuzzCampaign(PcapFuzzCampaign):
                     # Add random bytes
                     packet[layer].load = original_load + bytes([random.randint(0, 255) for _ in range(5)])
                     self.layer_mutations['Payload'] += 1
-                    print(f"📦 Extended payload by 5 bytes")
+                    print(f"Extended payload by 5 bytes")
         
         return CallbackResult.SUCCESS
     
     def post_send_callback(self, context, packet, response=None):
         """Track mutation effectiveness."""
-        print(f"📈 Mutation stats: {self.layer_mutations}")
+        print(f"Mutation stats: {self.layer_mutations}")
         if self.protocol_switches > 0:
             print(f"🔄 Protocol switches: {self.protocol_switches}")
         
@@ -246,7 +246,7 @@ def create_sample_pcaps():
     ]
     wrpcap(f"{sample_dir}/binary_protocol.pcap", binary_packets)
     
-    print("✓ Created advanced sample PCAP files")
+    print("Created advanced sample PCAP files")
 
 # Campaign registry
 CAMPAIGNS = [

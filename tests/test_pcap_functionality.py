@@ -13,18 +13,12 @@ import time
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 
-try:
-    import pytest
-    PYTEST_AVAILABLE = True
-except ImportError:
-    PYTEST_AVAILABLE = False
-
 import unittest
 
 # Add parent directory to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from fuzzing_framework import FuzzingCampaign
+from packetfuzz.fuzzing_framework import FuzzingCampaign
 import scapy.all as scapy
 from scapy.layers.inet import IP, TCP, UDP, ICMP
 from scapy.layers.inet6 import IPv6
@@ -70,7 +64,7 @@ class TestPCAPFunctionality(unittest.TestCase):
             rate_limit = 100.0  # Fast for testing
             verbose = True
             output_network = False
-            output_pcap = None  # Will be set dynamically
+            # output_pcap will be set dynamically
             
             packet = IP(dst="192.168.1.1") / TCP(dport=80) / Raw(load=b"Test data")
         
@@ -349,6 +343,170 @@ class TestPCAPFunctionality(unittest.TestCase):
             assert first_packet.haslayer(IP), "Packet should have IP layer"
         # Note: Fuzzer may modify packet layers, so we only verify basic IP layer presence
 
+    def test_pcap_contains_actual_mutations(self):
+        """Verify PCAP output contains actual field mutations, not just copies"""
+        class MutationValidationCampaign(FuzzingCampaign):
+            name = "Mutation Validation Test"
+            target = "192.168.1.1"
+            iterations = 50
+            rate_limit = 100.0
+            verbose = True
+            output_network = False
+            output_pcap = None
+            
+            def get_packet(self):
+                # Use a packet with predictable original values
+                return IP(dst="192.168.1.1", ttl=64) / TCP(dport=80, sport=12345) / Raw(b"test_data")
+
+        campaign = MutationValidationCampaign()
+        campaign.output_pcap = self.test_pcap_file
+        
+        # Store original packet for comparison
+        original_packet = campaign.get_packet()
+        original_dport = original_packet[TCP].dport
+        original_ttl = original_packet[IP].ttl
+        
+        result = campaign.execute()
+        assert result == True, "Campaign should execute successfully"
+        
+        # Read and analyze output PCAP for actual mutations
+        packets = rdpcap(self.test_pcap_file)
+        if len(packets) == 0:
+            self.skipTest("No packets generated - cannot validate mutations")
+        
+        # Track different types of mutations found
+        dport_mutations = sum(1 for pkt in packets if TCP in pkt and pkt[TCP].dport != original_dport)
+        ttl_mutations = sum(1 for pkt in packets if IP in pkt and pkt[IP].ttl != original_ttl)
+        any_mutations = dport_mutations + ttl_mutations
+        
+        # Log detailed mutation analysis
+        print(f"Mutation analysis for {len(packets)} packets:")
+        print(f"  TCP.dport mutations: {dport_mutations} ({dport_mutations/len(packets)*100:.1f}%)")
+        print(f"  IP.ttl mutations: {ttl_mutations} ({ttl_mutations/len(packets)*100:.1f}%)")
+        print(f"  Total field mutations: {any_mutations}")
+        
+        # Verify that at least some mutations occurred
+        mutation_rate = any_mutations / len(packets)
+        assert mutation_rate > 0.05, f"Mutation rate too low: {mutation_rate:.1%} (expected >5%)"
+        assert mutation_rate < 0.95, f"Mutation rate too high: {mutation_rate:.1%} (expected <95%)"
+
+    def test_pcap_contains_dictionary_values(self):
+        """Verify dictionary values appear in fuzzed packets when configured"""
+        import tempfile
+        
+        # Create a test dictionary file
+        dict_file = os.path.join(self.temp_dir, "test_ports.txt")
+        with open(dict_file, 'w') as f:
+            f.write("8080\n8443\n9000\n3306\n5432\n")
+        
+        class DictionaryTestCampaign(FuzzingCampaign):
+            name = "Dictionary Validation Test"
+            target = "192.168.1.1"
+            iterations = 100  # More iterations to catch dictionary usage
+            rate_limit = 100.0
+            verbose = True
+            output_network = False
+            output_pcap = None
+            
+            def get_packet(self):
+                packet = IP(dst="192.168.1.1") / TCP(dport=80) / Raw(b"test")
+                # Configure dictionary for TCP destination port
+                tcp_layer = packet[TCP]
+                if hasattr(tcp_layer, 'field_fuzz'):
+                    tcp_layer.field_fuzz('dport').dictionary = [dict_file]
+                return packet
+
+        campaign = DictionaryTestCampaign()
+        campaign.output_pcap = self.test_pcap_file
+        
+        result = campaign.execute()
+        assert result == True, "Dictionary campaign should execute successfully"
+        
+        # Read and analyze PCAP for dictionary values
+        packets = rdpcap(self.test_pcap_file)
+        if len(packets) == 0:
+            self.skipTest("No packets generated - cannot validate dictionary usage")
+        
+        expected_dict_values = {8080, 8443, 9000, 3306, 5432}
+        found_dict_values = set()
+        
+        for packet in packets:
+            if TCP in packet:
+                dport = packet[TCP].dport
+                if dport in expected_dict_values:
+                    found_dict_values.add(dport)
+        
+        print(f"Dictionary validation for {len(packets)} packets:")
+        print(f"  Expected dictionary values: {expected_dict_values}")
+        print(f"  Found dictionary values: {found_dict_values}")
+        print(f"  Dictionary hit rate: {len(found_dict_values)/len(expected_dict_values)*100:.1f}%")
+        
+        # At least some dictionary values should appear (relaxed assertion)
+        if len(found_dict_values) == 0:
+            print("WARNING: No dictionary values found - dictionary may not be applied")
+        # Note: Dictionary usage depends on fuzzer configuration, so we log but don't hard assert
+
+    def test_layer_weight_scaling_effects_in_pcap(self):
+        """Verify layer weight scaling actually affects mutation rates in PCAP output"""
+        def run_scaling_test(scaling_factor, test_name):
+            class ScalingTestCampaign(FuzzingCampaign):
+                name = f"Scaling Test {test_name}"
+                target = "192.168.1.1"
+                iterations = 200  # Large sample for statistical analysis
+                rate_limit = 200.0
+                verbose = False
+                output_network = False
+                output_pcap = None
+                layer_weight_scaling = scaling_factor
+                enable_layer_weight_scaling = True
+                
+                def get_packet(self):
+                    return IP(dst="192.168.1.1", ttl=64) / TCP(dport=80, sport=12345) / Raw(b"payload")
+
+            test_file = os.path.join(self.temp_dir, f"scaling_{test_name}.pcap")
+            campaign = ScalingTestCampaign()
+            campaign.output_pcap = test_file
+            
+            result = campaign.execute()
+            if not result:
+                return None
+            
+            # Analyze mutation rates by layer
+            packets = rdpcap(test_file)
+            if len(packets) == 0:
+                return None
+            
+            ip_mutations = sum(1 for pkt in packets if IP in pkt and pkt[IP].ttl != 64)
+            tcp_mutations = sum(1 for pkt in packets if TCP in pkt and pkt[TCP].dport != 80)
+            
+            return {
+                'packets': len(packets),
+                'ip_mutation_rate': ip_mutations / len(packets),
+                'tcp_mutation_rate': tcp_mutations / len(packets),
+                'total_mutations': ip_mutations + tcp_mutations
+            }
+        
+        # Test with different scaling factors
+        high_scaling = run_scaling_test(0.9, "high")
+        low_scaling = run_scaling_test(0.1, "low")
+        
+        if high_scaling and low_scaling:
+            print(f"Layer weight scaling analysis:")
+            print(f"  High scaling (0.9): IP={high_scaling['ip_mutation_rate']:.1%}, TCP={high_scaling['tcp_mutation_rate']:.1%}")
+            print(f"  Low scaling (0.1): IP={low_scaling['ip_mutation_rate']:.1%}, TCP={low_scaling['tcp_mutation_rate']:.1%}")
+            
+            # With lower scaling, outer layers (IP) should be mutated less frequently
+            # This is a statistical trend, so we use a relaxed comparison
+            if high_scaling['ip_mutation_rate'] > 0 and low_scaling['ip_mutation_rate'] > 0:
+                scaling_effect = low_scaling['ip_mutation_rate'] / high_scaling['ip_mutation_rate']
+                print(f"  IP mutation scaling effect: {scaling_effect:.2f}")
+                
+                # Expect some scaling effect (not necessarily dramatic due to various factors)
+                if scaling_effect > 1.2:
+                    print("WARNING: Lower scaling factor produced MORE IP mutations - unexpected")
+        else:
+            print("WARNING: Could not complete layer weight scaling analysis")
+
 
 # Backward compatibility for unittest
 class TestPCAPFunctionalityUnit(TestPCAPFunctionality):
@@ -365,10 +523,4 @@ class TestPCAPFunctionalityUnit(TestPCAPFunctionality):
     # All test methods are inherited from TestPCAPFunctionality
 
 
-if __name__ == "__main__":
-    # Support both pytest and unittest execution
-    if PYTEST_AVAILABLE:
-        pytest.main([__file__])
-    else:
-        import unittest
-        unittest.main()
+

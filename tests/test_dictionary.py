@@ -19,24 +19,17 @@ from pathlib import Path
 from typing import Dict, List, Any
 from scapy.all import IP, TCP, UDP, DNS, DNSQR, Raw
 
-# Try to import pytest, fall back to unittest if not available
-try:
-    import pytest
-    PYTEST_AVAILABLE = True
-except ImportError:
-    PYTEST_AVAILABLE = False
-
 # Add parent directory to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from dictionary_manager import DictionaryManager
-from default_mappings import (
+from packetfuzz.dictionary_manager import DictionaryManager
+from packetfuzz.default_mappings import (
     FIELD_DEFAULT_VALUES
 )
-from fuzzing_framework import FuzzingCampaign
+from packetfuzz.fuzzing_framework import FuzzingCampaign
 
 # Import packet extensions to enable field_fuzz() method
-import packet_extensions
+import packetfuzz.packet_extensions
 
 # Import from conftest with proper path handling
 try:
@@ -340,7 +333,7 @@ class TestCLIDictionaryConfiguration(unittest.TestCase):
                     except Exception:
                         pass
             result = subprocess.run(
-                ["python", "packetfuzz.py"] + remapped,
+                ["python", "-m", "packetfuzz"] + remapped,
                 capture_output=True,
                 text=True,
                 timeout=20,
@@ -449,7 +442,7 @@ class TestDictionaryOnlyMutator(unittest.TestCase):
         from scapy.layers.inet import TCP
         tcp_packet = TCP()
         # Patch FIELD_ADVANCED_WEIGHTS for test
-        from default_mappings import FIELD_ADVANCED_WEIGHTS
+        from packetfuzz.default_mappings import FIELD_ADVANCED_WEIGHTS
         original_weights = FIELD_ADVANCED_WEIGHTS[:]
         try:
             FIELD_ADVANCED_WEIGHTS[:] = [
@@ -504,15 +497,3 @@ class TestDictionaryOnlyMutator(unittest.TestCase):
         # The second part of the test involves complex advanced mapping manipulation
         # which may not work as expected. For now, just verify basic functionality works.
         assert len(dicts) > 0
-
-
-if __name__ == '__main__':
-    # Run tests with pytest if available, otherwise use unittest
-    if PYTEST_AVAILABLE:
-        try:
-            pytest.main([__file__, '-v'])
-        except SystemExit:
-            pass
-    else:
-        import unittest
-        unittest.main(verbosity=2)

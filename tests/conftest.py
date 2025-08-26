@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Shared test fixtures and utilities for the scapy-fuzzer test suite.
+Shared test fixtures and utilities for the PacketFuzz test suite.
 
-This module provides common test fixtures, utilities, and helper functions
+This module provides common pytest fixtures, utilities, and helper functions
 that are used across multiple test modules.
 """
 
@@ -12,29 +12,12 @@ import tempfile
 import shutil
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-
-# Try to import pytest, fall back gracefully if not available
-try:
-    import pytest
-    PYTEST_AVAILABLE = True
-except ImportError:
-    PYTEST_AVAILABLE = False
-    # Define a no-op fixture decorator for when pytest is not available
-    def pytest_fixture(*args, **kwargs):
-        def decorator(func):
-            return func
-        return decorator
-    # Mock pytest.fixture
-    class MockPytest:
-        @staticmethod
-        def fixture(*args, **kwargs):
-            return pytest_fixture(*args, **kwargs)
-    pytest = MockPytest()
+import pytest
 
 # Add the parent directory to sys.path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from fuzzing_framework import FuzzingCampaign
+from packetfuzz.fuzzing_framework import FuzzingCampaign
 from scapy.all import IP, TCP, UDP, DNS, DNSQR, Ether, ARP, Raw
 
 
@@ -133,7 +116,6 @@ class BasicTestCampaign(FuzzingCampaign):
     rate_limit = 100.0
     verbose = False
     output_network = False
-    output_pcap = None
     
     def __init__(self):
         super().__init__()
@@ -148,7 +130,6 @@ class HTTPTestCampaign(FuzzingCampaign):
     rate_limit = 50.0
     verbose = False
     output_network = False
-    output_pcap = None
     
     def __init__(self):
         super().__init__()
@@ -168,7 +149,6 @@ class DNSTestCampaign(FuzzingCampaign):
     rate_limit = 20.0
     verbose = False
     output_network = False
-    output_pcap = None
     
     def __init__(self):
         super().__init__()
@@ -190,7 +170,6 @@ class Layer2TestCampaign(FuzzingCampaign):
     rate_limit = 10.0
     verbose = False
     output_network = False
-    output_pcap = None
     
     def __init__(self):
         super().__init__()
@@ -225,7 +204,6 @@ class NetworkTestCampaign(FuzzingCampaign):
     rate_limit = 5.0
     verbose = False
     output_network = True
-    output_pcap = None
     
     def __init__(self):
         super().__init__()
@@ -240,7 +218,6 @@ class DictionaryTestCampaign(FuzzingCampaign):
     rate_limit = 10.0
     verbose = False
     output_network = False
-    output_pcap = None
     dictionary_config_file = "examples/intermediate/02_dictionary_config.py"
     
     def __init__(self):
@@ -317,7 +294,7 @@ def temp_config_file():
     """Fixture providing a temporary configuration file"""
     with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
         f.write('''
-from fuzzing_framework import FuzzingCampaign
+from packetfuzz.fuzzing_framework import FuzzingCampaign
 from scapy.layers.inet import IP, TCP
 
 class TempTestCampaign(FuzzingCampaign):

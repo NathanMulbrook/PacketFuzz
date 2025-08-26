@@ -16,7 +16,7 @@ from scapy.packet import Raw
 from scapy.layers.http import HTTP, HTTPRequest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from fuzzing_framework import FuzzingCampaign, FuzzField, CallbackResult, CampaignContext
+from packetfuzz.fuzzing_framework import FuzzingCampaign, FuzzField, CallbackResult, CampaignContext
 
 class AdvancedHTTPCampaign(FuzzingCampaign):
     """Multi-stage HTTP fuzzing with comprehensive monitoring."""

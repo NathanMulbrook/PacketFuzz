@@ -13,7 +13,7 @@ from scapy.layers.http import HTTP, HTTPRequest
 from scapy.packet import Raw
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from fuzzing_framework import FuzzingCampaign, FuzzField
+from packetfuzz.fuzzing_framework import FuzzingCampaign, FuzzField
 
 HTTPBasePacket = (IP() /
                   TCP(dport=FuzzField(values=[80, 443, 8080])) /

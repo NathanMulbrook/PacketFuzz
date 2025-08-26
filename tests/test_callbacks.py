@@ -15,7 +15,7 @@ from pathlib import Path
 # Add the project root to sys.path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from fuzzing_framework import FuzzingCampaign, CallbackResult, CampaignContext
+from packetfuzz.fuzzing_framework import FuzzingCampaign, CallbackResult, CampaignContext
 from scapy.all import IP, TCP, UDP, Raw
 
 class CallbackTest(unittest.TestCase):
@@ -130,7 +130,7 @@ class CallbackTest(unittest.TestCase):
     def test_response_capture_with_history(self):
         """Test response capture functionality using fuzz history"""
         from datetime import datetime
-        from fuzzing_framework import FuzzHistoryEntry
+        from packetfuzz.fuzzing_framework import FuzzHistoryEntry
         
         # Create campaign and context
         campaign = FuzzingCampaign()
@@ -179,6 +179,3 @@ class CallbackTest(unittest.TestCase):
         self.assertEqual(context.fuzz_history[0].iteration, 2)
         self.assertEqual(context.fuzz_history[1].iteration, 3)
         self.assertEqual(context.fuzz_history[2].iteration, 4)
-
-if __name__ == '__main__':
-    unittest.main()

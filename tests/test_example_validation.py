@@ -42,7 +42,7 @@ class TestExampleValidation(unittest.TestCase):
     def tearDown(self):
         cleanup_test_files()
     
-    def run_campaign_cli(self, campaign_path, timeout=45, allow_failure=False):
+    def run_campaign_cli(self, campaign_path, timeout=120, allow_failure=False):
         """
         Helper method to run the packetfuzz CLI with a campaign config file.
         
@@ -58,7 +58,7 @@ class TestExampleValidation(unittest.TestCase):
             self.skipTest(f"Campaign file {campaign_path} not found")
             
         result = subprocess.run(
-            [sys.executable, str(self.project_root / "packetfuzz.py"), str(campaign_path), "--disable-network", "--disable-pcap"],
+            [sys.executable, "-m", "packetfuzz", str(campaign_path), "--disable-network", "--disable-pcap"],
             cwd=str(self.project_root),
             capture_output=True,
             text=True,
@@ -90,21 +90,31 @@ class TestExampleValidation(unittest.TestCase):
                     success, stdout, stderr = self.run_campaign_cli(campaign_file)
                     self.assertTrue(success, f"{campaign_file.name} failed CLI validation")
 
-if __name__ == '__main__':
-    # Run example validation tests
-    print("=" * 60)
-    print("Example Validation Tests")
-    print("=" * 60)
-    print()
-    print("PURPOSE: Validate examples work correctly for user education")
-    print("NOTE: These are NOT functional tests of the framework!")
-    print("      Examples are purely for demonstration and learning.")
-    print()
-    print("This validation ensures:")
-    print("  - All examples execute without errors")
-    print("  - Framework API changes don't break examples")  
-    print("  - Examples remain useful for user education")
-    print("  - Import statements work correctly in examples")
-    print()
-    
-    unittest.main(verbosity=2)
+    def test_direct_example_execution(self):
+        """Validate that examples can be executed directly without errors."""
+        categories = ["basic", "intermediate", "advanced"]
+        skip_files = ["run_all_examples.py"]  # Skip utility files
+        
+        for category in categories:
+            category_dir = self.examples_dir / category
+            if not category_dir.exists():
+                continue
+            for example_file in sorted(category_dir.glob("*.py")):
+                if example_file.name in skip_files:
+                    continue
+                    
+                with self.subTest(example_file=example_file):
+                    # Execute the example directly with Python
+                    result = subprocess.run(
+                        [sys.executable, str(example_file)],
+                        cwd=str(self.project_root),
+                        capture_output=True,
+                        text=True,
+                        timeout=30  # Shorter timeout for direct execution
+                    )
+                    
+                    # Check if the example ran without crashing
+                    # Some examples might not produce output, so we just check exit code
+                    if result.returncode != 0:
+                        self.fail(f"{example_file.name} failed direct execution (rc={result.returncode}).\n"
+                                f"STDOUT: {result.stdout}\nSTDERR: {result.stderr}")

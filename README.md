@@ -12,35 +12,39 @@ For detailed usage information, please see the [framework documentation](FRAMEWO
 
 ## Architecture Overview
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                      PacketFuzzING FRAMEWORK                    │
-├─────────────────────────────────────────────────────────────────┤
-│  CLI Interface (packetfuzz.py)                               │
-│  ├─ Campaign Discovery & Execution                             │
-│  └─ Dictionary Configuration Overrides                        │
-├─────────────────────────────────────────────────────────────────┤
-│  Campaign Framework (fuzzing_framework.py)                    │
-│  ├─ FuzzingCampaign (Base class with inheritance)             │
-│  ├─ PcapFuzzCampaign (PCAP-based regression testing)          │
-│  ├─ FuzzField (Embedded field configuration)                  │
-│  └─ Callback System (5 callback types)                       │
-├─────────────────────────────────────────────────────────────────┤
-│  Mutator Manager (mutator_manager.py)                         │
-│  ├─ Field Discovery & Resolution                              │
-│  ├─ Dictionary Integration                                     │
-│  └─ Mutation Orchestration                                    │
-├─────────────────────────────────────────────────────────────────┤
-│  Mutation Engines                                             │
-│  ├─ LibFuzzer (C-based binary mutations)                      │
-│  ├─ Scapy Native (Built-in fuzz() function)                   │
-│  └─ Dictionary-Only (Exact dictionary values)                 │
-├─────────────────────────────────────────────────────────────────┤
-│  Dictionary System                                            │
-│  ├─ Default Mappings (Field-to-dictionary mapping)            │
-│  ├─ User Overrides (Campaign-specific configs)                │
-│  └─ FuzzField Dictionaries (Inline configuration)             │
-└─────────────────────────────────────────────────────────────────┘
+```mermaid
+graph TB
+    subgraph "PacketFuzz Framework"
+        CLI[CLI Interface<br/>python -m packetfuzz]
+        CLI --> CF[Campaign Framework]
+        CLI --> DC[Dictionary Config]
+        
+        subgraph "Campaign Layer"
+            CF --> FC[FuzzingCampaign]
+            CF --> PC[PcapFuzzCampaign]
+            CF --> FF[FuzzField]
+            CF --> CB[Callback System<br/>7 callback types]
+        end
+        
+        subgraph "Core Engine"
+            CF --> MM[Mutator Manager]
+            MM --> FD[Field Discovery]
+            MM --> DI[Dictionary Integration]
+            MM --> MO[Mutation Orchestration]
+        end
+        
+        subgraph "Mutation Engines"
+            MM --> LF[LibFuzzer<br/>C-based binary mutations]
+            MM --> SC[Scapy Native<br/>Built-in fuzz function]
+            MM --> DO[Dictionary-Only<br/>Exact dictionary values]
+        end
+        
+        subgraph "Dictionary System"
+            DC --> DM[Default Mappings<br/>Field-to-dictionary mapping]
+            DC --> UO[User Overrides<br/>Campaign-specific configs]
+            DC --> FZ[FuzzField Dictionaries<br/>Inline configuration]
+        end
+    end
 ```
 
 ## Project Structure
@@ -52,17 +56,22 @@ PacketFuzz/
 │   ├── advanced/               # Advanced features and patterns
 │   └── intermediate/           # Intermediate features
 ├── tests/                      # Test suite (unit, integration, example validation)
-│   └── run_all_tests.py        # Main test runner
+│   └── test_*.py               # Test files for pytest
 ├── fuzzdb/                     # FuzzDB dictionary database
-├── mutators/                   # Mutation engine components
-├── utils/                      # Project utilities
-├── fuzzing_framework.py        # Core campaign framework
-├── pcapfuzz.py                 # PCAP-based fuzzing
-├── default_mappings.py         # Default field-to-dictionary mappings
-├── dictionary_manager.py       # Dictionary management and overrides
-├── mutator_manager.py          # Core fuzzing engine and Scapy integration
-├── packetfuzz.py               # Command-line interface
-├── FRAMEWORK_DOCUMENTATION.md  # API and usage documentation
+├── packetfuzz/                 # Main package directory
+│   ├── __init__.py            # Package initialization
+│   ├── __main__.py            # CLI entry point (python -m packetfuzz)
+│   ├── cli.py                 # Command-line interface implementation
+│   ├── fuzzing_framework.py   # Core campaign framework
+│   ├── pcapfuzz.py            # PCAP-based fuzzing
+│   ├── default_mappings.py    # Default field-to-dictionary mappings
+│   ├── dictionary_manager.py  # Dictionary management and overrides
+│   ├── mutator_manager.py     # Core fuzzing engine and Scapy integration
+│   ├── mutators/              # Mutation engine components
+│   └── utils/                 # Package utilities
+├── doc/                        # Documentation
+│   ├── FRAMEWORK_DOCUMENTATION.md  # API and usage documentation
+│   └── LAYER_WEIGHT_SCALING.md     # Layer scaling documentation
 ├── requirements.txt            # Python dependencies
 └── setup.py                    # Package setup
 ```
@@ -77,7 +86,7 @@ Instalation is not necessarily required, the application can be executed from th
 
 2. **Run tests:**
    ```bash
-   python tests/run_all_tests.py
+   python -m pytest tests/
    ```
 
 3. **Try examples:**
@@ -98,7 +107,7 @@ Instalation is not necessarily required, the application can be executed from th
 ### Command-Line Usage
 
 ```text
-packetfuzz [OPTIONS] <campaign_config.py>
+python -m packetfuzz [OPTIONS] <campaign_config.py>
 ```
 
 **Arguments:**
@@ -120,26 +129,26 @@ packetfuzz [OPTIONS] <campaign_config.py>
 **Examples:**
 ```bash
 # List campaigns
-packetfuzz examples/basic/01_quick_start.py --list-campaigns
+python -m packetfuzz examples/basic/01_quick_start.py --list-campaigns
 
 # Execute campaigns
-packetfuzz examples/basic/01_quick_start.py
+python -m packetfuzz examples/basic/01_quick_start.py
 
 # Use a custom dictionary config
-packetfuzz examples/basic/01_quick_start.py --dictionary-config examples/config/user_dictionary_config.py
+python -m packetfuzz examples/basic/01_quick_start.py --dictionary-config examples/config/user_dictionary_config.py
 
 # Enable PCAP output to a specific file
-packetfuzz examples/basic/01_quick_start.py --pcap-file output.pcap
+python -m packetfuzz examples/basic/01_quick_start.py --pcap-file output.pcap
 
 # Validate campaigns without sending packets
-packetfuzz examples/basic/01_quick_start.py --disable-network --verbose
+python -m packetfuzz examples/basic/01_quick_start.py --disable-network --verbose
 
 # Check component availability
-packetfuzz
+python -m packetfuzz
 
 ### Programmatic Usage
 ```python
-from fuzzing_framework import FuzzingCampaign, FuzzField
+from packetfuzz.fuzzing_framework import FuzzingCampaign, FuzzField
 from scapy.layers.inet import IP, TCP
 from scapy.layers.http import HTTP, HTTPRequest
 
@@ -170,15 +179,13 @@ campaign.execute()
 | `FuzzingCampaign` | Base campaign class | `class MyCampaign(FuzzingCampaign):` |
 | `PcapFuzzCampaign` | PCAP-based fuzzing | `class Regression(PcapFuzzCampaign):` |
 | `FuzzField` | Field configuration | `TCP(dport=FuzzField(values=[80, 443]))` |
-| `CallbackResult` | Callback return values | `return CallbackResult.CONTINUE` |
+| `CallbackResult` | Callback return values | `return CallbackResult.SUCCESS` |
 
 ## Documentation
 
-- `FRAMEWORK_DOCUMENTATION.md` - Complete API documentation  
+- `doc/FRAMEWORK_DOCUMENTATION.md` - Complete API documentation  
 - `examples/` - Working code examples
 - `tests/` - Test suite
-
-
 
 
 ## Troubleshooting
@@ -187,7 +194,7 @@ campaign.execute()
 
 ```bash
 # Enable verbose logging
-packetfuzz examples/basic/01_quick_start.py --verbose
+python -m packetfuzz examples/basic/01_quick_start.py --verbose
 
 # Test with minimal iterations
 python -c "

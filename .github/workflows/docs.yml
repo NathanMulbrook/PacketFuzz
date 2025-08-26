@@ -1,0 +1,80 @@
+name: Documentation
+
+on:
+  push:
+    branches: [ main, code-cleanup-and-documentation ]
+  pull_request:
+    branches: [ main ]
+
+# Grant GITHUB_TOKEN the minimal permissions required for Pages deployment
+permissions:
+  contents: write      # Read repository contents
+#  pages: write       # Deploy to GitHub Pages
+#  id-token: write    # Required for OIDC authentication
+
+# Allow only one concurrent deployment
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies
+      run: |
+        pip install -r requirements.txt
+        pip install sphinx myst-parser sphinx-rtd-theme sphinxcontrib-mermaid
+
+    - name: Build documentation
+      run: |
+        cd .sphinx
+        sphinx-build -b html . _build/html
+
+    - name: Setup Pages
+      uses: actions/configure-pages@v4
+
+    - name: Upload artifact
+      uses: actions/upload-pages-artifact@v3
+      with:
+        path: .sphinx/_build/html
+
+    - name: Deploy to GitHub Pages
+      id: deployment
+      uses: actions/deploy-pages@v4
+
+  test-build:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies
+      run: |
+        pip install -r requirements.txt
+        pip install sphinx myst-parser sphinx-rtd-theme sphinxcontrib-mermaid
+
+    - name: Test documentation build
+      run: |
+        cd docs
+        sphinx-build -b html . _build/html -W

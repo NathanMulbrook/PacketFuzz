@@ -30,8 +30,9 @@ venv.bak/
 
 *.json
 *.pcap
-pcaps/
-logs/
+# Centralized artifacts directory
+artifacts/
+*.report.txt
 crash_logs/*
 *.log
 fuzzed_packets_report.txt
@@ -41,3 +42,15 @@ fuzz_fields_output_report.txt
 # Temporary test and debug files in root directory
 /test_*.py
 /debug_*.py
+
+# Documentation builds (Sphinx)
+.sphinx/_build/
+.sphinx/.doctrees/
+*.doctree
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
