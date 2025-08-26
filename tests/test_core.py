@@ -8,25 +8,30 @@ Tests for the core functionality of the scapy-fuzzer framework including:
 - Field and packet configuration management
 """
 
-import sys
-import os
-import unittest
+# Standard library imports
 import logging
-import time
+import os
+import sys
 import tempfile
-from typing import Any, List
+import time
+import unittest
 from collections import Counter, defaultdict
+from typing import Any, List
 
+# Path setup for tests
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from packetfuzz.fuzzing_framework import FuzzingCampaign, FuzzField, FuzzMutator, CallbackResult
-Campaign = FuzzingCampaign
-from packetfuzz.mutator_manager import MutatorManager, FuzzConfig, FuzzMode
-from scapy.all import IP, TCP, UDP, DNS, DNSQR, Raw
+# Third-party imports
+from scapy.all import DNS, DNSQR, IP, Raw, TCP, UDP
 from scapy.utils import rdpcap, wrpcap
 
-# Import packet extensions to enable field_fuzz() method
+# Local imports
 import packetfuzz.packet_extensions
+from packetfuzz.fuzzing_framework import CallbackResult, FuzzField, FuzzingCampaign, FuzzMutator
+from packetfuzz.mutator_manager import FuzzConfig, FuzzMode, MutatorManager
+
+# Test aliases
+Campaign = FuzzingCampaign
 
 # Import from conftest with robust fallback similar to test_dictionary.py
 import importlib.util

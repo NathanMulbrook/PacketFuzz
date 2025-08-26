@@ -11,13 +11,19 @@ or simply:
     python3 examples/basic/01_quick_start.py
 """
 
-import sys
+# Standard library imports
 import os
+import sys
+
+# Path setup for examples
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from packetfuzz.fuzzing_framework import FuzzingCampaign, FuzzField
-from scapy.layers.inet import IP, TCP
+# Third-party imports
 from scapy.layers.http import HTTP, HTTPRequest
+from scapy.layers.inet import IP, TCP
+
+# Local imports
+from packetfuzz.fuzzing_framework import FuzzField, FuzzingCampaign
 
 class QuickStartCampaign(FuzzingCampaign):
     """Minimal fuzzing campaign - just the essentials."""

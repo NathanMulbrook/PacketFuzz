@@ -11,30 +11,35 @@ FuzzDB dictionaries for comprehensive network protocol fuzzing.
 Now uses embedded packet configuration with field_fuzz() and fuzz_config() methods.
 """
 
+# Standard library imports
 from __future__ import annotations
-from scapy.layers.l2 import Ether, ARP
-from scapy.layers.inet import IP, TCP, UDP, ICMP
-from scapy.layers.can import CAN 
-from scapy.packet import Raw, Packet, fuzz
-from scapy.sendrecv import send, sendp, sniff, sr1
-from typing import Dict, List, Union, Any, Optional, Callable, Protocol
-from enum import Enum
-import os
-import sys
-import random
-import time
-import logging
 import copy
 import json
-import threading
-import subprocess
+import logging
+import os
+import random
 import shutil
-from datetime import datetime
-from scapy.utils import wrpcap
-from .mutator_manager import MutatorManager, FuzzConfig, FuzzMode
-from .utils.packet_report import write_packet_report, write_campaign_summary
-from pathlib import Path
+import subprocess
+import sys
+import threading
+import time
 from dataclasses import dataclass, field
+from datetime import datetime
+from enum import Enum
+from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional, Protocol, Union
+
+# Third-party imports
+from scapy.layers.can import CAN
+from scapy.layers.inet import ICMP, IP, TCP, UDP
+from scapy.layers.l2 import ARP, Ether
+from scapy.packet import Packet, Raw, fuzz
+from scapy.sendrecv import send, sendp, sniff, sr1
+from scapy.utils import wrpcap
+
+# Local imports
+from .mutator_manager import FuzzConfig, FuzzMode, MutatorManager
+from .utils.packet_report import write_campaign_summary, write_packet_report
 
 # Constants
 DEFAULT_INTERFACE = "eth0"
@@ -348,15 +353,13 @@ class FuzzField:
         self.dictionary_override = dictionary_override
 
     def choose_value(self) -> Any:
-        """
-        Choose a value for fuzzing: random from values list if present, else default_value.
-        """
+        """Choose a random value from the values list or return None."""
         if self.values:
             return random.choice(self.values)
         return None
     
-    # Provide sequence-like behavior so Scapy can safely interact with this object
     def _coerce_to_bytes(self) -> bytes:
+        """Convert the chosen value to bytes for Scapy compatibility."""
         val = self.choose_value()
         if isinstance(val, (bytes, bytearray)):
             return bytes(val)
@@ -365,12 +368,14 @@ class FuzzField:
         return str(val).encode()
     
     def __len__(self) -> int:
+        """Return the length of the coerced bytes representation."""
         try:
             return len(self._coerce_to_bytes())
         except Exception:
             return 0
     
     def __getitem__(self, idx):
+        """Get item from the coerced bytes representation."""
         data = self._coerce_to_bytes()
         return data[idx]
     
@@ -409,7 +414,20 @@ class FuzzField:
 def configure_interface_offload(interface: str, features: List[str], disable: bool = True) -> tuple[bool, dict]:
     """
     Configure network interface offload features using ethtool.
-    Returns (success, original_settings) for potential restoration later.
+    
+    Args:
+        interface: Network interface name (e.g., "eth0")
+        features: List of offload features to configure
+        disable: Whether to disable (True) or enable (False) features
+        
+    Returns:
+        Tuple of (success_status, original_settings) where original_settings
+        can be used for restoration later
+        
+    Raises:
+        PermissionError: If not running as root
+        FileNotFoundError: If ethtool command not available
+        RuntimeError: If interface not found or configuration fails
     """
     # Check for root privileges
     if os.geteuid() != 0:

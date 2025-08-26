@@ -8,23 +8,25 @@ user overrides, and hierarchical fallback patterns.
 Simplified unified implementation that maintains the same user interface.
 """
 
-import os
-from pathlib import Path
-from typing import Dict, List, Optional, Any
-from dataclasses import dataclass, field
+# Standard library imports
 import logging
+import os
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
+# Third-party imports
 from scapy.packet import Packet
 
-# Import default configurations
+# Local imports
 from .default_mappings import (
-    FIELD_DEFAULT_VALUES,
-    FIELD_TYPE_WEIGHTS,
-    FIELD_NAME_WEIGHTS,
+    FIELD_ADVANCED_DICTIONARIES,
     FIELD_ADVANCED_WEIGHTS,
-    FIELD_TYPE_DICTIONARIES,
+    FIELD_DEFAULT_VALUES,
     FIELD_NAME_DICTIONARIES,
-    FIELD_ADVANCED_DICTIONARIES
+    FIELD_NAME_WEIGHTS,
+    FIELD_TYPE_DICTIONARIES,
+    FIELD_TYPE_WEIGHTS,
 )
 
 # Configuration constants
@@ -67,7 +69,7 @@ class DictionaryManager:
         return f"DictionaryManager(fuzzdb_path='{self.fuzzdb_path}')"
     
     def _find_fuzzdb_path(self) -> Optional[str]:
-        """Auto-detect FuzzDB path"""
+        """Auto-detect FuzzDB directory from common installation locations."""
         possible_paths = [
             Path("fuzzdb"),
             Path("../fuzzdb"),
@@ -81,7 +83,15 @@ class DictionaryManager:
         return None
     
     def _resolve_path(self, path: str) -> str:
-        """Resolve dictionary path to absolute path"""
+        """
+        Resolve dictionary path to absolute path.
+        
+        Args:
+            path: Dictionary file path (relative or absolute)
+            
+        Returns:
+            Absolute path to the dictionary file
+        """
         p = Path(path)
         if p.is_absolute():
             return str(p)

@@ -5,9 +5,12 @@ Reusable Packet Report Generator for PacketFuzzing Framework
 Generates a formatted, Markdown-style report for any Scapy packet.
 Can be used for crash logging, debug output, user export, etc.
 """
+# Standard library imports
 import base64
 import logging
-from typing import Optional, Dict, Any, Union, List
+from typing import Any, Dict, List, Optional, Union
+
+# Third-party imports
 from scapy.packet import Packet
 
 logger = logging.getLogger(__name__)

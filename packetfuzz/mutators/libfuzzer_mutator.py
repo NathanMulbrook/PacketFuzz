@@ -5,15 +5,19 @@ This module provides the interface to the libFuzzer C extension
 for high-performance mutation operations.
 """
 
+# Standard library imports
 import ctypes
 import logging
+import os
 import random
 import shutil
-import os
 from pathlib import Path
-from typing import List, Optional, Any
+from typing import Any, List, Optional
+
+# Third-party imports
 from scapy.fields import Field
 
+# Local imports
 from .base import BaseMutator
 
 logger = logging.getLogger(__name__)
@@ -25,7 +29,7 @@ DEFAULT_OUTPUT_BUFFER_MULTIPLIER = 2
 
 class LibFuzzerMutator(BaseMutator):
     """
-    libFuzzer-based mutator using the C extension
+    libFuzzer-based mutator using the C extension.
     
     Provides high-performance mutations using libFuzzer's proven algorithms.
     Requires the C extension to be compiled and available.
@@ -54,7 +58,7 @@ class LibFuzzerMutator(BaseMutator):
             raise RuntimeError("LibFuzzer extension failed to load. Check compilation.")
     
     def _find_library_path(self) -> Optional[str]:
-        """Find the compiled libFuzzer extension library (Linux only)"""
+        """Find the compiled libFuzzer extension library (Linux only)."""
         current_dir = Path(__file__).resolve().parent
         # Only Linux is currently supported
         linux_lib = 'libscapy_libfuzzer.so'
@@ -64,7 +68,7 @@ class LibFuzzerMutator(BaseMutator):
         return None
     
     def _setup_function_signatures(self):
-        """Setup ctypes function signatures for the C library"""
+        """Setup ctypes function signatures for the C library."""
         if not self._lib:
             return
         # Dictionary loading for LibFuzzer support

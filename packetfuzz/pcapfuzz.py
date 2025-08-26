@@ -35,15 +35,20 @@ Example Usage:
     campaign.execute()
 """
 
-from scapy.all import rdpcap, sendp, Raw
-from scapy.layers.inet import IP, UDP, TCP
-from scapy.packet import Packet
-from .mutator_manager import MutatorManager, FuzzConfig, FuzzMode
-from .fuzzing_framework import FuzzingCampaign, CallbackResult, CampaignContext
-from typing import Optional, Callable, List
-import os
+# Standard library imports
 import logging
+import os
 from pathlib import Path
+from typing import Callable, List, Optional
+
+# Third-party imports
+from scapy.all import Raw, rdpcap, sendp
+from scapy.layers.inet import IP, TCP, UDP
+from scapy.packet import Packet
+
+# Local imports
+from .fuzzing_framework import CallbackResult, CampaignContext, FuzzingCampaign
+from .mutator_manager import FuzzConfig, FuzzMode, MutatorManager
 
 logger = logging.getLogger(__name__)
 

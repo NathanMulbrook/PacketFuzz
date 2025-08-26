@@ -10,14 +10,17 @@ This script generates various sample PCAP files containing:
 
 The generated PCAP files are saved in the 'regression_samples' directory.
 """
+# Standard library imports
 import sys
 from pathlib import Path
+
+# Path setup
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-# Correct imports for Scapy layers and protocols
-from scapy.layers.inet import IP, UDP, TCP
-from scapy.layers.l2 import Ether
+# Third-party imports
 from scapy.layers.dns import DNS, DNSQR
+from scapy.layers.inet import IP, TCP, UDP
+from scapy.layers.l2 import Ether
 from scapy.packet import Raw
 from scapy.utils import wrpcap
 
@@ -28,8 +31,8 @@ def create_sample_pcaps():
     Creates various PCAP files containing different protocol samples:
     - DNS queries and responses
     - HTTP requests with potential injection payloads
-    - Custom UDP protocol communications
-    - Layer 2 Ethernet frames
+    - Custom UDP protocol packets
+    - Ethernet frame samples
     - Binary protocol data
     
     Files are saved to the pcaps/ directory for use in testing and examples.

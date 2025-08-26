@@ -126,10 +126,10 @@ class FuzzConfig:
 
 class MutatorManager:
     """
-    Mutator Manager for PacketFuzzing campaigns
-    
     Manages mutator selection and orchestrates fuzzing operations.
-    Delegates all mutation logic to specialized mutators.
+    
+    Delegates all mutation logic to specialized mutators in the mutators/ directory.
+    Handles field discovery, weight calculation, and mutation orchestration.
     """
     
     # Critical fields to track for debugging

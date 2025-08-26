@@ -6,24 +6,26 @@ This module provides a simpler approach that doesn't interfere with Scapy's
 internal attribute resolution mechanism.
 """
 
+# Standard library imports
 from __future__ import annotations
-from typing import Dict, List, Any, Optional, Union
 from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional, Union
 
-from scapy.packet import Packet
+# Third-party imports
 from scapy.fields import Field
+from scapy.packet import Packet
 
 
 @dataclass
 class FieldFuzzConfig:
-    """Configuration for fuzzing a specific field"""
+    """Configuration for fuzzing a specific field."""
     dictionary: List[str] = field(default_factory=list)
     default_values: List[Any] = field(default_factory=list) 
     fuzz_weight: float = 1.0
     description: str = ""
     
     def __post_init__(self):
-        """Ensure dictionary and default_values are lists"""
+        """Ensure dictionary and default_values are lists."""
         if isinstance(self.dictionary, str):
             self.dictionary = [self.dictionary]
         if not isinstance(self.default_values, list):

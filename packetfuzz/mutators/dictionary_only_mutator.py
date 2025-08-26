@@ -5,18 +5,24 @@ Provides mutation using only raw dictionary entries without additional mutations
 This mutator doesn't require libFuzzer and works purely with dictionary lookups.
 """
 
-import random
+# Standard library imports
 import logging
-from typing import List, Optional, Any
+import random
+from typing import Any, List, Optional
+
+# Third-party imports
+from scapy.fields import AnyField, Field
 from scapy.packet import Packet
-from scapy.fields import Field, AnyField
+
+# Local imports
 from .base import BaseMutator
 
 
 class DictionaryOnlyMutator(BaseMutator):
     """
     Mutator that uses only raw dictionary values for mutation.
-    Does not require libFuzzer C extension.
+    
+    Does not require libFuzzer C extension and works purely with dictionary lookups.
     """
     
     def __init__(self, seed: Optional[int] = None):
@@ -25,7 +31,18 @@ class DictionaryOnlyMutator(BaseMutator):
             random.seed(seed)
     
     def mutate_bytes(self, data: bytes, dictionaries: Optional[List[Any]] = None, max_size: int = 1024, seed: Optional[int] = None) -> bytes:
-        """Mutate byte data using only dictionary entries. Supports bytes or str entries, optional truncation and seeding."""
+        """
+        Mutate byte data using only dictionary entries.
+        
+        Args:
+            data: Original byte data to mutate
+            dictionaries: List of dictionary entries (bytes or str)
+            max_size: Maximum size for truncation
+            seed: Optional random seed for reproducible mutations
+            
+        Returns:
+            Mutated byte data from dictionary entries
+        """
         if not dictionaries:
             logging.getLogger(__name__).warning("No dictionaries provided to mutate_bytes; returning truncated input data.")
             return data[:max_size]
