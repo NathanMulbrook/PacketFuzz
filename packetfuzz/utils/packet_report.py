@@ -1327,6 +1327,12 @@ def write_fuzz_history_dump(
                 if hasattr(entry, 'payload_hash') and entry.payload_hash:
                     f.write(f"Payload Hash: {entry.payload_hash}\n")
                 
+                # Fuzzed fields information
+                if hasattr(entry, 'fuzzed_fields') and entry.fuzzed_fields:
+                    f.write(f"Fuzzed Fields: {', '.join(entry.fuzzed_fields)}\n")
+                elif hasattr(entry, 'fuzzed_fields'):  # Empty list case
+                    f.write(f"Fuzzed Fields: None\n")
+                
                 f.write("\n")
                 
                 # Packet details (if verbose enough)

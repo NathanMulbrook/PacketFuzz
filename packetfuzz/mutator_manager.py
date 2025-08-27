@@ -148,6 +148,11 @@ class MutatorManager:
     def __init__(self, config: Optional[FuzzConfig] = None):
         self.config = config or FuzzConfig()
         
+        # Track which fields are fuzzed in the current iteration
+        self.current_fuzzed_fields: List[str] = []
+        # Track fuzzed fields for each packet in a batch
+        self.fuzzed_fields_per_packet: List[List[str]] = []
+        
         # Initialize packet extensions (monkey patching)
         install_packet_extensions()
         
@@ -183,6 +188,35 @@ class MutatorManager:
         self.field_mutation_failures: Dict[Tuple[str, str], int] = {}
         # Track mutator usage counts for reporting
         self.mutator_usage_counts: Dict[str, int] = {}
+
+    def get_current_fuzzed_fields(self) -> List[str]:
+        """Get the list of fields that were fuzzed in the current iteration"""
+        return self.current_fuzzed_fields.copy()
+        
+    def get_fuzzed_fields_for_packet(self, packet_index: int) -> List[str]:
+        """Get the list of fields that were fuzzed for a specific packet in the last batch"""
+        if 0 <= packet_index < len(self.fuzzed_fields_per_packet):
+            return self.fuzzed_fields_per_packet[packet_index].copy()
+        return []
+
+    def _field_value_changed(self, original_value, new_value):
+        """Check if a field value actually changed from its original value."""
+        # Handle None and empty string cases
+        if original_value is None and new_value in (None, "", b""):
+            return False
+        if original_value in ("", b"") and new_value in (None, "", b""):
+            return False
+        
+        # For meaningful comparison, convert both to same type if possible
+        try:
+            if isinstance(original_value, bytes) and isinstance(new_value, str):
+                return original_value != new_value.encode()
+            elif isinstance(original_value, str) and isinstance(new_value, bytes):
+                return original_value.encode() != new_value
+        except:
+            pass
+        
+        return original_value != new_value
 
     def _record_mutator_usage(self, mutator_obj: Any) -> None:
         try:
@@ -258,7 +292,14 @@ class MutatorManager:
         if VERBOSITY_LEVEL >= 3:  # Only in debug mode
             write_debug_packet_log([packet], file_path=get_log_file_path("fuzz_fields_input_report.txt"), title="Fuzz Fields Input")
         results: List[Packet] = []
+        
+        # Reset the per-packet tracking
+        self.fuzzed_fields_per_packet = []
+        
         for _ in range(iterations):
+            # Reset tracking for this iteration
+            self.current_fuzzed_fields = []
+            
             fuzzed_packet = copy.deepcopy(packet)
             # Ensure the deep-copied packet does not contain FuzzField wrappers
             # Replace any FuzzField instances on the cloned packet with a concrete
@@ -309,6 +350,8 @@ class MutatorManager:
                     break
                 attempt_no += 1
             results.append(fuzzed_packet)
+            # Store the fuzzed fields for this packet
+            self.fuzzed_fields_per_packet.append(self.current_fuzzed_fields.copy())
         # Write debug report of all fuzzed packets (only in debug mode)
         if VERBOSITY_LEVEL >= 3:  # Only in debug mode
             try:
@@ -377,6 +420,9 @@ class MutatorManager:
             return False
             
         if explicit_values:
+            # Store original value to compare against changes
+            original_value = getattr(layer, fname, None)
+            
             pick_rng = self.config.rng or random
             try:
                 pick = pick_rng.choice(explicit_values)
@@ -385,15 +431,31 @@ class MutatorManager:
             if self._validate_and_assign(field_info, pick, layer, fname):
                 if fname in self.CRITICAL_FIELDS:
                     logger.debug(f"Assigned {layer.__class__.__name__}.{fname} to {pick} (explicit value)")
+                # Track that this field was fuzzed only if the value actually changed
+                new_value = getattr(layer, fname, None)
+                if self._field_value_changed(original_value, new_value):
+                    layer_name = getattr(layer, 'name', layer.__class__.__name__)
+                    field_identifier = f"{layer_name}.{fname}"
+                    self.current_fuzzed_fields.append(field_identifier)
                 return True
             # If the explicit pick fails validation/assignment, fall back to mutation path
 
         # 2) Mutator-based generation with retries
+        # Store original value to compare against changes
+        original_value = getattr(layer, fname, None)
+        
         dictionaries = self._get_field_dictionary_entries(fuzzfield_config, fname, field_desc, layer)
         current_value = None if (FuzzField is not None and isinstance(raw_field_value, FuzzField)) else raw_field_value
         result = self._mutate_with_retries(field_info, layer, fname, current_value, dictionaries, fuzzfield_config)
         if fname in self.CRITICAL_FIELDS:
             logger.debug(f"Mutate with retries result for {layer.__class__.__name__}.{fname}: {getattr(layer, fname, None)}")
+        # Track that this field was fuzzed only if mutation was successful AND the value actually changed
+        if result:
+            new_value = getattr(layer, fname, None)
+            if self._field_value_changed(original_value, new_value):
+                layer_name = getattr(layer, 'name', layer.__class__.__name__)
+                field_identifier = f"{layer_name}.{fname}"
+                self.current_fuzzed_fields.append(field_identifier)
         return result
 
     # --- Helper: FieldInfo ---

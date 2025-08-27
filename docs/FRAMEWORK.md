@@ -86,7 +86,7 @@ class MyCampaign(FuzzingCampaign):
 | **Scaling** | `layer_weight_scaling` | `Optional[float]` | `None` | Layer weight scaling factor (0.0-1.0) |
 | | `enable_layer_weight_scaling` | `bool` | `True` | Enable layer weight scaling |
 | | `excluded_layers` | `Optional[List[str]]` | `None` | Layer names to exclude from fuzzing |
-| | `fuzz_start_layer` | `Optional[str]` | `None` | Layer to attach PacketFuzzConfig to |
+| | `layers_to_fuzz` | `Optional[List[str]]` | `None` | Layer names to fuzz exclusively (excludes all others) |
 | **Mutators** | `mutator_preference` | `Optional[List[str]]` | `["libfuzzer"]` | Campaign-wide mutator preference (overridden by FuzzField mutators) |
 | **Dictionaries** | `global_dict_config_path` | `Optional[str]` | `None` | Global dictionary config file |
 | | `user_mapping_file` | `Optional[str]` | `None` | User mapping file path |

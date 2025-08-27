@@ -134,6 +134,9 @@ class FuzzHistoryEntry:
     crash_info: Optional[CrashInfo] = None
     iteration: int = -1
     
+    # Fuzzing tracking
+    fuzzed_fields: Optional[List[str]] = None  # List of fields that were actually fuzzed (e.g., ["HTTP Request.Method", "IP.src"])
+    
     # Serialization tracking
     packet_bytes: Optional[bytes] = None  # Serialized packet bytes (for PCAP replay)
     serialization_failed: bool = False  # True if packet couldn't be serialized
@@ -644,6 +647,8 @@ class FuzzingCampaign:
         - disable_interface_offload: Disable network interface hardware offload features (default False)
         - interface_offload_features: List of specific offload features to disable (None = use defaults)
         - interface_offload_restore: Restore original interface settings after campaign (default True)
+        - excluded_layers: List of layer names to exclude from fuzzing (sets fuzz_weight=0.0)
+        - layers_to_fuzz: List of layer names to fuzz exclusively (excludes all other layers)
     
     Packet-level configuration is now embedded in the packet object itself using:
         packet[Layer].field_fuzz('fieldname').dictionary = ["dict1.txt", "dict2.txt"]
@@ -701,7 +706,8 @@ class FuzzingCampaign:
 
     # Optionally exclude layers from fuzzing by name (sets fuzz_weight=0.0 for those layers)
     excluded_layers: Optional[List[str]] = None
-    fuzz_start_layer: Optional[str] = None  # Layer name to attach PacketFuzzConfig to (default: base layer)
+    # Optionally specify only certain layers to fuzz (sets fuzz_weight=0.0 for all other layers)
+    layers_to_fuzz: Optional[List[str]] = None
 
     # Network interface offload management for malformed packet fuzzing
     disable_interface_offload: bool = False                    # Enable/disable interface offload management
@@ -709,7 +715,7 @@ class FuzzingCampaign:
     interface_offload_restore: bool = True                     # Restore original settings after campaign
 
     # Reporting configuration
-    report_formats: List[str] = ['json']                       # List of report formats to generate (html, json, csv, sarif, markdown, yaml)
+    report_formats: List[str] = ['markdown']                       # List of report formats to generate (html, json, csv, sarif, markdown, yaml)
 
     # --- Socket logic additions ---
     socket_type: Optional[str] = None    # User can specify: 'l2', 'l3', 'tcp', 'udp', "canbus" or None for auto
@@ -757,6 +763,25 @@ class FuzzingCampaign:
             if not hasattr(self, 'advanced_field_mapping_overrides') or self.advanced_field_mapping_overrides is None:
                 self.advanced_field_mapping_overrides = []
             self.advanced_field_mapping_overrides.extend(exclude_entries)
+
+        # Handle layers_to_fuzz by setting weight to 0.0 for all layers except those specified
+        if isinstance(getattr(self, 'layers_to_fuzz', None), list) and self.layers_to_fuzz:
+            # Get all known layer names from default mappings to exclude those not in layers_to_fuzz
+            from .default_mappings import FIELD_ADVANCED_WEIGHTS
+            all_layer_names = set()
+            for mapping in FIELD_ADVANCED_WEIGHTS:
+                if "layer" in mapping:
+                    all_layer_names.add(mapping["layer"])
+            
+            # Create exclusion entries for layers not in layers_to_fuzz
+            layers_to_exclude = all_layer_names - set(self.layers_to_fuzz)
+            if layers_to_exclude:
+                fuzz_only_entries = [
+                    {"layer": lname, "fuzz_weight": 0.0} for lname in layers_to_exclude
+                ]
+                if not hasattr(self, 'advanced_field_mapping_overrides') or self.advanced_field_mapping_overrides is None:
+                    self.advanced_field_mapping_overrides = []
+                self.advanced_field_mapping_overrides.extend(fuzz_only_entries)
 
     def create_fuzzer(self, mutator_preference: Optional[list[str]] = None) -> 'MutatorManager':
         """
@@ -1233,6 +1258,10 @@ class FuzzingCampaign:
                 elif fuzzed_packets[iteration] is not None:
                     # Create history entry for this iteration with enhanced metadata
                     packet = fuzzed_packets[iteration]
+                    
+                    # Get the fuzzed fields for this specific packet iteration
+                    fuzzed_fields = fuzzer.get_fuzzed_fields_for_packet(iteration) if hasattr(fuzzer, 'get_fuzzed_fields_for_packet') else []
+                    
                     history_entry = FuzzHistoryEntry(
                         packet=packet,
                         timestamp_sent=datetime.now(),
@@ -1241,6 +1270,7 @@ class FuzzingCampaign:
                         target_host=getattr(self, 'target', None),  # Add target if available
                         protocol=self._extract_protocol(packet),  # Extract protocol info
                         target_port=self._extract_target_port(packet),  # Extract target port
+                        fuzzed_fields=fuzzed_fields,  # Add fuzzed fields tracking
                     )
                     
                     # Manage history size limit
@@ -1524,31 +1554,3 @@ class FuzzingCampaign:
                 f"target={self.target}, "
                 f"iterations={self.iterations}, "
                 f"layer={self.socket_type})")
-        
-    def __post_init__(self):
-        # After merging/overrides, attach PacketFuzzConfig to the correct layer
-        if self.packet is not None:
-            target_layer = self.packet
-            if self.fuzz_start_layer:
-                # Walk down layers to find the first matching layer name
-                l = self.packet
-                while l is not None:
-                    if hasattr(l, 'name') and l.name == self.fuzz_start_layer:
-                        target_layer = l
-                        break
-                    l = getattr(l, 'payload', None)
-            # Build PacketFuzzConfig from merged campaign config (reuse existing merging logic)
-            from packet_extensions import PacketFuzzConfig
-            merged_cfg = PacketFuzzConfig()
-            # Copy relevant campaign options to merged_cfg (add more as needed)
-            merged_cfg.fuzz_weight = getattr(self, 'fuzz_weight', 1.0)
-            merged_cfg.dictionary = getattr(self, 'dictionary', [])
-            merged_cfg.mutators = getattr(self, 'mutator_preference', ["libfuzzer"])
-            merged_cfg.use_scapy_fuzz = getattr(self, 'use_scapy_fuzz', False)
-            merged_cfg.scapy_fuzz_weight = getattr(self, 'scapy_fuzz_weight', 0.1)
-            merged_cfg.dictionary_only_weight = getattr(self, 'dictionary_only_weight', 0.0)
-            # Attach resolved field mapping (not raw overrides)
-            merged_cfg.field_matching = getattr(self, 'resolved_field_mapping', None)
-            merged_cfg.description = getattr(self, 'description', "")
-            # ...add more fields as needed...
-            target_layer.fuzz_config().__dict__.update(merged_cfg.__dict__)
