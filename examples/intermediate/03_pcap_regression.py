@@ -10,7 +10,7 @@ import sys
 import os
 from scapy.layers.inet import IP, TCP, UDP
 from scapy.utils import wrpcap
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+  
 
 from packetfuzz.pcapfuzz import PcapFuzzCampaign
 

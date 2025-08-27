@@ -6,17 +6,8 @@ The simplest possible fuzzing example - just 5 lines of configuration.
 Perfect for getting started quickly.
 
 To run this example with the PacketFuzz CLI:
-    python3 -m fuzzing_framework.examples.basic.01_quick_start
-or simply:
-    python3 examples/basic/01_quick_start.py
+    python -m packetfuzz examples/basic/01_quick_start.py
 """
-
-# Standard library imports
-import os
-import sys
-
-# Path setup for examples
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 # Third-party imports
 from scapy.layers.http import HTTP, HTTPRequest

@@ -11,7 +11,7 @@ from scapy.layers.inet import IP, TCP, UDP
 from scapy.layers.dns import DNS, DNSQR
 from scapy.packet import Raw
 from scapy.layers.http import HTTP, HTTPRequest
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+  
 
 from packetfuzz.fuzzing_framework import FuzzingCampaign, FuzzField
 
