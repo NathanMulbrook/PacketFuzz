@@ -1,7 +1,6 @@
 # PacketFuzz Framework Documentation
 
-Different mutators may perform better for specific protocols and field types. The framework automatically selects appropriate mutators based on field characteristics.onfiguration
-Create campaigns using class inheritance with embedded packet configuration. The user adds all campaigns to a `CAMPAIGNS` list, this list is then read when you pass a file with campaigns in it to the CLI.
+The primary way to configure fuzzing is through campaing class definitions, those classes are then executed. The user adds all campaigns to a `CAMPAIGNS` list, this list is then read when you pass a file with campaigns in it to the CLI.
 
 ### Basic Campaign Structure
 
