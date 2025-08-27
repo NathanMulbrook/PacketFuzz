@@ -1,23 +1,28 @@
 User Guide
 ==========
 
-Main README
------------
 
 .. include:: ../README.md
    :parser: myst
 
-Test Documentation
-------------------
-
-Validation Tests
-~~~~~~~~~~~~~~~~
-
-.. include:: ../tests/validation/README.md
+.. include:: ../CLI.md
    :parser: myst
 
-Debug Tests
-~~~~~~~~~~~
-
-.. include:: ../tests/debug/README.md
+   .. include:: ../docs/EXAMPLES.md
    :parser: myst
+
+   .. include:: ../docs/FRAMEWORK.md
+   :parser: myst
+
+   .. include:: ../docs/DICTIONARIES.md
+   :parser: myst
+
+   .. include:: ../docs/FUZZING_WEIGHT.md
+   :parser: myst
+
+   .. include:: ../docs/LAYER_WEIGHT_SCALING.md
+   :parser: myst
+
+   .. include:: ../docs/PROGRAMATIC_USAGE.md
+   :parser: myst
+
