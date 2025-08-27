@@ -1,60 +1,18 @@
-All PacketFuzz README Files
-===========================
+PacketFuzz Documentation
+========================
 
-.. include:: ../README.md
-   :parser: myst
-.. include:: ../tests/validation/README.md
-   :parser: myst
-.. include:: ../tests/debug/README.md
-   :parser: myst
+Welcome to the PacketFuzz documentation! This comprehensive guide covers all aspects of the PacketFuzz framework for network packet fuzzing and testing.
 
-API Reference
-=============
+.. toctree::
+   :maxdepth: 2
+   :caption: Contents:
 
-PacketFuzz Core Modules
------------------------
+   readme
+   api
 
-.. automodule:: packetfuzz
-   :members:
-   :undoc-members:
-   :show-inheritance:
+Indices and Tables
+==================
 
-Campaign Framework
-------------------
-
-.. automodule:: packetfuzz.fuzzing_framework
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-PCAP Fuzzing
-------------
-
-.. automodule:: packetfuzz.pcapfuzz
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-Mutator Manager
----------------
-
-.. automodule:: packetfuzz.mutator_manager
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-Dictionary Manager
-------------------
-
-.. automodule:: packetfuzz.dictionary_manager
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-Utilities
----------
-
-.. automodule:: packetfuzz.utils
-   :members:
-   :undoc-members:
-   :show-inheritance:
+* :ref:`genindex`
+* :ref:`modindex`
+* :ref:`search`

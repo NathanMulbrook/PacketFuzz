@@ -6,13 +6,13 @@ Many of the features and ideas are inspired by boofuzz and similar fuzzers. Once
 
 The structure of this project consistes of 3 main components, a libfuzzer interface for fuzzing individual fields without needing a astandard libfuzz harness, a mutator manager that accepts scapy packets for fuzzing, and a fuzzing framework that allows the suer to define fuzz campaings. For more advanced usage the fuzzer can be used without the campaign framework.
 
-For detailed usage information, please see the [framework documentation](FRAMEWORK_DOCUMENTATION.md).
+For detailed usage information, please see the [framework documentation](docs/FRAMEWORK.md).
 
 ---
 
 ## Architecture Overview
 
-.. mermaid::
+```mermaid
 graph TB
     subgraph "PacketFuzz Framework"
         CLI[CLI Interface<br/>python -m packetfuzz]
@@ -46,6 +46,7 @@ graph TB
         end
     end
 ```
+```
 
 ## Project Structure
 
@@ -70,7 +71,7 @@ PacketFuzz/
 │   ├── mutators/              # Mutation engine components
 │   └── utils/                 # Package utilities
 ├── doc/                        # Documentation
-│   ├── FRAMEWORK_DOCUMENTATION.md  # API and usage documentation
+│   ├── FRAMEWORK.md              # API and usage documentation
 │   └── LAYER_WEIGHT_SCALING.md     # Layer scaling documentation
 ├── requirements.txt            # Python dependencies
 └── setup.py                    # Package setup
@@ -183,7 +184,7 @@ campaign.execute()
 
 ## Documentation
 
-- `doc/FRAMEWORK_DOCUMENTATION.md` - Complete API documentation  
+- `docs/FRAMEWORK.md` - Complete API documentation  
 - `examples/` - Working code examples
 - `tests/` - Test suite
 
