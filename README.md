@@ -46,7 +46,6 @@ graph TB
         end
     end
 ```
-```
 
 ## Project Structure
 
