@@ -1,6 +1,7 @@
 # PacketFuzz Framework Documentation
 
 The primary way to configure fuzzing is through campaing class definitions, those classes are then executed. The user adds all campaigns to a `CAMPAIGNS` list, this list is then read when you pass a file with campaigns in it to the CLI.
+The user adds a scapy packet wich is mutated and sent. Many advanced features expand on this simple functionality, including callbacks and dictionary management.
 
 ### Basic Campaign Structure
 
