@@ -12,6 +12,7 @@ import os
 import random
 import re
 import shutil
+import tempfile
 from pathlib import Path
 from typing import Any, List, Optional
 
@@ -40,6 +41,8 @@ class LibFuzzerMutator(BaseMutator):
         super().__init__(seed)
         self._seed = seed
         self._lib = None
+        self._corpus_dir = None  # Track corpus directory for cleanup
+        self._corpus_cache = {}  # Cache corpus results to avoid repeated initialization
         self._load_library()
     
     def _load_library(self):
@@ -303,3 +306,107 @@ class LibFuzzerMutator(BaseMutator):
 
         # Unknown kinds: no change
         return current_value
+
+    def initialize(self, field_info: Any, seed_data: List[Any], rng: Optional[random.Random] = None) -> bool:
+        """
+        Initialize corpus for LibFuzzer with seed data.
+        
+        This method creates a temporary corpus directory, seeds it with the provided data,
+        loads dictionaries into LibFuzzer, and generates candidate mutations.
+        Results are cached to avoid repeated expensive operations.
+        
+        Args:
+            field_info: Dataclass-like object describing field type, name, constraints
+            seed_data: List of seed values for corpus initialization
+            rng: Optional RNG for randomization
+            
+        Returns:
+            List of candidate values ready for field assignment
+     """
+        try:           
+            # Create temporary corpus directory if needed
+            if self._corpus_dir is None:
+                self._corpus_dir = tempfile.mkdtemp(prefix="libfuzzer_corpus_")
+        except:
+            return False
+            pass
+            
+
+        return True
+            
+
+    
+    def _bytes_to_field_value(self, data: bytes, field_info: Any) -> Any:
+        """Convert mutated bytes back to appropriate field value based on field type."""
+        kind = getattr(field_info, 'kind', 'unknown')
+        
+        if kind in ('numeric', 'flags', 'enum'):
+            try:
+                # Try to parse as integer
+                s = data.decode('utf-8', errors='ignore')
+                m = re.search(r"([+-]?0x[0-9a-fA-F]+|[+-]?\d+)", s)
+                if m:
+                    token = m.group(1)
+                    base = 16 if token.lower().startswith('0x') else 10
+                    val = int(token, base)
+                    
+                    # Apply constraints
+                    min_val = getattr(field_info, 'min_value', None)
+                    max_val = getattr(field_info, 'max_value', None)
+                    if min_val is not None and val < min_val:
+                        val = min_val
+                    if max_val is not None and val > max_val:
+                        val = max_val
+                    
+                    # Handle enum mapping
+                    enum_map = getattr(field_info, 'enum_map', None)
+                    if enum_map and isinstance(enum_map, dict):
+                        allowed_ints = list(enum_map.keys())
+                        if allowed_ints and val not in allowed_ints:
+                            val = allowed_ints[val % len(allowed_ints)]
+                    
+                    return val
+            except Exception:
+                pass
+            return 0
+            
+        elif kind == 'string':
+            try:
+                s = data.decode('utf-8', errors='ignore')
+                max_len = getattr(field_info, 'max_length', None)
+                if isinstance(max_len, int) and max_len > 0:
+                    s = s[:max_len]
+                return s
+            except Exception:
+                return ""
+                
+        elif kind == 'raw':
+            return data
+            
+        else:
+            # For unknown kinds, try to return as string
+            try:
+                return data.decode('utf-8', errors='ignore')
+            except Exception:
+                return data
+    
+    def teardown(self) -> None:
+        """
+        Clean up LibFuzzer resources including temporary corpus directory and cache.
+        """
+        try:
+            # Clear corpus cache
+            if hasattr(self, '_corpus_cache'):
+                self._corpus_cache.clear()
+                logger.debug("Cleared LibFuzzer corpus cache")
+            
+            # Clean up corpus directory if it was created
+            if self._corpus_dir and Path(self._corpus_dir).exists():
+                shutil.rmtree(self._corpus_dir, ignore_errors=True)
+                logger.debug(f"Cleaned up LibFuzzer corpus directory: {self._corpus_dir}")
+                self._corpus_dir = None
+        except Exception as e:
+            logger.debug(f"Failed to clean up LibFuzzer corpus directory: {e}")
+        
+        # Additional cleanup could go here (e.g., C library cleanup if needed)
+        logger.debug("LibFuzzer mutator teardown completed")

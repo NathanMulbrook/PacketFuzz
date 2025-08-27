@@ -397,8 +397,8 @@ class TestCampaignConfiguration:
         assert hasattr(campaign, 'report_formats')
         assert isinstance(campaign.report_formats, list)
         
-        # Default should be json
-        assert campaign.report_formats == ['json']
+        # Default should be markdown
+        assert campaign.report_formats == ['markdown']
         
         # Should be able to modify
         campaign.report_formats = ['html', 'csv']

@@ -74,7 +74,14 @@ def get_field_type_chain(packet, field_name: str) -> List[str]:
             if parent_name not in ('Field', 'object'):
                 type_chain.append(parent_name)
         
-        logger.debug(f"Field type chain for {getattr(field_desc, 'name', 'unknown')}: {type_chain}")
+        # Only log type chain discovery once per field type to reduce log spam
+        if not hasattr(get_field_type_chain, '_logged_types'):
+            get_field_type_chain._logged_types = set()
+        
+        field_id = f"{field_type_name}:{getattr(field_desc, 'name', 'unknown')}"
+        if field_id not in get_field_type_chain._logged_types:
+            logger.debug(f"Field type chain for {getattr(field_desc, 'name', 'unknown')}: {type_chain}")
+            get_field_type_chain._logged_types.add(field_id)
     
     return type_chain
 

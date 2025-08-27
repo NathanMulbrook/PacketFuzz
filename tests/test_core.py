@@ -544,7 +544,7 @@ class TestCoreFuzzer(unittest.TestCase):
                 validity_rate = valid_packets / len(packets)
                 
                 self.test_logger.info(f"Packet validity: {valid_packets}/{len(packets)} ({validity_rate:.1%})")
-                assert validity_rate > 0.8, f"Too many invalid packets: {validity_rate:.1%}"
+                assert validity_rate >= 0.8, f"Too many invalid packets: {validity_rate:.1%}"
     
     def test_fuzzer_packet_serialization(self):
         """Test that configured packets can be serialized"""

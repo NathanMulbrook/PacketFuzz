@@ -49,7 +49,7 @@ from scapy.packet import Packet
 # Local imports
 from .fuzzing_framework import CallbackResult, CampaignContext, FuzzingCampaign
 from .mutator_manager import FuzzConfig, FuzzMode, MutatorManager
-from .utils.packet_processing import PacketProcessingConfig, process_packet
+from .utils.packet_processing import PacketProcessingConfig, process_packet, convert_to_scapy
 
 logger = logging.getLogger(__name__)
 
@@ -250,6 +250,17 @@ class PcapFuzzCampaign(FuzzingCampaign):
         except Exception as e:
             logger.error(f"PCAP campaign execution failed: {e}")
             return False
+    
+    def _convert_to_scapy(self, packet_bytes: bytes) -> Packet:
+        """
+        Convert raw packet bytes to a Scapy packet object using the existing utility function.
+        
+        Args:
+            packet_bytes: Raw packet bytes
+        Returns:
+            Scapy packet object
+        """
+        return convert_to_scapy(packet_bytes)
 
 # Standalone utility function for backwards compatibility
 def pcap_fuzz(pcap_folder: str, extract_at_layer: Optional[str] = None, **kwargs):

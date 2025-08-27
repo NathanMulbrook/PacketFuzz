@@ -186,6 +186,10 @@ def apply_cli_overrides(campaign, args):
     if args.dictionary_config:
         campaign.dictionary_config_file = str(args.dictionary_config)
     
+    # Max iterations override
+    if args.max_iterations is not None:
+        campaign.iterations = args.max_iterations
+    
     # Interface offload control
     if args.disable_offload:
         campaign.disable_interface_offload = True
@@ -399,6 +403,12 @@ def main():
         type=Path,
         default=env_defaults['dictionary_config'],
         help="Path to user dictionary configuration file (overrides campaign settings)."
+    )
+    parser.add_argument(
+        "--max-iterations",
+        type=int,
+        default=None,
+        help="Override the number of fuzzing iterations for the campaign (overrides campaign configuration)."
     )
     
     # Network interface offload control flags (mutually exclusive group)
