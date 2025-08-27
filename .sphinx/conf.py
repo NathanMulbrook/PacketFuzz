@@ -35,26 +35,31 @@ myst_enable_extensions = [
     "tasklist", 
     "colon_fence",
     "linkify",
+    "dollarmath",
+    "amsmath",
 ]
 
 # Configure mermaid to use the directive instead of code blocks
 myst_fence_as_directive = ["mermaid"]
 
-# Mermaid configuration for server-side rendering
+# Allow both fence and directive syntax for mermaid
+myst_dmath_double_inline = True
+
+# Enable CommonMark extensions that allow for directive parsing
+myst_commonmark_only = False
+
+# Mermaid configuration
 mermaid_output_format = 'svg'
-#mermaid_init_js = ""  # Disable client-side JS since we want server-side rendering
-#mermaid_cmd = 'mmdc'  # Use mermaid-cli for server-side rendering  
-#mermaid_cmd_shell = True  # Enable shell execution for CLI
+mermaid_cmd = './node_modules/.bin/mmdc'  # Use local installation
 
 # Files to exclude from processing
-exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
+exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store', 'node_modules/**']
 
 # Suppress warnings for unknown lexer names (like mermaid)
 suppress_warnings = ['misc.highlighting_failure', 'myst.header']
 
 # The master toctree document
 master_doc = 'index'
-
 # -- Options for HTML output ------------------------------------------------
 html_theme = 'sphinx_rtd_theme'
 html_static_path = ['_static']

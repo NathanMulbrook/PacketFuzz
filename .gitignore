@@ -46,6 +46,7 @@ fuzz_fields_output_report.txt
 # Documentation builds (Sphinx)
 .sphinx/_build/
 .sphinx/.doctrees/
+.sphinx/node_modules/
 *.doctree
 
 # IDE and editor files

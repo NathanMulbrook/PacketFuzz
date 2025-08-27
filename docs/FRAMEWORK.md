@@ -153,7 +153,7 @@ class HttpPayloadFuzz(PcapFuzzCampaign):
 
 The framework follows a structured execution lifecycle with multiple callback points for customization:
 
-```mermaid
+.. mermaid::
 flowchart TD
     A[Campaign Start] --> B[Pre-Launch Callback]
     B --> C{Validation Success?}
@@ -315,7 +315,7 @@ The framework provides 7 callback types for comprehensive monitoring and custom 
 
 #### Callback Execution Sequence
 
-```mermaid
+.. mermaid::
 sequenceDiagram
     participant U as User
     participant C as Campaign
@@ -370,7 +370,7 @@ The framework uses dynamic field discovery to work with any Scapy packet type, i
 
 **Field Discovery Process:**
 
-```mermaid
+.. mermaid::
 flowchart TD
     A[Scapy Packet Input] --> B[Extract All Layers]
     B --> C[For Each Layer]
