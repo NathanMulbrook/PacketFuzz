@@ -10,6 +10,7 @@ import ctypes
 import logging
 import os
 import random
+import re
 import shutil
 from pathlib import Path
 from typing import Any, List, Optional
@@ -240,7 +241,6 @@ class LibFuzzerMutator(BaseMutator):
         def parse_int(data: bytes | str) -> Optional[int]:
             try:
                 s = data.decode('utf-8', errors='ignore') if isinstance(data, (bytes, bytearray)) else str(data)
-                import re
                 m = re.search(r"([+-]?0x[0-9a-fA-F]+|[+-]?\d+)", s)
                 if not m:
                     return None

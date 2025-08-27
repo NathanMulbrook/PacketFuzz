@@ -14,11 +14,14 @@ Now uses embedded packet configuration with field_fuzz() and fuzz_config() metho
 # Standard library imports
 from __future__ import annotations
 import copy
+import hashlib
+import importlib.util
 import json
 import logging
 import os
 import random
 import shutil
+import socket
 import subprocess
 import sys
 import threading
@@ -188,7 +191,6 @@ class FuzzHistoryEntry:
         
         packet_bytes = self.get_packet_bytes()
         if packet_bytes:
-            import hashlib
             self.payload_hash = hashlib.sha256(packet_bytes).hexdigest()[:16]  # Short hash
             return self.payload_hash
         
@@ -721,7 +723,6 @@ class FuzzingCampaign:
 
     def __init__(self):
         """Initialize campaign with callback manager and handle excluded_layers."""
-        import copy
         
         # Deep copy all mutable class attributes to instance attributes
         for attr_name in dir(self.__class__):
@@ -1185,7 +1186,6 @@ class FuzzingCampaign:
                 # Open sockets for sending only if network output is enabled
                 # TODO: make this also accept functions that return a socket object
                 if network_enabled:
-                    import socket
                     if self.socket_type == 'l2':
                         s = socket.socket(socket.AF_PACKET, socket.SOCK_RAW)
                         s.bind((self.interface, 0))
@@ -1476,9 +1476,6 @@ class FuzzingCampaign:
         Merge or override according to mapping_merge_mode.
         """
         from .default_mappings import FIELD_ADVANCED_WEIGHTS
-        import importlib.util
-        import json
-        import os
 
         def load_mapping_file(path):
             """Load mapping configuration from JSON or Python file."""

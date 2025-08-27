@@ -1178,7 +1178,6 @@ def write_crash_report(
     This is a focused function for crash reporting that replaces the legacy 
     write_packet_report for crash scenarios.
     """
-    import base64
     
     with open(file_path, 'w') as f:
         f.write("# PacketFuzz Crash Report\n\n")
@@ -1249,7 +1248,6 @@ def write_debug_packet_log(
     
     This replaces write_packet_report for debug logging scenarios.
     """
-    import base64
     
     if not isinstance(packets, (list, tuple)):
         packets = [packets]
@@ -1344,7 +1342,6 @@ def write_fuzz_history_dump(
                         # Raw packet bytes (for highest verbosity)
                         if verbose_level >= 3:
                             try:
-                                import base64
                                 packet_bytes = bytes(entry.packet)
                                 f.write(f"Raw Packet (base64): {base64.b64encode(packet_bytes).decode()}\n")
                                 f.write(f"Raw Packet (hex): {packet_bytes.hex()}\n\n")

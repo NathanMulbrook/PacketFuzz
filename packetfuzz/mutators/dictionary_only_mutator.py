@@ -8,6 +8,7 @@ This mutator doesn't require libFuzzer and works purely with dictionary lookups.
 # Standard library imports
 import logging
 import random
+import re
 from typing import Any, List, Optional
 
 # Third-party imports
@@ -80,7 +81,6 @@ class DictionaryOnlyMutator(BaseMutator):
             else:
                 s = str(entry)
             # Extract first integer-like token (supports 0x, +/-)
-            import re
             m = re.search(r"([+-]?0x[0-9a-fA-F]+|[+-]?\d+)", s)
             if not m:
                 return None

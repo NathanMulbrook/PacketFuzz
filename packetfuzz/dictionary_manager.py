@@ -9,6 +9,8 @@ Simplified unified implementation that maintains the same user interface.
 """
 
 # Standard library imports
+import importlib.util
+import json
 import logging
 import os
 from dataclasses import dataclass, field
@@ -27,6 +29,13 @@ from .default_mappings import (
     FIELD_NAME_WEIGHTS,
     FIELD_TYPE_DICTIONARIES,
     FIELD_TYPE_WEIGHTS,
+    MACROS,
+)
+from .utils.field_utils import (
+    extract_field_properties,
+    get_field_type_chain,
+    resolve_field_dictionaries,
+    resolve_field_weight,
 )
 
 # Configuration constants
@@ -113,27 +122,10 @@ class DictionaryManager:
         """
         Expand macro references (e.g., '@string') to their dictionary lists.
         """
-        from .default_mappings import MACROS
         if entry.startswith("@"):  # Macro reference
             macro_name = entry[1:]
             return MACROS.get(macro_name, [])
         return [entry]
-
-    def _extract_field_info(self, packet: Packet, field_name: str) -> tuple:
-        """
-        Extract field type and properties from packet's field config.
-        Returns (field_type: str, properties: dict)
-        """
-        field_type = ""
-        properties = {}
-        if hasattr(packet, 'get_field_fuzz_config'):
-            field_config = packet.get_field_fuzz_config(field_name)
-            if field_config:
-                if hasattr(field_config, 'type') and isinstance(field_config.type, str):
-                    field_type = field_config.type
-                if hasattr(field_config, 'properties') and isinstance(field_config.properties, dict):
-                    properties = field_config.properties
-        return field_type, properties
     
     # Resolves advanced dictionary mappings for a field (merge/override logic for dictionary lists)
     def _resolve_advanced_dictionary(self, mapping_list: list, field_name: str, field_type: str, properties: dict, global_mode: str = "merge") -> list:
@@ -266,10 +258,6 @@ class DictionaryManager:
             - For values: override (last/highest-priority source wins)
             - For weights: override (last/highest-priority source wins)
         """
-        import importlib.util
-        import json
-        import os
-
         # Set default merge_mode based on mode if not explicitly provided
         if merge_mode is None:
             merge_mode = 'merge' if mode == 'dictionary' else 'override'
@@ -317,7 +305,13 @@ class DictionaryManager:
     
     def get_field_values(self, packet: Packet, field_name: str) -> List[Any]:
         """
-        Get predefined fuzz values for a field, supporting advanced override/merge logic.
+        Get field values with priority resolution: embedded config > advanced mapping > type-based.
+        
+        ENHANCED version - consolidated logic with proper field type resolution.
+        
+        Args:
+            packet: The packet containing the field
+            field_name: Name of the field to get values for
         
         Behavior controlled by INCLUDE_DEFAULT_VALUES constant:
         - False (default): Only use values from FuzzFields and campaign config
@@ -330,7 +324,16 @@ class DictionaryManager:
                 mode = getattr(field_config, 'mode', 'override')
                 if mode == 'merge':
                     # Merge with advanced mapping and optionally default
-                    field_type, properties = self._extract_field_info(packet, field_name)
+                    # Use consolidated field type and property resolution
+                    field_type = ""
+                    properties = {}
+                    # Look up field information from packet and field_name
+                    from .utils.field_utils import get_field_type_chain, extract_field_properties
+                    type_chain = get_field_type_chain(packet, field_name)
+                    if type_chain:
+                        field_type = type_chain[0]
+                    properties = extract_field_properties(packet, field_name)
+                    
                     packet_type = type(packet).__name__
                     key = f"{packet_type}.{field_name}"
                     
@@ -360,7 +363,16 @@ class DictionaryManager:
                     return field_config.default_values
         
         # 2. Advanced mapping (with mode/override support)
-        field_type, properties = self._extract_field_info(packet, field_name)
+        # Use consolidated field type and property resolution
+        field_type = ""
+        properties = {}
+        # Look up field information from packet and field_name
+        from .utils.field_utils import get_field_type_chain, extract_field_properties
+        type_chain = get_field_type_chain(packet, field_name)
+        if type_chain:
+            field_type = type_chain[0]
+        properties = extract_field_properties(packet, field_name)
+        
         packet_type = type(packet).__name__
         key = f"{packet_type}.{field_name}"
         
@@ -383,65 +395,83 @@ class DictionaryManager:
     
     def get_field_weight(self, packet: Packet, field_name: str) -> float:
         """
-        Resolve the fuzzing weight for a given field, supporting advanced combining via mode.
-
+        Get field weight with priority resolution: embedded config > advanced mapping > name-based > type-based > default.
+        
+        ENHANCED version - consolidated logic with proper field type resolution.
+        
+        Args:
+            packet: The packet containing the field
+            field_name: Name of the field to get weight for
+        
+        Same priority order as before, but with proper inheritance resolution.
+        
         Priority order:
-        1. Embedded/inline field config (campaign or packet-level override):
-           - If the packet has a field config with a 'weight' attribute, return it immediately.
-        2. Advanced mapping (campaign/global/user override):
-           - Extract field type and properties.
-           - Search FIELD_ADVANCED_WEIGHTS for matching entries (supports merge/override, campaign/user/global config).
-           - If matches are found, combine according to mode (override, sum, average, max, min).
-        3. Name-based weight:
-           - Check FIELD_NAME_WEIGHTS for a key like 'TCP.dport'.
-           - If found, return the mapped weight.
-        4. Type-based weight:
-           - Check TYPE_FIELD_WEIGHTS for the field type (e.g., 'ShortField').
-           - If found, return the mapped weight.
-        5. Default:
-           - If none of the above apply, return 0.5 (default weight).
+        1. Embedded/inline field config (campaign or packet-level override)
+        2. Advanced mapping (campaign/global/user override) 
+        3. Name-based weight
+        4. Type-based weight with inheritance
+        5. Default fallback
         """
-        # 1. Embedded/inline config (highest priority: campaign/packet-level override)
+        # 1. Embedded/inline config (highest priority) - UNCHANGED
         if hasattr(packet, 'get_field_fuzz_config'):
             field_config = packet.get_field_fuzz_config(field_name)
             if field_config and hasattr(field_config, 'fuzz_weight'):
-                # Inline/campaign override present
                 return field_config.fuzz_weight
-        # 2. Advanced mapping (campaign/global/user override)
+        
+        # 2. Advanced mapping - uses type chain
         packet_type = type(packet).__name__
         key = f"{packet_type}.{field_name}"
-        field_type, properties = self._extract_field_info(packet, field_name)
-        # Use default combining mode for weights unless a per-entry mode is specified
-        global_mode = "override"
-        adv_result = self._resolve_advanced_weight(
-            FIELD_ADVANCED_WEIGHTS,
-            field_name=key,
-            field_type=field_type,
-            properties=properties,
-            global_mode=global_mode
-        )
-        if adv_result is not None:
-            # Advanced mapping match (campaign/global/user config)
-            return adv_result
-        # 3. Name-based weight (e.g., 'TCP.dport')
+        
+        # Use consolidated field type and property resolution
+        from .utils.field_utils import get_field_type_chain, extract_field_properties
+        type_chain = get_field_type_chain(packet, field_name)
+        properties = extract_field_properties(packet, field_name)
+        
+        # Advanced mapping check (use first type in chain)
+        if type_chain:
+            adv_result = self._resolve_advanced_weight(
+                FIELD_ADVANCED_WEIGHTS,
+                field_name=key,
+                field_type=type_chain[0],
+                properties=properties,
+                global_mode="override"
+            )
+            if adv_result is not None:
+                return adv_result
+        
+        # 3. Name-based weight check - UNCHANGED
         if key in FIELD_NAME_WEIGHTS:
             return FIELD_NAME_WEIGHTS[key]
-        # 4. Type-based weight (e.g., 'ShortField')
-        if field_type in FIELD_TYPE_WEIGHTS:
-            return FIELD_TYPE_WEIGHTS[field_type]
+        
+        # 4. Type-based weight with inheritance - CONSOLIDATED
+        weight = resolve_field_weight(packet, field_name)
+        if weight is not None:
+            return weight
+        
         # 5. Default fallback
         return 0.5
     
     def get_field_dictionaries(self, packet: Packet, field_name: str) -> List[str]:
         """
+        Get field dictionaries with priority resolution: embedded config > advanced mapping > name-based > type-based.
+        
+        Args:
+            packet: The packet containing the field
+            field_name: Name of the field to get dictionaries for
+        
+        Returns:
+            List of dictionary file paths
+        """
+        """
+        ENHANCED version - consolidated logic with proper field type resolution.
+        
         Get dictionary paths for a specific field, following priority hierarchy.
-        Uses advanced mapping logic.
-        Respects dictionary_override at both inline/campaign and user config levels.
-        Merges all sources by default if no override is set.
+        Uses advanced mapping logic and consolidated field type resolution.
         """
         packet_type = type(packet).__name__
         key = f"{packet_type}.{field_name}"
         dictionary_paths = []
+        
         # 1. Inline/campaign (FuzzField/field_fuzz) config
         inline_override = False
         if hasattr(packet, 'get_field_fuzz_config'):
@@ -453,9 +483,8 @@ class DictionaryManager:
                     dictionary_paths = list(field_config.dictionary) if hasattr(field_config, 'dictionary') else []
                 elif hasattr(field_config, 'dictionary') and field_config.dictionary:
                     dictionary_paths.extend(field_config.dictionary)
-        # 2. User config (advanced mapping)
-        field_type_str, properties_dict = self._extract_field_info(packet, field_name)
-        # Check for advanced dictionary configuration
+        
+        # 2. Advanced mapping (campaign/global/user override)
         adv_dicts = []
         if key in FIELD_ADVANCED_DICTIONARIES:
             adv_config = FIELD_ADVANCED_DICTIONARIES[key]
@@ -465,21 +494,26 @@ class DictionaryManager:
                 if adv_config.get('override', False):
                     inline_override = True
                     dictionary_paths = list(adv_dicts)
+        
         # If inline/campaign override, use only those dictionaries
         if inline_override:
             return [self._resolve_path(path) for path in dictionary_paths]
-        # If advanced mapping returns any, merge with inline and default
+        
+        # If advanced mapping returns any, merge with inline
         merged_paths = set(dictionary_paths)
         if adv_dicts:
             merged_paths.update(adv_dicts)
-        # Type-based
-        if field_type_str and field_type_str in FIELD_TYPE_DICTIONARIES:
-            for d in FIELD_TYPE_DICTIONARIES[field_type_str]:
-                merged_paths.update(DictionaryManager.expand_macro(d))
-        # Name-based
+        
+        # 3. Type-based dictionaries with inheritance - CONSOLIDATED
+        type_dictionaries = resolve_field_dictionaries(packet, field_name)
+        for d in type_dictionaries:
+            merged_paths.update(DictionaryManager.expand_macro(d))
+        
+        # 4. Name-based dictionaries
         if key in FIELD_NAME_DICTIONARIES:
             for d in FIELD_NAME_DICTIONARIES[key]:
                 merged_paths.update(DictionaryManager.expand_macro(d))
+        
         # Convert to absolute paths and return
         return [self._resolve_path(path) for path in merged_paths]
     

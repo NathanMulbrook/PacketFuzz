@@ -23,6 +23,26 @@ from scapy.packet import Packet, NoPayload
 from .dictionary_manager import DictionaryManager
 from .packet_extensions import install_packet_extensions
 
+# Mutator imports (with graceful fallback)
+try:
+    from .mutators.dictionary_only_mutator import DictionaryOnlyMutator
+except Exception:
+    DictionaryOnlyMutator = None  # type: ignore
+try:
+    from .mutators.libfuzzer_mutator import LibFuzzerMutator
+except Exception:
+    LibFuzzerMutator = None  # type: ignore
+try:
+    from .mutators.scapy_mutator import ScapyMutator
+except Exception:
+    ScapyMutator = None  # type: ignore
+
+# Default mappings import
+try:
+    from .default_mappings import LAYER_WEIGHT_SCALING as DEFAULT_LAYER_SCALING
+except Exception:
+    DEFAULT_LAYER_SCALING = 0.9
+
 # Import default directories - use constant directly to avoid circular imports
 DEFAULT_LOG_DIR = "artifacts/logs"
 from .utils.packet_report import write_debug_packet_log
@@ -38,20 +58,6 @@ try:
     from fuzzing_framework import FuzzField
 except ImportError:
     FuzzField = None
-
-# Import mutators for type checking
-try:
-    from .mutators.dictionary_only_mutator import DictionaryOnlyMutator
-except Exception:
-    DictionaryOnlyMutator = None  # type: ignore
-try:
-    from .mutators.libfuzzer_mutator import LibFuzzerMutator
-except Exception:
-    LibFuzzerMutator = None  # type: ignore
-try:
-    from .mutators.scapy_mutator import ScapyMutator
-except Exception:
-    ScapyMutator = None  # type: ignore
 
 # Constants
 DEFAULT_MAX_OUTPUT_SIZE = 1024
@@ -156,20 +162,20 @@ class MutatorManager:
         self.scapy_mutator = None
         # Always attempt to initialize all mutators, regardless of preference
         try:
-            from .mutators.libfuzzer_mutator import LibFuzzerMutator
-            self.libfuzzer_mutator = LibFuzzerMutator()
+            if LibFuzzerMutator is not None:
+                self.libfuzzer_mutator = LibFuzzerMutator()
         except Exception as e:
             logger.error(f"Failed to initialize LibFuzzerMutator: {e}")
             self.libfuzzer_mutator = None
         try:
-            from .mutators.dictionary_only_mutator import DictionaryOnlyMutator
-            self.dictionary_only_mutator = DictionaryOnlyMutator()
+            if DictionaryOnlyMutator is not None:
+                self.dictionary_only_mutator = DictionaryOnlyMutator()
         except Exception as e:
             logger.error(f"Failed to initialize DictionaryOnlyMutator: {e}")
             self.dictionary_only_mutator = None
         try:
-            from .mutators.scapy_mutator import ScapyMutator
-            self.scapy_mutator = ScapyMutator()
+            if ScapyMutator is not None:
+                self.scapy_mutator = ScapyMutator()
         except Exception as e:
             logger.error(f"Failed to initialize ScapyMutator: {e}")
             self.scapy_mutator = None
@@ -284,10 +290,6 @@ class MutatorManager:
             layer_scaling_enabled = getattr(self.config, 'enable_layer_weight_scaling', True)
             scaling_factor = self.config.layer_weight_scaling if (self.config.layer_weight_scaling is not None) else None
             if scaling_factor is None:
-                try:
-                    from .default_mappings import LAYER_WEIGHT_SCALING as DEFAULT_LAYER_SCALING
-                except Exception:
-                    DEFAULT_LAYER_SCALING = 0.9
                 scaling_factor = DEFAULT_LAYER_SCALING
             
             # If layer scaling is aggressive (< 0.5), disable retries entirely to respect scaling intent
@@ -355,7 +357,10 @@ class MutatorManager:
         #TODO evaluate if this flow is actually correct, values should be used as fallback if fuzzing is not done base on the weights
         explicit_values = list(fuzzfield_config.get('values') or [])
         try:
-            merged_values = self.dictionary_manager.get_field_values(layer, fname) or []
+            merged_values = self.dictionary_manager.get_field_values(
+                layer, 
+                fname
+            ) or []
             # Preserve order while removing duplicates: explicit first, then merged
             combined = list(dict.fromkeys(explicit_values + merged_values))
             explicit_values = combined
@@ -576,9 +581,8 @@ class MutatorManager:
                             return False
                         normalized = ival
             # Quick serialize smoke-check on a cloned layer to avoid side effects
-            import copy as _cpy
             try:
-                layer_clone = _cpy.deepcopy(layer)
+                layer_clone = copy.deepcopy(layer)
                 setattr(layer_clone, fname, normalized)
                 _ = bytes(layer_clone)
             except Exception:
@@ -721,7 +725,10 @@ class MutatorManager:
             if packet_for_lookup is None:
                 from scapy.packet import Raw
                 packet_for_lookup = Raw()
-            dictionary_paths = self.dictionary_manager.get_field_dictionaries(packet_for_lookup, field_name)
+            dictionary_paths = self.dictionary_manager.get_field_dictionaries(
+                packet_for_lookup, 
+                field_name
+            )
             try:
                 # All error handling/logging is in DictionaryManager
                 return self.dictionary_manager.get_dictionary_entries(dictionary_paths)
@@ -769,7 +776,10 @@ class MutatorManager:
     def _should_skip_field(self, layer, field_desc, field_name: Optional[str] = None) -> bool:
         """Determine if a field should be skipped during fuzzing, using resolved weight logic for all fields (simple and complex)."""
         # All fields use advanced mapping/override logic for weight
-        base_weight = self.dictionary_manager.get_field_weight(layer, field_name or getattr(field_desc, 'name', ''))
+        base_weight = self.dictionary_manager.get_field_weight(
+            layer, 
+            field_name or getattr(field_desc, 'name', '')
+        )
 
         # Optional: apply layer-based scaling so outer layers are fuzzed less when scaling factor is lower
         effective_weight = base_weight
@@ -786,10 +796,6 @@ class MutatorManager:
                     depth_below += 1
                     cursor = cursor.payload
                 # Load scaling factor: campaign override via config or default mapping constant
-                try:
-                    from .default_mappings import LAYER_WEIGHT_SCALING as DEFAULT_LAYER_SCALING
-                except Exception:
-                    DEFAULT_LAYER_SCALING = 0.9
                 scale = self.config.layer_weight_scaling if (self.config.layer_weight_scaling is not None) else DEFAULT_LAYER_SCALING
                 
                 # Apply scaling: base * (scale ** depth_below). 

@@ -38,14 +38,21 @@ Example usage with environment variables:
 import argparse
 import sys
 import importlib.util
+import logging
+import os
 from pathlib import Path
 from typing import List, Type
-import os
 
 # ===========================
 # Third-Party Imports
 # ===========================
 # (None required for CLI)
+
+# ===========================
+# Local Imports
+# ===========================
+from .mutators.libfuzzer_mutator import LibFuzzerMutator
+from .dictionary_manager import DictionaryManager
 
 # ===========================
 # Local Imports
@@ -100,9 +107,6 @@ def check_components():
     - FuzzDB dictionary database
     - Native dictionary support integration
     """
-    from .mutators.libfuzzer_mutator import LibFuzzerMutator
-    from .dictionary_manager import DictionaryManager
-    import os
     
     print("Checking component availability...")
     
@@ -204,7 +208,6 @@ def apply_cli_overrides(campaign, args):
             campaign.report_formats = args.report_formats
     
     # Configure separate console and file logging levels
-    import logging
     
     # Helper to get int from environment variable
     def env_int(var): 
@@ -435,7 +438,6 @@ def main():
     
     # Require LibFuzzer if specified
     if args.require_libfuzzer:
-        from .mutators.libfuzzer_mutator import LibFuzzerMutator
         mutator = LibFuzzerMutator()
         if not mutator.is_libfuzzer_available():
             logger.error("LibFuzzer extension is required but not available. Compile the extension first.")
