@@ -105,7 +105,11 @@ class DictionaryOnlyMutator(BaseMutator):
                      rng: Optional[random.Random] = None,
                      layer: Optional[Any] = None) -> Any:
         kind = getattr(field_info, 'kind', 'unknown')
+        field_name = getattr(field_info, 'name', 'unknown')
         r = rng or random
+        
+        # Debug logging for mutation attempts
+        logging.getLogger(__name__).debug(f"mutate_field called: field={field_name}, kind={kind}, dictionaries={len(dictionaries) if dictionaries else 0}, current_value={repr(current_value)}")
 
         # Numeric-like (includes flags as integers)
         if kind in ('numeric', 'flags', 'enum'):
@@ -136,15 +140,19 @@ class DictionaryOnlyMutator(BaseMutator):
         if kind == 'string':
             entry = self._pick_entry(dictionaries, r)
             if entry is None:
-                return ""  # empty string permissible
+                # Don't return empty string - this leads to false fuzzing reports
+                logging.getLogger(__name__).warning(f"No dictionary entry available for string field {field_name}, returning current value")
+                return current_value
             s = self._to_str_bytes(entry)
             max_len = getattr(field_info, 'max_length', None)
             if isinstance(max_len, int) and max_len > 0:
                 s = s[:max_len]
             try:
-                return s.decode('utf-8', errors='ignore')
+                result = s.decode('utf-8', errors='ignore')
+                return result
             except Exception:
-                return s.decode('latin-1', errors='ignore')
+                result = s.decode('latin-1', errors='ignore')
+                return result
 
         # Options/list-like: Prefer letting Scapy generate sensible structures later.
         # But per user request, use Scapy mutator via manager for options; here we return a marker None

@@ -22,8 +22,8 @@ class QuickStartCampaign(FuzzingCampaign):
     target = "192.168.1.100"
     iterations = 1000
     verbose = False  # Disable verbose mode to show the difference
-    packet = (IP() / 
-              TCP() / 
+    socket_type = 'managed_udp'  # Real TCP connections with automatic handshake
+    packet = (
               HTTP() / 
               HTTPRequest(Path=b"/", Method=b"GET"))
     report_formats = ['html', 'json', 'csv', 'sarif', 'markdown', 'yaml']  # All formats

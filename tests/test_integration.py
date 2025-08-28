@@ -603,7 +603,7 @@ class TestRealWorldScenarios(unittest.TestCase):
         campaign = Layer2TestCampaign()
         
         # Verify Layer 2 configuration
-        assert campaign.socket_type == "l2"
+        assert campaign.socket_type == "raw_ethernet"
         assert campaign.interface == "eth0"
         
         packet = campaign.packet

@@ -148,7 +148,7 @@ class TestSpecializedCampaigns(unittest.TestCase):
         campaign = Layer2TestCampaign()
         
         assert campaign.name == "Layer 2 Test Campaign"
-        assert campaign.socket_type == "l2"
+        assert campaign.socket_type == "raw_ethernet"
         assert campaign.interface == "eth0"
         
         # Should have layer 2 packet

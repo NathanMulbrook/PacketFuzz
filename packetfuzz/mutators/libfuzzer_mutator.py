@@ -8,11 +8,8 @@ for high-performance mutation operations.
 # Standard library imports
 import ctypes
 import logging
-import os
 import random
 import re
-import shutil
-import tempfile
 from pathlib import Path
 from typing import Any, List, Optional
 
@@ -41,8 +38,7 @@ class LibFuzzerMutator(BaseMutator):
         super().__init__(seed)
         self._seed = seed
         self._lib = None
-        self._corpus_dir = None  # Track corpus directory for cleanup
-        self._corpus_cache = {}  # Cache corpus results to avoid repeated initialization
+        self._dictionaries_loaded = False  # Track if dictionaries are already loaded
         self._load_library()
     
     def _load_library(self):
@@ -99,12 +95,11 @@ class LibFuzzerMutator(BaseMutator):
         ]
         self._lib.mutate_with_dict_enhanced.restype = ctypes.c_size_t
 
-    def load_dictionaries_for_native_support(self, dictionaries: List[str], corpus_dir: Optional[str] = None) -> bool:
+    def load_dictionaries_for_native_support(self, dictionaries: List[str]) -> bool:
         """
-        Load dictionaries into LibFuzzer and generate a seed corpus.
+        Load dictionaries into LibFuzzer's native dictionary system.
         Args:
             dictionaries: List of dictionary strings to load
-            corpus_dir: Optional path to the corpus directory for seed files
         Returns:
             True if loaded or no dictionaries to load, False if error
         """
@@ -112,20 +107,15 @@ class LibFuzzerMutator(BaseMutator):
         if not self._lib:
             return False
         if not dictionaries:
-            logger.info("No dictionaries provided to load; skipping dictionary loading.")
+            logger.debug("No dictionaries provided to load; skipping dictionary loading.")
             return True
         try:
             # Convert to C format
             dict_entries = (ctypes.c_char_p * len(dictionaries))()
             for i, entry in enumerate(dictionaries):
                 dict_entries[i] = ctypes.c_char_p(entry.encode('utf-8', errors='ignore'))
-            # Load into LibFuzzer
+            # Load into LibFuzzer memory only
             result = self._lib.load_dictionaries_native(dict_entries, len(dictionaries))
-            # Always generate a seed corpus if corpus_dir is provided
-            if corpus_dir is not None:
-                self.generate_dictionary_seed(dictionaries, corpus_dir)
-            elif os.environ.get("SCAPY_LIBFUZZER_CORPUS"):
-                self.generate_dictionary_seed(dictionaries, os.environ["SCAPY_LIBFUZZER_CORPUS"])
             if result == -1:
                 logger.error("Error loading dictionaries: allocation or internal error.")
                 return False
@@ -133,10 +123,10 @@ class LibFuzzerMutator(BaseMutator):
                 if dictionaries:
                     logger.error(f"No dictionaries loaded, but non-empty dictionary list was provided! (entries: {len(dictionaries)})")
                 else:
-                    logger.info("No dictionaries loaded (empty list or None provided).")
+                    logger.debug("No dictionaries loaded (empty list or None provided).")
                 return True
             else:
-                logger.info(f"Loaded {len(dictionaries)} dictionary entries into LibFuzzer")
+                logger.debug(f"Loaded {len(dictionaries)} dictionary entries into LibFuzzer")
                 return True
         except Exception as e:
             logger.error(f"Exception loading dictionaries: {e}")
@@ -194,31 +184,29 @@ class LibFuzzerMutator(BaseMutator):
         else:
             return data
 
-    def generate_dictionary_seed(self, dictionaries: List[str], corpus_dir: str, max_size: int = DEFAULT_MAX_OUTPUT_SIZE) -> None:
-        """
-        Create/clean the corpus directory and seed it with all dictionary values as files.
-        Args:
-            dictionaries: List of dictionary strings to seed
-            corpus_dir: Path to the corpus directory
-            max_size: Maximum size of each seed file
-        """
-        corpus_path = Path(corpus_dir)
-        # Create or clean the corpus directory
-        if corpus_path.exists():
-            for file_path in corpus_path.iterdir():
-                if file_path.is_file():
-                    file_path.unlink()
-        else:
-            corpus_path.mkdir(parents=True, exist_ok=True)
-        # Write each dictionary value to a separate file
-        for idx, value in enumerate(dictionaries):
-            file_path = corpus_path / f"seed_{idx}.bin"
-            with open(file_path, "wb") as f:
-                f.write(value.encode('utf-8', errors='ignore')[:max_size])
-    
     def is_libfuzzer_available(self) -> bool:
         """Check if the LibFuzzer C extension is available and loaded."""
         return self._lib is not None
+
+    def _ensure_dictionaries_loaded(self, dictionaries: List[bytes]) -> bool:
+        """Ensure dictionaries are loaded into LibFuzzer's native dictionary system"""
+        if not self.is_libfuzzer_available():
+            return False
+            
+        try:
+            # Convert bytes dictionaries to string format for C extension
+            dict_strings = []
+            for d in dictionaries:
+                if isinstance(d, bytes):
+                    dict_strings.append(d.decode('utf-8', errors='ignore'))
+                else:
+                    dict_strings.append(str(d))
+            
+            # Load dictionaries into memory only (no corpus)
+            return self.load_dictionaries_for_native_support(dict_strings)
+        except Exception as e:
+            logger.warning(f"Failed to load dictionaries into LibFuzzer: {e}")
+            return False
 
     # --- New API: type-aware field mutation ---
     def mutate_field(self,
@@ -285,7 +273,22 @@ class LibFuzzerMutator(BaseMutator):
             return val
 
         if kind == 'string':
-            seed = ("" if current_value is None else str(current_value)).encode('utf-8', errors='ignore')
+            # If current value is None/empty, use a dictionary entry as seed
+            if current_value is None or str(current_value).strip() == "":
+                if dictionaries and len(dictionaries) > 0:
+                    # Use a random dictionary entry as seed
+                    import random
+                    random_dict_entry = random.choice(dictionaries)
+                    if isinstance(random_dict_entry, bytes):
+                        seed = random_dict_entry
+                    else:
+                        seed = str(random_dict_entry).encode('utf-8', errors='ignore')
+                else:
+                    # Fallback: use a small default seed instead of empty
+                    seed = b"test"
+            else:
+                seed = str(current_value).encode('utf-8', errors='ignore')
+            
             mutated = mutate_bytes_seed(seed)
             try:
                 s = mutated.decode('utf-8', errors='ignore')
@@ -307,31 +310,42 @@ class LibFuzzerMutator(BaseMutator):
         # Unknown kinds: no change
         return current_value
 
-    def initialize(self, field_info: Any, seed_data: List[Any], rng: Optional[random.Random] = None) -> bool:
+    def initialize(self, field_info: Any, dictionaries: List[Any], rng: Optional[random.Random] = None) -> bool:
         """
-        Initialize corpus for LibFuzzer with seed data.
-        
-        This method creates a temporary corpus directory, seeds it with the provided data,
-        loads dictionaries into LibFuzzer, and generates candidate mutations.
-        Results are cached to avoid repeated expensive operations.
+        Initialize LibFuzzer with dictionaries for this field type.
         
         Args:
             field_info: Dataclass-like object describing field type, name, constraints
-            seed_data: List of seed values for corpus initialization
+            dictionaries: List of dictionary entries for this field type  
             rng: Optional RNG for randomization
             
         Returns:
-            List of candidate values ready for field assignment
-     """
-        try:           
-            # Create temporary corpus directory if needed
-            if self._corpus_dir is None:
-                self._corpus_dir = tempfile.mkdtemp(prefix="libfuzzer_corpus_")
-        except:
+            True if initialization successful, False otherwise
+        """
+        if not self.is_libfuzzer_available():
             return False
-            pass
             
-
+        # Only load dictionaries once to avoid memory corruption in C extension
+        if dictionaries and len(dictionaries) > 0 and not self._dictionaries_loaded:
+            # Load dictionaries into LibFuzzer's memory
+            try:
+                # Convert dictionaries to string format and load
+                dict_strings = []
+                for d in dictionaries:
+                    if isinstance(d, bytes):
+                        dict_strings.append(d.decode('utf-8', errors='ignore'))
+                    else:
+                        dict_strings.append(str(d))
+                
+                success = self.load_dictionaries_for_native_support(dict_strings)
+                if success:
+                    self._dictionaries_loaded = True
+                    logger.debug(f"Initialized LibFuzzer with {len(dictionaries)} dictionary entries")
+                return success
+            except Exception as e:
+                logger.warning(f"Failed to initialize LibFuzzer with dictionaries: {e}")
+                return False
+        
         return True
             
 
@@ -390,23 +404,7 @@ class LibFuzzerMutator(BaseMutator):
             except Exception:
                 return data
     
-    def teardown(self) -> None:
-        """
-        Clean up LibFuzzer resources including temporary corpus directory and cache.
-        """
-        try:
-            # Clear corpus cache
-            if hasattr(self, '_corpus_cache'):
-                self._corpus_cache.clear()
-                logger.debug("Cleared LibFuzzer corpus cache")
-            
-            # Clean up corpus directory if it was created
-            if self._corpus_dir and Path(self._corpus_dir).exists():
-                shutil.rmtree(self._corpus_dir, ignore_errors=True)
-                logger.debug(f"Cleaned up LibFuzzer corpus directory: {self._corpus_dir}")
-                self._corpus_dir = None
-        except Exception as e:
-            logger.debug(f"Failed to clean up LibFuzzer corpus directory: {e}")
-        
-        # Additional cleanup could go here (e.g., C library cleanup if needed)
-        logger.debug("LibFuzzer mutator teardown completed")
+    def teardown(self) -> bool:
+        """Clean up LibFuzzer resources."""
+        self._dictionaries_loaded = False
+        return True

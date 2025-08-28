@@ -81,7 +81,7 @@ class MyCampaign(FuzzingCampaign):
 | | `verbose` | `bool` | `True` | Enable detailed logging |
 | | `output_network` | `bool` | `True` | Actually send packets |
 | **Network** | `interface` | `str` | `"eth0"` | Network interface |
-| | `socket_type` | `Optional[str]` | `None` | Socket type (`"l2"`, `"l3"`, `"tcp"`, `"udp"`, `"canbus"`) |
+| | `socket_type` | `Optional[str]` | `None` | Socket type (`"raw_ethernet"`, `"raw_ip"`, `"raw_tcp"`, `"raw_udp"`, `"managed_tcp"`, `"managed_udp"`, `"canbus"`) |
 | | `capture_responses` | `bool` | `False` | Enable response capture |
 | **Scaling** | `layer_weight_scaling` | `Optional[float]` | `None` | Layer weight scaling factor (0.0-1.0) |
 | | `enable_layer_weight_scaling` | `bool` | `True` | Enable layer weight scaling |
@@ -116,6 +116,36 @@ class MyCampaign(FuzzingCampaign):
 | `campaign.create_fuzzer(mutator_preference)` | `MutatorManager` | Create fuzzer instance with optional mutator preference |
 | `campaign.get_packet_with_embedded_config()` | `Optional[Packet]` | Get configured packet with embedded FuzzField configs |
 
+### Socket Types
+
+PacketFuzz supports multiple socket types that provide different levels of control and automation:
+
+| Socket Type | User Provides | Kernel Handles | Use Case |
+|-------------|---------------|----------------|----------|
+| `raw_ethernet` | Complete Ethernet frame | Nothing | Maximum control, Layer 2 fuzzing |
+| `raw_ip` | IP packet | Ethernet headers, routing | IP-level fuzzing, kernel routing |
+| `raw_tcp` | TCP packet | IP + Ethernet headers | TCP header fuzzing |
+| `raw_udp` | UDP packet | IP + Ethernet headers | UDP header fuzzing |
+| `managed_tcp` | Application data only | Full TCP stack + state management | Application fuzzing, no retransmissions |
+| `managed_udp` | Application data only | UDP + IP + Ethernet headers | Application fuzzing, simple datagrams |
+| `canbus` | CAN frame | CAN bus interface | Automotive protocol fuzzing |
+
+**Socket Type Selection:**
+- **For protocol fuzzing**: Use `raw_*` types to craft malformed headers
+- **For application fuzzing**: Use `managed_*` types for proper connection handling
+- **Auto-detection**: If `socket_type=None`, automatically detects based on packet layers
+
+**Examples:**
+```python
+# Raw Ethernet - complete frame control
+campaign = HttpFuzzCampaign(socket_type="raw_ethernet", packet=Ether()/IP()/TCP()/HTTP())
+
+# Raw TCP - fuzz TCP headers, kernel handles IP routing  
+campaign = HttpFuzzCampaign(socket_type="raw_tcp", packet=TCP()/HTTP())
+
+# Managed TCP - real connections, fuzz application data
+campaign = HttpFuzzCampaign(socket_type="managed_tcp", packet=HTTP())
+```
 
 ## PCAP-Based Fuzzing
 
@@ -221,7 +251,7 @@ The framework automatically tracks sent packets, responses, and timing informati
 |              | `append_pcap` | `bool`          | `False`           | Append to existing PCAP or overwrite            |
 |              | `verbose`     | `bool`          | `True`            | Enable detailed logging                          |
 |              | `interface`   | `str`           | `"eth0"`          | Network interface (Layer 2)                     |
-| **Network**  | `socket_type` | `Optional[str]` | `None`            | Socket type: `"l2"`, `"l3"`, `"tcp"`, `"udp"`, `"canbus"`; auto-detect if `None` |
+| **Network**  | `socket_type` | `Optional[str]` | `None`            | Socket type: `"raw_ethernet"`, `"raw_ip"`, `"raw_tcp"`, `"raw_udp"`, `"managed_tcp"`, `"managed_udp"`, `"canbus"`; auto-detect if `None` |
 |              | `output_network` | `bool`        | `True`            | Actually send packets                            |
 |              | `response_timeout` | `float`     | `2.0`             | Response capture timeout (seconds)               |
 |              | `capture_responses` | `bool`     | `False`           | Enable response capture                          |

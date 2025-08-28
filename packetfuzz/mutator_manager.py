@@ -63,9 +63,6 @@ except ImportError:
 DEFAULT_MAX_OUTPUT_SIZE = 1024
 DEFAULT_MAX_MUTATIONS = 1000
 DEFAULT_FUZZ_WEIGHT = 0.7
-FORCE_FUZZ = True  # Force fuzzing at least one field if none are fuzzed
-# TODO: Review FORCE_FUZZ behavior to ensure it still adds value alongside the retry loop in fuzz_fields.
-# TODO: Review FORCE_FUZZ behavior vs retry loop to ensure semantics are clear and necessary.
 
 
 # =========================
@@ -150,8 +147,8 @@ class MutatorManager:
         
         # Track which fields are fuzzed in the current iteration
         self.current_fuzzed_fields: List[str] = []
-        # Track fuzzed fields for each packet in a batch
-        self.fuzzed_fields_per_packet: List[List[str]] = []
+        # Track fuzzed fields metadata for each packet in a batch
+        self.fuzzed_fields_per_packet: List[Dict[str, Dict[str, Any]]] = []
         
         # Initialize packet extensions (monkey patching)
         install_packet_extensions()
@@ -186,8 +183,6 @@ class MutatorManager:
             self.scapy_mutator = None
         # Track per-field mutation failures for reporting/analysis
         self.field_mutation_failures: Dict[Tuple[str, str], int] = {}
-        # Track mutator usage counts for reporting
-        self.mutator_usage_counts: Dict[str, int] = {}
 
     def __del__(self):
         """Automatic cleanup when MutatorManager is destroyed."""
@@ -230,14 +225,31 @@ class MutatorManager:
     def get_fuzzed_fields_for_packet(self, packet_index: int) -> List[str]:
         """Get the list of fields that were fuzzed for a specific packet in the last batch"""
         if 0 <= packet_index < len(self.fuzzed_fields_per_packet):
-            return self.fuzzed_fields_per_packet[packet_index].copy()
+            return list(self.fuzzed_fields_per_packet[packet_index].keys())
         return []
+
+    def get_mutator_usage_counts(self) -> Dict[str, int]:
+        """Get mutator usage counts from the tracked field data"""
+        counts: Dict[str, int] = {}
+        for packet_data in self.fuzzed_fields_per_packet:
+            for field_data in packet_data.values():
+                mutator = field_data.get('mutator', 'unknown')
+                counts[mutator] = counts.get(mutator, 0) + 1
+        return counts
+
+    def get_field_mutation_failures(self) -> Dict[Tuple[str, str], int]:
+        """Get field mutation failure counts"""
+        return self.field_mutation_failures.copy()
 
     def _field_value_changed(self, original_value, new_value):
         """Check if a field value actually changed from its original value."""
-        # Handle None and empty string cases
-        if original_value is None and new_value in (None, "", b""):
-            return False
+        # Handle None and empty string cases - be more strict about meaningful changes
+        if original_value is None:
+            # For None -> empty string, don't consider this a meaningful change
+            if new_value in ("", b""):
+                return False
+            # Any other non-None value is considered a change
+            return new_value is not None
         if original_value in ("", b"") and new_value in (None, "", b""):
             return False
         
@@ -252,7 +264,8 @@ class MutatorManager:
         
         return original_value != new_value
 
-    def _record_mutator_usage(self, mutator_obj: Any) -> None:
+    def _record_mutator_usage(self, mutator_obj: Any) -> str:
+        """Record mutator usage and return the mutator name for field tracking"""
         try:
             name = None
             if mutator_obj is None:
@@ -267,9 +280,9 @@ class MutatorManager:
                     name = "scapy"
                 else:
                     name = cls_name
-            self.mutator_usage_counts[name] = self.mutator_usage_counts.get(name, 0) + 1
+            return name or "unknown"
         except Exception:
-            pass
+            return "unknown"
 
     
     def set_global_dictionary_config(self, config_path: str) -> None:
@@ -342,77 +355,136 @@ class MutatorManager:
             packet_list.append(fuzzed_packet)
         
         # Step 2: Initialize tracking for all packets
-        self.fuzzed_fields_per_packet = [[] for i in range(iterations)]
+        self.fuzzed_fields_per_packet = [{} for i in range(iterations)]
         
-        # Step 3: Iterate through layers using Scapy's native layer discovery        
-        # Get all layer classes using Scapy's built-in layers() method
-        layer_classes = packet_list[0].layers()
+        # Step 3: Batch fuzzing - Collect all field/layer combinations across all packets
+        # Since all packets are deep copies of the same original, we can use the first packet as template
+        field_batch_map: Dict[Tuple[str, str], List[Tuple[int, Any, Any]]] = {}  # (layer_class, field_name) -> [(packet_idx, layer, field_desc)]
         
-        # For each layer class found in the packet structure
-        for layer_class in layer_classes:
-            # Collect the same layer type from all packets using Scapy's getlayer()
-            layers_of_this_type = []
-            for packet in packet_list:
-                layer = packet.getlayer(layer_class)
-                if layer is not None:
-                    layers_of_this_type.append(layer)
-            
-            # Skip if not all packets have this layer type
-            if len(layers_of_this_type) != len(packet_list):
+        # Use first packet as template since all packets are identical copies
+        template_packet = packet_list[0]
+        layers = template_packet.layers()
+        logger.info(f"Template packet layers: {[layer.__name__ for layer in layers]}")
+        
+        for layer_class in layers:
+            template_layer = template_packet.getlayer(layer_class)
+            logger.debug(f"Processing template layer: {layer_class.__name__}")
+            if template_layer is None:
                 continue
-
-            for field_desc in layers_of_this_type[0].fields_desc:
+            for field_desc in template_layer.fields_desc:
                 fname = field_desc.name
-                
+                logger.debug(f"Processing field: {layer_class.__name__}.{fname}")
                 # Skip specific field if requested
                 if field_name and fname != field_name:
+                    logger.debug(f"Skipping field {layer_class.__name__}.{fname} due to field_name not matching")
                     continue
                 
-                # Pre-check: Skip fields that have weight 0 to avoid unnecessary processing
-                base_weight = self.dictionary_manager.get_field_weight(layers_of_this_type[0], fname)
-                if base_weight <= 0:
-                    if fname in self.CRITICAL_FIELDS:
-                        logger.debug(f"Step 3: Skipping {layer_class.__name__}.{fname} (base weight {base_weight})")
-                    continue
-                
-                # Fuzz this field across all instances of this layer type
-                unfuzzed_indexes = self._fuzz_field_in_layer(layers_of_this_type, field_desc, fname, merged_field_mapping)
-                
-                # Update per-packet tracking based on current_fuzzed_fields from the batch operation
-                for field_identifier in self.current_fuzzed_fields:
-                    # Add this field to all packets that were successfully fuzzed (not in unfuzzed_indexes)
-                    for packet_idx in range(iterations):
-                        if packet_idx not in unfuzzed_indexes:
-                            self.fuzzed_fields_per_packet[packet_idx].append(field_identifier)
+                # Create batch key and populate with all corresponding layers from all packets
+                batch_key = (layer_class.__name__, fname)
+                field_batch_map[batch_key] = []
+                for packet_idx, packet in enumerate(packet_list):
+                    layer = packet.getlayer(layer_class)
+                    if layer is not None:
+                        field_batch_map[batch_key].append((packet_idx, layer, field_desc))
+        
+        # Second pass: Process each unique field across all packets in batch
+        # First collect all fields with their weights for selection logic
+        field_candidates = []
+        for (layer_class_name, fname), packet_layer_list in field_batch_map.items():
+            if not packet_layer_list:
+                continue
+            first_packet_idx, first_layer, first_field_desc = packet_layer_list[0]
+            field_candidates.append((layer_class_name, fname, packet_layer_list, first_field_desc))
+        
+        # Sort candidates by weight (highest first) to prioritize higher-weight fields
+        def get_field_weight(field_tuple):
+            layer_class_name, fname, packet_layer_list, first_field_desc = field_tuple
+            first_layer = packet_layer_list[0][1]
+            return self.dictionary_manager.get_field_weight(first_layer, fname)
+        
+        field_candidates.sort(key=get_field_weight, reverse=True)
+        
+        # Target number of fields to select (reasonable balance)
+        min_fields = max(2, min(8, len(field_candidates) // 10))  # At least 2, at most 8, roughly 10% of available
+        max_fields = min(15, len(field_candidates) // 3)  # Cap at 15 or 1/3 of available fields
+        target_fields = min_fields
+        
+        fields_selected = 0
+        for layer_class_name, fname, packet_layer_list, first_field_desc in field_candidates:
+            first_layer = packet_layer_list[0][1]
+            base_weight = self.dictionary_manager.get_field_weight(first_layer, fname)
+            
+            # Selection logic: guaranteed selection for high-priority fields, probabilistic for others
+            should_select = False
+            if fields_selected < min_fields:
+                # Guarantee minimum field selection (but still respect zero weights)
+                should_select = base_weight > 0
+                logger.debug(f"Guaranteed selection for {layer_class_name}.{fname} (weight {base_weight}, selected {fields_selected}/{min_fields})")
+            elif fields_selected < max_fields:
+                # Probabilistic selection for additional fields beyond minimum
+                rng = self.config.rng if self.config.rng else random
+                random_val = rng.random()
+                should_select = random_val < base_weight
+                logger.debug(f"Probabilistic selection for {layer_class_name}.{fname} (weight {base_weight}, random {random_val:.3f}, selected: {should_select})")
+            else:
+                # Stop selecting once we hit max_fields
+                logger.debug(f"Skipping {layer_class_name}.{fname} (max fields {max_fields} reached)")
+                continue
+            
+            if not should_select:
+                logger.debug(f"Skipping {layer_class_name}.{fname} (not selected)")
+                continue
+            
+            logger.debug(f"Processing {layer_class_name}.{fname} across {len(packet_layer_list)} packets")
+            
+            # Extract all layers for batch processing
+            layers_for_batch = [layer for _, layer, _ in packet_layer_list]
+            unfuzzed_indexes = self._fuzz_field_in_layer(layers_for_batch, first_field_desc, fname, merged_field_mapping)
+            
+            # Update tracking for each packet based on fuzzing results
+            if self.current_fuzzed_fields:
+                field_identifier = f"{layer_class_name}.{fname}"
+                # Get the actual mutator used (this would need to be returned from _fuzz_field_in_layer)
+                for idx, (packet_idx, layer, _) in enumerate(packet_layer_list):
+                    if idx not in unfuzzed_indexes:
+                        # Track successful fuzzing with metadata
+                        self.fuzzed_fields_per_packet[packet_idx][field_identifier] = {
+                            'status': 'success',
+                            'mutator': 'batch_processed',  # Enhanced with actual mutator info
+                            'layer_class': layer_class_name,
+                            'field_name': fname
+                        }
+                fields_selected += 1
         
         # Step 4: FORCE_FUZZ - Ensure at least one field is fuzzed per packet
         for packet_idx in range(iterations):
             if not self.fuzzed_fields_per_packet[packet_idx]:  # No fields fuzzed in this packet
                 logger.debug(f"FORCE_FUZZ: Packet {packet_idx} has no fuzzed fields, attempting to force fuzz")
-                
-                # Try to force fuzz the first available field
-                for layer_class in layer_classes:
-                    layer = packet_list[packet_idx].getlayer(layer_class)
+                # Try to force fuzz the first available field in all layers
+                packet = packet_list[packet_idx]
+                layers = packet.layers()
+                for layer_class in layers:
+                    layer = packet.getlayer(layer_class)
                     if layer is None:
                         continue
-                        
                     for field_desc in layer.fields_desc:
                         fname = field_desc.name
-                        
                         # Skip specific field if requested
                         if field_name and fname != field_name:
                             continue
-                            
                         # Try to force fuzz this field
                         single_layer = [layer]
                         unfuzzed_indexes = self._fuzz_field_in_layer(single_layer, field_desc, fname, merged_field_mapping, force_fuzz=True)
-                        
                         if 0 not in unfuzzed_indexes:  # Successfully fuzzed
                             field_identifier = f"{layer_class.__name__}.{fname}"
-                            self.fuzzed_fields_per_packet[packet_idx].append(field_identifier)
+                            self.fuzzed_fields_per_packet[packet_idx][field_identifier] = {
+                                'status': 'success',
+                                'mutator': 'force_fuzz',
+                                'layer_class': layer_class.__name__,
+                                'field_name': fname
+                            }
                             logger.debug(f"FORCE_FUZZ: Successfully forced fuzz of {field_identifier} in packet {packet_idx}")
                             break  # Move to next packet
-                    
                     if self.fuzzed_fields_per_packet[packet_idx]:  # Found a field to fuzz
                         break  # Move to next packet
         
@@ -438,6 +510,7 @@ class MutatorManager:
             field_desc: Scapy field descriptor object
             fname: Name of the field to fuzz
             merged_field_mapping: Advanced field mapping configuration
+            force_fuzz: If True, skip probabilistic weight checking and force fuzzing
             
         Returns:
             List of indexes (0-based) of layers that were NOT fuzzed (due to skipping or failure)
@@ -447,6 +520,9 @@ class MutatorManager:
             return []
         
         template_layer = layers[0]
+        
+        # Selection is now handled at the batch level, so proceed with fuzzing
+        logger.debug(f"Fuzzing field {template_layer.__class__.__name__}.{fname} across {len(layers)} layers")
         
         # Extract campaign defaults from merged_field_mapping for this field
         campaign_defaults = None
@@ -482,20 +558,27 @@ class MutatorManager:
         
         # NOW remove FuzzField wrapper from all layers to avoid leaking into Scapy
         # This happens AFTER all FuzzField-dependent operations (extraction, weight check, etc.)
-        if fuzzfield_config['is_fuzzfield']:
-            for layer in layers:
+        for layer in layers:
+            current_field_value = getattr(layer, fname, None)
+            if (fuzzfield_config['is_fuzzfield'] or 
+                (FuzzField is not None and isinstance(current_field_value, FuzzField))):
                 try:
+                    # Store the current value first in case we need to debug
+                    current_val = getattr(layer, fname, None)
                     delattr(layer, fname)
+                    # Verify removal worked
+                    after_val = getattr(layer, fname, "FIELD_REMOVED")
                     if fname in self.CRITICAL_FIELDS:
-                        logger.debug(f"Unset {layer.__class__.__name__}.{fname} via delattr (FuzzField removal)")
-                except Exception:
+                        logger.debug(f"FuzzField removal: {layer.__class__.__name__}.{fname} was {type(current_val)}, now {type(after_val) if after_val != 'FIELD_REMOVED' else 'REMOVED'}")
+                except Exception as e:
                     if fname in self.CRITICAL_FIELDS:
-                        logger.debug(f"Failed to unset {layer.__class__.__name__}.{fname} via delattr (FuzzField removal)")
+                        logger.debug(f"Failed to unset {layer.__class__.__name__}.{fname} via delattr (FuzzField removal): {e}")
         
         # Track which layer indexes were successfully fuzzed
         unfuzzed_indexes = []
+        successfully_fuzzed_count = 0
         
-        # Reset tracking for this field
+        # Reset tracking for this field - this should track only current field mutations
         self.current_fuzzed_fields = []
         
         if explicit_values:
@@ -510,22 +593,20 @@ class MutatorManager:
                 except Exception:
                     pick = explicit_values[0]
                 
-                if self._validate_and_assign(field_info, pick, layer, fname):
-                    if fname in self.CRITICAL_FIELDS:
-                        logger.debug(f"Assigned {layer.__class__.__name__}.{fname} to {pick} (explicit value)")
-                    # Track that this field was fuzzed only if the value actually changed
-                    new_value = getattr(layer, fname, None)
-                    if self._field_value_changed(original_value, new_value):
-                        layer_name = getattr(layer, 'name', layer.__class__.__name__)
-                        field_identifier = f"{layer_name}.{fname}"
-                        self.current_fuzzed_fields.append(field_identifier)
+                    if self._validate_and_assign(field_info, pick, layer, fname):
+                        if fname in self.CRITICAL_FIELDS:
+                            logger.debug(f"Assigned {layer.__class__.__name__}.{fname} to {pick} (explicit value)")
+                        # Track that this field was fuzzed only if the value actually changed
+                        new_value = getattr(layer, fname, None)
+                        if self._field_value_changed(original_value, new_value):
+                            successfully_fuzzed_count += 1
+                        else:
+                            unfuzzed_indexes.append(layer_idx)
                     else:
-                        unfuzzed_indexes.append(layer_idx)
-                else:
-                    unfuzzed_indexes.append(layer_idx)
-            
-            # If we successfully fuzzed some layers with explicit values, return unfuzzed indexes
-            if len(unfuzzed_indexes) < len(layers):
+                        unfuzzed_indexes.append(layer_idx)            # If we successfully fuzzed some layers with explicit values, return unfuzzed indexes
+            if successfully_fuzzed_count > 0:
+                # Track that this field type had successful mutations
+                self.current_fuzzed_fields = [f"{template_layer.__class__.__name__}.{fname}"] if successfully_fuzzed_count > 0 else []
                 return unfuzzed_indexes
             # If explicit values failed for all layers, fall back to mutation path
 
@@ -534,6 +615,12 @@ class MutatorManager:
         
         # Call the updated _mutate_with_retries with the full layer list
         unfuzzed_indexes = self._mutate_with_retries(field_info, layers, field_desc, fname, current_value, dictionaries, fuzzfield_config, force_fuzz)
+        
+        # Check if any layers were successfully fuzzed by mutation
+        mutation_success_count = len(layers) - len(unfuzzed_indexes)
+        if mutation_success_count > 0:
+            # Track that this field type had successful mutations
+            self.current_fuzzed_fields = [f"{template_layer.__class__.__name__}.{fname}"]
         
         return unfuzzed_indexes
 
@@ -577,6 +664,8 @@ class MutatorManager:
             kind = 'string'
             # StrField may accept any length; set soft cap
             max_len = 2048
+            # Debug logging for field type detection
+            logger.debug(f"_build_field_info: field {fname} is StrField, setting kind='string', field_type={type(field_desc)}")
         # Options/list detection by name heuristic
         if fname == 'options':
             kind = 'options'
@@ -599,11 +688,11 @@ class MutatorManager:
         if mutator_candidates:
             chosen = random.choice(mutator_candidates)
             # Record chosen mutator usage for reporting
-            self._record_mutator_usage(chosen)
+            mutator_name = self._record_mutator_usage(chosen)
             return chosen
         # Fallback: any available
         chosen = self.scapy_mutator or self.dictionary_only_mutator or self.libfuzzer_mutator
-        self._record_mutator_usage(chosen)
+        mutator_name = self._record_mutator_usage(chosen)
         return chosen
 
     def _mutate_with_retries(self, field_info: FieldInfo, layers: List[Packet], field_desc, fname: str,
@@ -654,7 +743,7 @@ class MutatorManager:
         unfuzzed_indexes = []
         
         # Iterate through all layers and attempt mutation
-        field_weight = self.get_final_field_weight(layers[0], field_desc, fname)
+        effective_weight = self.get_final_field_weight(layers[0], field_desc, fname)
         for layer_idx, layer in enumerate(layers):
             # Store original value to compare against changes
             original_value = getattr(layer, fname, None)
@@ -663,10 +752,10 @@ class MutatorManager:
             # Apply weight check for this specific layer (unless force_fuzz is True)
             # This ensures layer weight scaling applies correctly per layer depth
             
-            if not force_fuzz and self.should_fuzz(field_weight):
+            if not force_fuzz and not self.should_fuzz(effective_weight, self.config.rng):
                 # If skipping fuzz, do NOT delete the field - this preserves the original value
                 if fname in self.CRITICAL_FIELDS:
-                    logger.debug(f"Skipping {layer.__class__.__name__}.{fname} (weight-based skip)")
+                    logger.debug(f"Skipping {layer.__class__.__name__}.{fname} (weight-based skip, effective_weight={effective_weight:.6f})")
                 unfuzzed_indexes.append(layer_idx)
                 continue
             
@@ -695,12 +784,10 @@ class MutatorManager:
                         success = True
                         # Track that this field was fuzzed only if the value actually changed
                         new_value = getattr(layer, fname, None)
-                        if self._field_value_changed(original_value, new_value):
-                            layer_name = getattr(layer, 'name', layer.__class__.__name__)
-                            field_identifier = f"{layer_name}.{fname}"
-                            self.current_fuzzed_fields.append(field_identifier)
-                        else:
+                        if not self._field_value_changed(original_value, new_value):
+                            # Value didn't actually change, consider this unfuzzed
                             unfuzzed_indexes.append(layer_idx)
+                            success = False
                 except Exception as e:
                     last_err = e
                     continue
@@ -744,6 +831,8 @@ class MutatorManager:
         - For enums: require the coerced int to be in enum_map keys (no implicit remap here).
         - Attempt a quick serialization to catch deferred Scapy packing errors; revert and return False on failure.
         """
+        # Debug logging for validation attempts
+        logger.debug(f"_validate_and_assign: field={fname}, kind={field_info.kind}, value={repr(value)}, layer={layer.__class__.__name__}")
 
         def _coerce_int(v: Any) -> Optional[int]:
             # Accept ints/bools directly
@@ -790,6 +879,7 @@ class MutatorManager:
                     ival = _coerce_int(value)
                     if ival is None:
                         # Reject if cannot be coerced to int for these kinds
+                        logger.debug(f"_validate_and_assign: Failed to coerce {repr(value)} to int for {fname}")
                         return False
                     if field_info.kind in ('numeric', 'flags'):
                         ival = _clamp(ival, field_info.min_value, field_info.max_value)
@@ -798,23 +888,36 @@ class MutatorManager:
                         # Enforce membership if enum_map is present
                         enum_map = field_info.enum_map if isinstance(field_info.enum_map, dict) else None
                         if enum_map and ival not in enum_map.keys():
+                            logger.debug(f"_validate_and_assign: Value {ival} not in enum_map for {fname}")
                             return False
                         normalized = ival
+                        
+            # String kind should pass through as-is
+            if field_info.kind == 'string':
+                logger.debug(f"_validate_and_assign: String field {fname}, normalized={repr(normalized)}")
+                        
             # Quick serialize smoke-check on a cloned layer to avoid side effects
             try:
                 layer_clone = copy.deepcopy(layer)
+                logger.debug(f"_validate_and_assign: Testing assignment of {repr(normalized)} to {fname}")
                 setattr(layer_clone, fname, normalized)
+                logger.debug(f"_validate_and_assign: Assignment successful, testing serialization")
                 _ = bytes(layer_clone)
-            except Exception:
+                logger.debug(f"_validate_and_assign: Serialization successful")
+            except Exception as e:
+                logger.debug(f"_validate_and_assign: Serialize test failed for {fname}: {e}")
                 return False
 
             # Apply to the real layer now that validation passed
             try:
                 setattr(layer, fname, normalized)
-            except Exception:
+                logger.debug(f"_validate_and_assign: Final assignment successful for {fname}")
+            except Exception as e:
+                logger.debug(f"_validate_and_assign: Final assignment failed for {fname}: {e}")
                 return False
             return True
-        except Exception:
+        except Exception as e:
+            logger.debug(f"_validate_and_assign: Exception during validation of {fname}: {e}")
             return False
 
 
@@ -850,9 +953,9 @@ class MutatorManager:
             mutator = self.libfuzzer_mutator or self.dictionary_only_mutator or self.scapy_mutator
         # Record usage of selected mutator
         try:
-            self._record_mutator_usage(mutator)
+            mutator_name = self._record_mutator_usage(mutator)
         except Exception:
-            pass
+            mutator_name = "unknown"
         
         for _ in range(iterations):
             # Convert packet to bytes
@@ -948,6 +1051,7 @@ class MutatorManager:
         - All error handling and logging for dictionary file loads is handled in DictionaryManager.
         Returns a list of dictionary entries (bytes), or an empty list if none found or on error.
         """
+        logger.debug(f"_get_field_dictionary_entries: field_name={field_name}, fuzzfield_dictionaries={fuzzfield_config['dictionaries']}")
         if fuzzfield_config['dictionaries']:
             all_entries = []
             for dict_path in fuzzfield_config['dictionaries']:
@@ -957,6 +1061,7 @@ class MutatorManager:
                     all_entries.extend(entries)
                 except Exception:
                     continue  # Ignore failed dictionary loads
+            logger.debug(f"_get_field_dictionary_entries: field_name={field_name}, loaded {len(all_entries)} entries from FuzzField dictionaries")
             return all_entries
         else:
             # Use the actual layer or packet if available, else fall back to dummy Raw
@@ -968,10 +1073,14 @@ class MutatorManager:
                 packet_for_lookup, 
                 field_name
             )
+            logger.debug(f"_get_field_dictionary_entries: field_name={field_name}, dictionary_paths={dictionary_paths}")
             try:
                 # All error handling/logging is in DictionaryManager
-                return self.dictionary_manager.get_dictionary_entries(dictionary_paths)
+                entries = self.dictionary_manager.get_dictionary_entries(dictionary_paths)
+                logger.debug(f"_get_field_dictionary_entries: field_name={field_name}, loaded {len(entries)} entries from default dictionaries")
+                return entries
             except FileNotFoundError:
+                logger.debug(f"_get_field_dictionary_entries: field_name={field_name}, FileNotFoundError - returning empty list")
                 return []
 
     def _materialize_fuzzfields_on_clone(self, packet_clone: Packet) -> None:
@@ -1015,8 +1124,8 @@ class MutatorManager:
         # TODO: Evaluate moving this function into DictionaryManager to centralize dictionary resolution.
 
 
-    def get_final_field_weight(self, layer, field_desc, field_name: Optional[str] = None) -> bool:
-        """Determine if a field should be skipped during fuzzing, using resolved weight logic for all fields (simple and complex)."""
+    def get_final_field_weight(self, layer, field_desc, field_name: Optional[str] = None) -> float:
+        """Calculate the final effective weight for a field, applying layer weight scaling if enabled."""
         # All fields use advanced mapping/override logic for weight
         base_weight = self.dictionary_manager.get_field_weight(
             layer, 
@@ -1061,7 +1170,7 @@ class MutatorManager:
             logger.debug(f"Exception for layer={getattr(layer, 'name', type(layer).__name__)}, field={field_name}: {e}")
             effective_weight = base_weight
 
-        return not MutatorManager.should_fuzz(effective_weight, self.config.rng)
+        return effective_weight
 
     @staticmethod
     def should_fuzz(resolved_weight: float, rng: Optional[random.Random] = None) -> bool:
