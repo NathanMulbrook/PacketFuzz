@@ -299,7 +299,7 @@ class TestPCAPFunctionality(unittest.TestCase):
                     for i in range(3):
                         fuzzed_packets = fuzzer.fuzz_packet(packet, iterations=1)
                         for fuzzed_packet in fuzzed_packets:
-                            if self.socket_type == "l3" and fuzzed_packet.haslayer(IP):
+                            if self.socket_type == "raw_ip" and fuzzed_packet.haslayer(IP):
                                 fuzzed_packet[IP].dst = self.target
                             collected_packets.append(fuzzed_packet)
                     raise KeyboardInterrupt("Simulated interruption")

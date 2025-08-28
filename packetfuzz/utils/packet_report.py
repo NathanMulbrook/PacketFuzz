@@ -68,6 +68,12 @@ class ReportMetrics:
     port_coverage: Set[int] = field(default_factory=set)
     payload_sizes: List[int] = field(default_factory=list)
     network_layers: Set[str] = field(default_factory=set)
+    
+    # Fuzzed field tracking
+    fuzzed_field_distribution: Dict[str, int] = field(default_factory=dict)  # field_name -> count
+    packets_with_fuzzed_fields: int = 0
+    packets_without_fuzzed_fields: int = 0
+    most_fuzzed_fields: List[str] = field(default_factory=list)  # Top fuzzed fields
 
 
 @dataclass
@@ -222,7 +228,7 @@ class ReportingEngine:
         metrics.serialization_failures = len([h for h in history_entries if h.serialization_failed])
         metrics.crash_count = len([h for h in history_entries if h.crashed])
         
-        # Collect protocol distribution
+        # Collect protocol distribution and fuzzed field statistics
         for entry in history_entries:
             if entry.protocol:
                 metrics.protocol_distribution[entry.protocol] = metrics.protocol_distribution.get(entry.protocol, 0) + 1
@@ -230,6 +236,14 @@ class ReportingEngine:
                 metrics.port_coverage.add(entry.target_port)
             if entry.payload_size:
                 metrics.payload_sizes.append(entry.payload_size)
+            
+            # Track fuzzed fields
+            if hasattr(entry, 'fuzzed_fields') and entry.fuzzed_fields:
+                metrics.packets_with_fuzzed_fields += 1
+                for field_name in entry.fuzzed_fields:
+                    metrics.fuzzed_field_distribution[field_name] = metrics.fuzzed_field_distribution.get(field_name, 0) + 1
+            else:
+                metrics.packets_without_fuzzed_fields += 1
         
         # Calculate timing metrics
         timestamps = [h.timestamp_sent for h in history_entries if h.timestamp_sent]
@@ -239,6 +253,11 @@ class ReportingEngine:
                 metrics.packets_per_second = metrics.total_packets / metrics.campaign_duration.total_seconds()
         
         metrics.unique_targets = len(set(h.target_host for h in history_entries if h.target_host))
+        
+        # Calculate most fuzzed fields (top 10)
+        if metrics.fuzzed_field_distribution:
+            sorted_fields = sorted(metrics.fuzzed_field_distribution.items(), key=lambda x: x[1], reverse=True)
+            metrics.most_fuzzed_fields = [field for field, count in sorted_fields[:10]]
         
         return metrics
     
@@ -437,7 +456,11 @@ class ExecutiveSummaryGenerator(ReportGeneratorInterface):
                 "critical_vulnerabilities": len(critical_findings),
                 "high_vulnerabilities": len(high_findings),
                 "protocols_tested": len(protocol_analysis),
-                "campaign_duration": str(metrics.campaign_duration) if metrics.campaign_duration else "unknown"
+                "campaign_duration": str(metrics.campaign_duration) if metrics.campaign_duration else "unknown",
+                "packets_with_fuzzed_fields": metrics.packets_with_fuzzed_fields,
+                "packets_without_fuzzed_fields": metrics.packets_without_fuzzed_fields,
+                "unique_fields_fuzzed": len(metrics.fuzzed_field_distribution),
+                "most_fuzzed_fields": metrics.most_fuzzed_fields[:5]  # Top 5 for executive summary
             },
             
             "risk_assessment": {
@@ -449,7 +472,9 @@ class ExecutiveSummaryGenerator(ReportGeneratorInterface):
             "testing_coverage": {
                 "protocols": list(protocol_analysis.keys()),
                 "ports_tested": list(metrics.port_coverage),
-                "packets_per_second": metrics.packets_per_second
+                "packets_per_second": metrics.packets_per_second,
+                "fuzzed_field_distribution": dict(metrics.fuzzed_field_distribution),
+                "field_fuzzing_rate": f"{(metrics.packets_with_fuzzed_fields/metrics.total_packets*100):.1f}%" if metrics.total_packets > 0 else "0%"
             }
         }
     
@@ -691,6 +716,14 @@ class HTMLExporter(ExporterInterface):
             <p><strong>Duration:</strong> {summary.get('campaign_duration', 'unknown')}</p>
         </div>
         
+        <div class="metric">
+            <h3>Field Fuzzing Analysis</h3>
+            <p><strong>Packets with Fuzzed Fields:</strong> {summary.get('packets_with_fuzzed_fields', 0)}</p>
+            <p><strong>Packets without Fuzzed Fields:</strong> {summary.get('packets_without_fuzzed_fields', 0)}</p>
+            <p><strong>Unique Fields Fuzzed:</strong> {summary.get('unique_fields_fuzzed', 0)}</p>
+            <p><strong>Most Fuzzed Fields:</strong> {', '.join(summary.get('most_fuzzed_fields', []))}</p>
+        </div>
+        
         <div class="finding">
             <h3>Risk Assessment: {risk.get('overall_risk', 'UNKNOWN')}</h3>
             <p><strong>Critical Vulnerabilities:</strong> {summary.get('critical_vulnerabilities', 0)}</p>
@@ -903,7 +936,21 @@ class MarkdownExporter(ExporterInterface):
             md += "## Executive Summary\n\n"
             md += f"- **Target:** {content.get('target', 'unknown')}\n"
             md += f"- **Packets Tested:** {summary.get('total_packets_tested', 0)}\n"
-            md += f"- **Success Rate:** {summary.get('success_rate', '0%')}\n\n"
+            md += f"- **Success Rate:** {summary.get('success_rate', '0%')}\n"
+            md += f"- **Packets with Fuzzed Fields:** {summary.get('packets_with_fuzzed_fields', 0)}\n"
+            md += f"- **Packets without Fuzzed Fields:** {summary.get('packets_without_fuzzed_fields', 0)}\n"
+            md += f"- **Unique Fields Fuzzed:** {summary.get('unique_fields_fuzzed', 0)}\n"
+            if summary.get('most_fuzzed_fields'):
+                md += f"- **Most Fuzzed Fields:** {', '.join(summary.get('most_fuzzed_fields', []))}\n"
+            md += "\n"
+            # Add fuzzed field distribution table if available
+            fuzzed_field_dist = content.get('testing_coverage', {}).get('fuzzed_field_distribution', {})
+            if fuzzed_field_dist:
+                md += "### Fuzzed Field Distribution\n\n"
+                md += "| Field Name | Times Fuzzed |\n|---|---|\n"
+                for field, count in sorted(fuzzed_field_dist.items(), key=lambda x: x[1], reverse=True):
+                    md += f"| {field} | {count} |\n"
+                md += "\n"
         
         if "performance_metrics" in content:
             metrics = content["performance_metrics"]
@@ -1178,7 +1225,6 @@ def write_crash_report(
     This is a focused function for crash reporting that replaces the legacy 
     write_packet_report for crash scenarios.
     """
-    import base64
     
     with open(file_path, 'w') as f:
         f.write("# PacketFuzz Crash Report\n\n")
@@ -1249,7 +1295,6 @@ def write_debug_packet_log(
     
     This replaces write_packet_report for debug logging scenarios.
     """
-    import base64
     
     if not isinstance(packets, (list, tuple)):
         packets = [packets]
@@ -1329,6 +1374,12 @@ def write_fuzz_history_dump(
                 if hasattr(entry, 'payload_hash') and entry.payload_hash:
                     f.write(f"Payload Hash: {entry.payload_hash}\n")
                 
+                # Fuzzed fields information
+                if hasattr(entry, 'fuzzed_fields') and entry.fuzzed_fields:
+                    f.write(f"Fuzzed Fields: {', '.join(entry.fuzzed_fields)}\n")
+                elif hasattr(entry, 'fuzzed_fields'):  # Empty list case
+                    f.write(f"Fuzzed Fields: None\n")
+                
                 f.write("\n")
                 
                 # Packet details (if verbose enough)
@@ -1344,7 +1395,6 @@ def write_fuzz_history_dump(
                         # Raw packet bytes (for highest verbosity)
                         if verbose_level >= 3:
                             try:
-                                import base64
                                 packet_bytes = bytes(entry.packet)
                                 f.write(f"Raw Packet (base64): {base64.b64encode(packet_bytes).decode()}\n")
                                 f.write(f"Raw Packet (hex): {packet_bytes.hex()}\n\n")

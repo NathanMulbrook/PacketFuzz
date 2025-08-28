@@ -12,7 +12,7 @@ from scapy.fields import ByteField, ShortField, IntField, StrLenField, FieldLenF
 from scapy.packet import Packet, bind_layers
 from scapy.layers.inet import IP, UDP, TCP
 from scapy.layers.l2 import Ether
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+  
 
 from packetfuzz.fuzzing_framework import FuzzingCampaign, FuzzField, CallbackResult
 

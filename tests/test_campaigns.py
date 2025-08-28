@@ -148,7 +148,7 @@ class TestSpecializedCampaigns(unittest.TestCase):
         campaign = Layer2TestCampaign()
         
         assert campaign.name == "Layer 2 Test Campaign"
-        assert campaign.socket_type == "l2"
+        assert campaign.socket_type == "raw_ethernet"
         assert campaign.interface == "eth0"
         
         # Should have layer 2 packet
@@ -397,8 +397,8 @@ class TestCampaignConfiguration:
         assert hasattr(campaign, 'report_formats')
         assert isinstance(campaign.report_formats, list)
         
-        # Default should be json
-        assert campaign.report_formats == ['json']
+        # Default should be markdown
+        assert campaign.report_formats == ['markdown']
         
         # Should be able to modify
         campaign.report_formats = ['html', 'csv']

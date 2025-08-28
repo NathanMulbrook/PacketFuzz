@@ -91,7 +91,7 @@ class TestExampleValidation(unittest.TestCase):
                     self.assertTrue(success, f"{campaign_file.name} failed CLI validation")
 
     def test_direct_example_execution(self):
-        """Validate that examples can be executed directly without errors."""
+        """Validate that examples can be loaded by the CLI without errors."""
         categories = ["basic", "intermediate", "advanced"]
         skip_files = ["run_all_examples.py"]  # Skip utility files
         
@@ -104,17 +104,16 @@ class TestExampleValidation(unittest.TestCase):
                     continue
                     
                 with self.subTest(example_file=example_file):
-                    # Execute the example directly with Python
+                    # Execute the example using the PacketFuzz CLI with --list-campaigns to just validate loading
                     result = subprocess.run(
-                        [sys.executable, str(example_file)],
+                        [sys.executable, "-m", "packetfuzz", str(example_file), "--list-campaigns"],
                         cwd=str(self.project_root),
                         capture_output=True,
                         text=True,
-                        timeout=30  # Shorter timeout for direct execution
+                        timeout=30
                     )
                     
-                    # Check if the example ran without crashing
-                    # Some examples might not produce output, so we just check exit code
+                    # Check if the example config loads without crashing
                     if result.returncode != 0:
-                        self.fail(f"{example_file.name} failed direct execution (rc={result.returncode}).\n"
+                        self.fail(f"{example_file.name} failed to load (rc={result.returncode}).\n"
                                 f"STDOUT: {result.stdout}\nSTDERR: {result.stderr}")

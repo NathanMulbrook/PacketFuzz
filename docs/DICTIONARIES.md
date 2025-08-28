@@ -6,7 +6,7 @@
 
 The framework uses a 3-tier hierarchical system for dictionary resolution with sophisticated merging:
 
-.. mermaid::
+```mermaid
 flowchart TD
     A[Field Needs Dictionary] --> B{FuzzField Has<br/>Dictionaries?}
     B -->|Yes| C[Use FuzzField<br/>Dictionaries<br/>Priority: 1 Highest]

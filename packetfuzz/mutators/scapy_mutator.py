@@ -4,11 +4,15 @@ ScapyMutator: Minimal mutator that uses Scapy's built-in fuzz() function.
 
 # Standard library imports
 import random
+from typing import Any, List, Optional
 
 # Third-party imports
 from scapy.packet import Packet, fuzz
 
-class ScapyMutator:
+# Local imports
+from .base import BaseMutator
+
+class ScapyMutator(BaseMutator):
     """Mutator that uses Scapy's built-in fuzz() function to mutate fields or packets."""
     
     def mutate_bytes(self, data: bytes, dictionary_entries=None) -> bytes:
@@ -16,7 +20,7 @@ class ScapyMutator:
         # Not meaningful for raw bytes, so just return the input
         return data
 
-    def mutate_field(self, field_info, current_value, dictionaries=None, rng: random.Random | None = None, layer: Packet | None = None):
+    def mutate_field(self, field_info: Any, current_value: Any, dictionaries: Optional[List[bytes]] = None, rng: Optional[random.Random] = None, layer: Optional[Any] = None) -> Any:
         """
         Mutate field using Scapy's fuzz() function based on field type.
         

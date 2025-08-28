@@ -174,29 +174,46 @@ MACROS = {
 
 # Type-based field mappings
 FIELD_TYPE_DICTIONARIES = {
-    "string": ["@string"],
-    "numeric": ["@numeric"],
-    "payload": ["@payload"],
-    "address": ["@address"],
-    "protocol": ["@protocol"],
-    "email": ["@email"],
-    "useragent": ["@useragent"],
-    "auth_user": ["@auth_user"],
-    "auth_pass": ["@auth_pass"],
-    "file_name": ["@file_name"],
-    "file_ext": ["@file_ext"],
-    "dns_name": ["@dns_name"],
-    "xpath": ["@xpath"],
-    "ldap": ["@ldap"],
-    "json": ["@json"],
-    "xml": ["@xml"],
-    "os_command": ["@os_command"],
-    "sql_injection": ["@sql_injection"],
-    "xss": ["@xss"],
-    "unicode": ["@unicode"],
-    "traversal": ["@traversal"],
-    "shell": ["@shell"],
-    # ...more as discovered
+    # =========================================================================
+    # Real Scapy Field Types (THE KEY FIX for field type resolution)
+    # =========================================================================
+    
+    # String Fields - Use string-based fuzzing dictionaries
+    "StrField": ["@string"],
+    "XStrField": ["@string"],
+    "_HTTPHeaderField": ["@string", "@useragent"],  # HTTP headers get extra coverage
+    "StrFixedLenField": ["@string"],
+    "StrLenField": ["@string"], 
+    "StrNullField": ["@string"],
+    "StrStopField": ["@string"],
+    
+    # Numeric Fields - Use numeric fuzzing dictionaries
+    "ByteField": ["@numeric"],
+    "ShortField": ["@numeric"],
+    "IntField": ["@numeric"],
+    "LongField": ["@numeric"],
+    "BitField": ["@numeric"],
+    "ByteEnumField": ["@numeric"],
+    "ShortEnumField": ["@numeric"],
+    "IntEnumField": ["@numeric"],
+    "EnumField": ["@numeric"],
+    
+    # Address Fields
+    "IPField": ["@address"],
+    "IP6Field": ["@address"],
+    "MACField": ["@address"],
+    
+    # Complex Fields
+    "PacketField": ["@payload"],
+    "PacketListField": ["@payload"],
+    "FieldListField": ["@string"],
+    "FlagsField": ["@numeric"],
+    "XBitField": ["@numeric"],
+    
+    # Raw Data
+    "RawVal": ["@payload"],
+    
+
 }
 
 # Name-based field mappings
@@ -311,11 +328,11 @@ FIELD_NAME_DICTIONARIES = {
         "fuzzdb/discovery/predictable-filepaths/filename-dirname-bruteforce/raft-large-files.txt",
         "fuzzdb/attack/path-traversal/path-traversal-windows.txt"
     ],
-    "HTTPRequest.Http-Version": [
+    "HTTPRequest.Http_Version": [
         "@protocol",
         "fuzzdb/attack/http-protocol/http-protocol-methods.txt"
     ],
-    "HTTPRequest.User-Agent": [
+    "HTTPRequest.User_Agent": [
         "@useragent",
         "@string",
         "fuzzdb/attack/http-protocol/user-agents.txt"
@@ -324,6 +341,51 @@ FIELD_NAME_DICTIONARIES = {
         "@dns_name",
         "@string",
         "fuzzdb/discovery/dns/alexaTop1mAXFRcommonSubdomains.txt"
+    ],
+    "HTTPRequest.Accept": [
+        "@string",
+        "fuzzdb/attack/http-protocol/http-protocol-methods.txt"
+    ],
+    "HTTPRequest.Accept_Charset": [
+        "@string",
+        "fuzzdb/wordlists-misc/wordlist-alphanumeric-case.txt"
+    ],
+    "HTTPRequest.Accept_Encoding": [
+        "@string"
+    ],
+    "HTTPRequest.Accept_Language": [
+        "@string"
+    ],
+    "HTTPRequest.Authorization": [
+        "@auth_user",
+        "@auth_pass",
+        "@string",
+        "fuzzdb/attack/authentication/basic-auth-bruteforce.txt"
+    ],
+    "HTTPRequest.Content_Type": [
+        "@string",
+        "fuzzdb/attack/http-protocol/content-types.txt"
+    ],
+    "HTTPRequest.Cookie": [
+        "@string",
+        "fuzzdb/attack/web-other/cookie-injection.txt"
+    ],
+    "HTTPRequest.Referer": [
+        "@string",
+        "@traversal",
+        "fuzzdb/discovery/predictable-filepaths/filename-dirname-bruteforce/raft-large-files.txt"
+    ],
+    "HTTPRequest.Origin": [
+        "@dns_name",
+        "@string"
+    ],
+    "HTTPRequest.X_Forwarded_For": [
+        "@string",
+        "fuzzdb/attack/ip/localhost.txt"
+    ],
+    "HTTPRequest.X_Forwarded_Host": [
+        "@dns_name",
+        "@string"
     ],
     "SMTP.mailfrom": [
         "@email",
@@ -833,7 +895,54 @@ higher weights for application-layer fields where vulnerabilities are common.
 """
 
 FIELD_TYPE_WEIGHTS = {
-    "string": 0.6,
+    # =========================================================================
+    # Real Scapy Field Types (THE KEY FIX for field type resolution)
+    # =========================================================================
+    
+    # String Fields - Critical for fuzzing
+    "StrField": 0.6,                    # Base string field
+    "XStrField": 0.6,                   # Extended string field 
+    "_HTTPHeaderField": 0.7,            # HTTP header fields (higher priority)
+    "StrFixedLenField": 0.6,            # Fixed length string
+    "StrLenField": 0.6,                 # Length-prefixed string
+    "StrNullField": 0.6,                # Null-terminated string
+    "StrStopField": 0.6,                # String with stop character
+    
+    # Numeric Fields - Important for protocol fuzzing
+    "ByteField": 0.4,                   # 8-bit integer
+    "ShortField": 0.4,                  # 16-bit integer
+    "IntField": 0.4,                    # 32-bit integer
+    "LongField": 0.4,                   # 64-bit integer
+    "BitField": 0.3,                    # Variable bit field
+    "ByteEnumField": 0.5,               # Enumerated byte
+    "ShortEnumField": 0.5,              # Enumerated short
+    "IntEnumField": 0.5,                # Enumerated int
+    "EnumField": 0.5,                   # Generic enum field
+    
+    # Special Purpose Fields
+    "IPField": 0.5,                     # IP address field
+    "IP6Field": 0.5,                    # IPv6 address field
+    "MACField": 0.4,                    # MAC address field
+    "PacketField": 0.8,                 # Nested packet
+    "PacketListField": 0.8,             # List of packets
+    "FieldListField": 0.7,              # List of fields
+    "ConditionalField": 0.6,            # Conditional field
+    "FlagsField": 0.4,                  # Bit flags
+    "XBitField": 0.3,                   # Extended bit field
+    
+    # Length and Count Fields (usually protocol-critical)
+    "FieldLenField": 0.2,               # Field length indicator
+    "LenField": 0.2,                    # Length field
+    "PacketLenField": 0.2,              # Packet length
+    
+    # Padding and Raw Data
+    "PaddingField": 0.1,                # Padding bytes
+    "RawVal": 0.9,                      # Raw binary data (high value)
+    
+    # =========================================================================
+    # Legacy Semantic Types (kept for backward compatibility)
+    # =========================================================================
+    "string": 0.6,                      # Legacy - use StrField instead
     "numeric": 0.4,
     "payload": 0.9,
     "address": 0.7,
@@ -903,9 +1012,32 @@ FIELD_NAME_WEIGHTS = {
     "ARP.pdst": 0.25,      # ARP protocol addresses - reduced from 0.35
     
     # Application protocol fields - good targets for fuzzing
-    "HTTPRequest.User-Agent": 0.7,
+    "HTTPRequest.User_Agent": 0.7,
     "HTTPRequest.Host": 0.75,
-    "HTTPRequest.Http-Version": 0.3,
+    "HTTPRequest.Http_Version": 0.3,
+    "HTTPRequest.Accept": 0.65,
+    "HTTPRequest.Accept_Charset": 0.6,
+    "HTTPRequest.Accept_Encoding": 0.6,
+    "HTTPRequest.Accept_Language": 0.6,
+    "HTTPRequest.Authorization": 0.85,  # High value for security testing
+    "HTTPRequest.Cache_Control": 0.55,
+    "HTTPRequest.Connection": 0.5,
+    "HTTPRequest.Content_Length": 0.4,  # Lower weight as it can break parsing
+    "HTTPRequest.Content_Type": 0.7,
+    "HTTPRequest.Cookie": 0.8,          # High value for session testing
+    "HTTPRequest.Referer": 0.7,
+    "HTTPRequest.Origin": 0.7,
+    "HTTPRequest.X_Forwarded_For": 0.75,
+    "HTTPRequest.X_Forwarded_Host": 0.7,
+    "HTTPRequest.X_Requested_With": 0.6,
+    "HTTPRequest.X_Csrf_Token": 0.8,
+    "HTTPRequest.Expect": 0.6,
+    "HTTPRequest.Pragma": 0.55,
+    "HTTPRequest.Range": 0.65,
+    "HTTPRequest.TE": 0.6,
+    "HTTPRequest.Upgrade": 0.6,
+    "HTTPRequest.Via": 0.6,
+    "HTTPRequest.Warning": 0.5,
     "SMTP.mailfrom": 0.8,
     "SMTP.rcptto": 0.8,
     "payload": 0.9,

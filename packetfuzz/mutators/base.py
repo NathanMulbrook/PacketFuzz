@@ -61,3 +61,31 @@ class BaseMutator(ABC):
             A Python value suitable for assignment to this field (or None/Skip to defer)
         """
         raise NotImplementedError()
+
+    def initialize(self, field_info: Any, seed_data: List[Any], rng: Optional[random.Random] = None) -> bool:
+        """
+        Initialize corpus for this mutator with seed data.
+        
+        This method is optional and provides a way for mutators to pre-process
+        seed data and return candidate values for mutation.
+        
+        Args:
+            field_info: Dataclass-like object describing field type, name, constraints
+            seed_data: List of seed values (strings, bytes, or other field-appropriate data)
+            rng: Optional RNG for randomization
+            
+        Returns:
+            List of candidate values ready for field assignment
+        """
+        # Default implementation returns empty list (no corpus support)
+        return []
+    
+    def teardown(self) -> None:
+        """
+        Clean up resources used by this mutator.
+        
+        This method is called when the mutator is no longer needed
+        and should release any resources (temporary files, memory, etc.)
+        """
+        # Default implementation does nothing
+        pass

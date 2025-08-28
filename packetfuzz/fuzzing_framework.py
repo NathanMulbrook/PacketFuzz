@@ -14,11 +14,14 @@ Now uses embedded packet configuration with field_fuzz() and fuzz_config() metho
 # Standard library imports
 from __future__ import annotations
 import copy
+import hashlib
+import importlib.util
 import json
 import logging
 import os
 import random
 import shutil
+import socket
 import subprocess
 import sys
 import threading
@@ -131,6 +134,9 @@ class FuzzHistoryEntry:
     crash_info: Optional[CrashInfo] = None
     iteration: int = -1
     
+    # Fuzzing tracking
+    fuzzed_fields: Optional[List[str]] = None  # List of fields that were actually fuzzed (e.g., ["HTTP Request.Method", "IP.src"])
+    
     # Serialization tracking
     packet_bytes: Optional[bytes] = None  # Serialized packet bytes (for PCAP replay)
     serialization_failed: bool = False  # True if packet couldn't be serialized
@@ -188,7 +194,6 @@ class FuzzHistoryEntry:
         
         packet_bytes = self.get_packet_bytes()
         if packet_bytes:
-            import hashlib
             self.payload_hash = hashlib.sha256(packet_bytes).hexdigest()[:16]  # Short hash
             return self.payload_hash
         
@@ -642,6 +647,8 @@ class FuzzingCampaign:
         - disable_interface_offload: Disable network interface hardware offload features (default False)
         - interface_offload_features: List of specific offload features to disable (None = use defaults)
         - interface_offload_restore: Restore original interface settings after campaign (default True)
+        - excluded_layers: List of layer names to exclude from fuzzing (sets fuzz_weight=0.0)
+        - layers_to_fuzz: List of layer names to fuzz exclusively (excludes all other layers)
     
     Packet-level configuration is now embedded in the packet object itself using:
         packet[Layer].field_fuzz('fieldname').dictionary = ["dict1.txt", "dict2.txt"]
@@ -699,7 +706,8 @@ class FuzzingCampaign:
 
     # Optionally exclude layers from fuzzing by name (sets fuzz_weight=0.0 for those layers)
     excluded_layers: Optional[List[str]] = None
-    fuzz_start_layer: Optional[str] = None  # Layer name to attach PacketFuzzConfig to (default: base layer)
+    # Optionally specify only certain layers to fuzz (sets fuzz_weight=0.0 for all other layers)
+    layers_to_fuzz: Optional[List[str]] = None
 
     # Network interface offload management for malformed packet fuzzing
     disable_interface_offload: bool = False                    # Enable/disable interface offload management
@@ -707,10 +715,10 @@ class FuzzingCampaign:
     interface_offload_restore: bool = True                     # Restore original settings after campaign
 
     # Reporting configuration
-    report_formats: List[str] = ['json']                       # List of report formats to generate (html, json, csv, sarif, markdown, yaml)
+    report_formats: List[str] = ['markdown']                       # List of report formats to generate (html, json, csv, sarif, markdown, yaml)
 
     # --- Socket logic additions ---
-    socket_type: Optional[str] = None    # User can specify: 'l2', 'l3', 'tcp', 'udp', "canbus" or None for auto
+    socket_type: Optional[str] = None    # User can specify: 'raw_ethernet', 'raw_ip', 'raw_tcp', 'raw_udp', 'managed_tcp', 'managed_udp', "canbus" or None for auto
     # Behavior when mutated packet fails to serialize to bytes
     # Options:
     #  - 'fail' : raise RuntimeError (strict, default)
@@ -721,7 +729,6 @@ class FuzzingCampaign:
 
     def __init__(self):
         """Initialize campaign with callback manager and handle excluded_layers."""
-        import copy
         
         # Deep copy all mutable class attributes to instance attributes
         for attr_name in dir(self.__class__):
@@ -756,6 +763,25 @@ class FuzzingCampaign:
             if not hasattr(self, 'advanced_field_mapping_overrides') or self.advanced_field_mapping_overrides is None:
                 self.advanced_field_mapping_overrides = []
             self.advanced_field_mapping_overrides.extend(exclude_entries)
+
+        # Handle layers_to_fuzz by setting weight to 0.0 for all layers except those specified
+        if isinstance(getattr(self, 'layers_to_fuzz', None), list) and self.layers_to_fuzz:
+            # Get all known layer names from default mappings to exclude those not in layers_to_fuzz
+            from .default_mappings import FIELD_ADVANCED_WEIGHTS
+            all_layer_names = set()
+            for mapping in FIELD_ADVANCED_WEIGHTS:
+                if "layer" in mapping:
+                    all_layer_names.add(mapping["layer"])
+            
+            # Create exclusion entries for layers not in layers_to_fuzz
+            layers_to_exclude = all_layer_names - set(self.layers_to_fuzz)
+            if layers_to_exclude:
+                fuzz_only_entries = [
+                    {"layer": lname, "fuzz_weight": 0.0} for lname in layers_to_exclude
+                ]
+                if not hasattr(self, 'advanced_field_mapping_overrides') or self.advanced_field_mapping_overrides is None:
+                    self.advanced_field_mapping_overrides = []
+                self.advanced_field_mapping_overrides.extend(fuzz_only_entries)
 
     def create_fuzzer(self, mutator_preference: Optional[list[str]] = None) -> 'MutatorManager':
         """
@@ -810,11 +836,11 @@ class FuzzingCampaign:
             errors.append("Campaign target is None")
         # Validate socket_type if specified
         if self.socket_type is not None:
-            valid_types = ['l2', 'l3', 'tcp', 'udp', 'canbus']
+            valid_types = ['raw_ethernet', 'raw_ip', 'raw_tcp', 'raw_udp', 'managed_tcp', 'managed_udp', 'canbus']
             if self.socket_type not in valid_types:
                 errors.append(f"Invalid socket_type {self.socket_type}, must be one of {valid_types}")
-            if packet and self.socket_type == "l2" and not packet.haslayer(Ether):
-                errors.append("Layer 2 (socket_type='l2') campaign requires Ethernet header")
+            if packet and self.socket_type == "raw_ethernet" and not packet.haslayer(Ether):
+                errors.append("Raw Ethernet (socket_type='raw_ethernet') campaign requires Ethernet header")
             if packet and self.socket_type in ["l3", "tcp", "udp"] and not packet.haslayer(IP):
                 errors.append(f"socket_type='{self.socket_type}' campaign requires IP header")
         
@@ -912,6 +938,48 @@ class FuzzingCampaign:
             return packet[UDP].dport
         
         return None
+
+    def _populate_connection_fields(self, packet: Packet) -> None:
+        """
+        Populate connection fields to prevent TCP retransmission flags in PCAP output.
+        
+        Uses Scapy's native RandInt/RandShort classes for maximum built-in integration.
+        This is the purest Scapy approach - these are the same classes that fuzz() uses
+        internally, providing 100% native Scapy functionality with surgical precision.
+        
+        Args:
+            packet: Scapy packet to populate with connection-specific fields
+        """
+        try:
+            # Import Scapy's native random classes (used by fuzz() internally)
+            from scapy.volatile import RandInt, RandShort
+            
+            # Generate unique TCP connection parameters using native Scapy classes
+            if packet.haslayer(TCP):
+                # Use Scapy's RandInt for TCP sequence numbers (native 32-bit random)
+                packet[TCP].seq = RandInt()
+                
+                # Randomize source ports only if they're default values
+                if packet[TCP].sport == 80:  # Only modify default port
+                    packet[TCP].sport = RandShort()
+                    # Ensure non-privileged port range (standard practice)
+                    while packet[TCP].sport._fix() < 1024:
+                        packet[TCP].sport = RandShort()
+                
+                # Clear checksums for Scapy recalculation (standard Scapy idiom)
+                del packet[TCP].chksum
+            
+            # Generate unique IP identification values using native Scapy class
+            if packet.haslayer(IP):
+                # Use Scapy's RandShort for IP ID (native 16-bit random)
+                packet[IP].id = RandShort()
+                
+                # Clear IP checksum for recalculation (standard Scapy idiom)
+                del packet[IP].chksum
+                
+        except Exception as e:
+            # Log but don't fail - packet will still be processed
+            logger.debug(f"[TCP_FIX] Could not populate connection fields: {e}")
 
     def execute(self) -> bool:
         """
@@ -1170,13 +1238,13 @@ class FuzzingCampaign:
                 # Auto-detect socket type from packet if not specified
                 if not self.socket_type:
                     if packet and packet.haslayer(TCP):
-                        self.socket_type = 'tcp'
+                        self.socket_type = 'raw_tcp'
                     elif packet and packet.haslayer(UDP):
-                        self.socket_type = 'udp'
+                        self.socket_type = 'raw_udp'
                     elif packet and packet.haslayer(IP):
-                        self.socket_type = 'l3'
+                        self.socket_type = 'raw_ip'
                     elif packet and packet.haslayer(Ether):
-                        self.socket_type = 'l2'
+                        self.socket_type = 'raw_ethernet'
                     elif packet and packet.haslayer(CAN):
                         self.socket_type = 'canbus'
                     else:
@@ -1185,19 +1253,31 @@ class FuzzingCampaign:
                 # Open sockets for sending only if network output is enabled
                 # TODO: make this also accept functions that return a socket object
                 if network_enabled:
-                    import socket
-                    if self.socket_type == 'l2':
+                    if self.socket_type == 'raw_ethernet':
+                        # Raw Ethernet - user provides complete Ethernet frame
                         s = socket.socket(socket.AF_PACKET, socket.SOCK_RAW)
                         s.bind((self.interface, 0))
                     elif self.socket_type == 'canbus':
+                        # CAN bus - keep unchanged
                         s = socket.socket(socket.PF_CAN, socket.SOCK_RAW, socket.CAN_RAW)
                         s.bind((self.interface,))
-                    elif self.socket_type == 'tcp':
-                        s = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_TCP)
-                    elif self.socket_type == 'udp':
-                        s = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_UDP)
-                    elif self.socket_type == 'l3':
+                    elif self.socket_type == 'raw_ip':
+                        # IP-only - user provides IP packet, kernel adds Ethernet
                         s = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_RAW)
+                    elif self.socket_type == 'raw_tcp':
+                        # Transport-only TCP - user provides TCP packet, kernel adds IP + Ethernet
+                        s = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_TCP)
+                    elif self.socket_type == 'raw_udp':
+                        # Transport-only UDP - user provides UDP packet, kernel adds IP + Ethernet
+                        s = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_UDP)
+                    elif self.socket_type == 'managed_udp':
+                        # Real UDP connection - user provides application data, kernel handles UDP + IP + Ethernet
+                        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                        # Note: UDP connections can use connect() for efficiency or sendto() for flexibility
+                    elif self.socket_type == 'managed_tcp':
+                        # Real TCP connection - user provides application data, kernel handles full TCP stack
+                        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                        # Note: TCP connections require connect() call in send logic
                     else:
                         raise ValueError(f"Unknown socket_type: {self.socket_type}")
                     self.context.socket = s  # Store socket in context for custom send callback
@@ -1233,6 +1313,10 @@ class FuzzingCampaign:
                 elif fuzzed_packets[iteration] is not None:
                     # Create history entry for this iteration with enhanced metadata
                     packet = fuzzed_packets[iteration]
+                    
+                    # Get the fuzzed fields for this specific packet iteration
+                    fuzzed_fields = fuzzer.get_fuzzed_fields_for_packet(iteration) if hasattr(fuzzer, 'get_fuzzed_fields_for_packet') else []
+                    
                     history_entry = FuzzHistoryEntry(
                         packet=packet,
                         timestamp_sent=datetime.now(),
@@ -1241,6 +1325,7 @@ class FuzzingCampaign:
                         target_host=getattr(self, 'target', None),  # Add target if available
                         protocol=self._extract_protocol(packet),  # Extract protocol info
                         target_port=self._extract_target_port(packet),  # Extract target port
+                        fuzzed_fields=fuzzed_fields,  # Add fuzzed fields tracking
                     )
                     
                     # Manage history size limit
@@ -1277,8 +1362,14 @@ class FuzzingCampaign:
                         pkt = fuzzed_packets[iteration]
                         if pkt is None:
                             continue
+                        
+                        # Get the fuzzed fields for this specific packet iteration for logging
+                        fuzzed_fields = fuzzer.get_fuzzed_fields_for_packet(iteration) if hasattr(fuzzer, 'get_fuzzed_fields_for_packet') else []
+                        fuzzed_fields_str = ', '.join(fuzzed_fields) if fuzzed_fields else 'None'
+                        
                         if self.verbose:
-                            logger.info(f"[SEND] Sending: {pkt.summary()}")
+                            logger.info(f"[SEND] Iteration {iteration}: {pkt.summary()}")
+                            logger.info(f"[SEND] Fuzzed fields: {fuzzed_fields_str}")
                         # Apply campaign target addressing based on network layer (using local pkt)
                         try:
                             if (self.socket_type in ("l3", "udp", "tcp")) and pkt.haslayer(IP):
@@ -1292,6 +1383,11 @@ class FuzzingCampaign:
                         serialize_error = None
                         try:
                             #TODO make sure there are no fuzz fields left, they should have been replaced with values.
+                            
+                            # Populate connection fields to prevent TCP retransmission flags
+                            # Uses Scapy's native field manipulation before serialization
+                            self._populate_connection_fields(pkt)
+                            
                             pkt_bytes = bytes(pkt)
                             # Store serialized bytes in history entry
                             if self.context and self.context.fuzz_history:
@@ -1476,9 +1572,6 @@ class FuzzingCampaign:
         Merge or override according to mapping_merge_mode.
         """
         from .default_mappings import FIELD_ADVANCED_WEIGHTS
-        import importlib.util
-        import json
-        import os
 
         def load_mapping_file(path):
             """Load mapping configuration from JSON or Python file."""
@@ -1527,31 +1620,3 @@ class FuzzingCampaign:
                 f"target={self.target}, "
                 f"iterations={self.iterations}, "
                 f"layer={self.socket_type})")
-        
-    def __post_init__(self):
-        # After merging/overrides, attach PacketFuzzConfig to the correct layer
-        if self.packet is not None:
-            target_layer = self.packet
-            if self.fuzz_start_layer:
-                # Walk down layers to find the first matching layer name
-                l = self.packet
-                while l is not None:
-                    if hasattr(l, 'name') and l.name == self.fuzz_start_layer:
-                        target_layer = l
-                        break
-                    l = getattr(l, 'payload', None)
-            # Build PacketFuzzConfig from merged campaign config (reuse existing merging logic)
-            from packet_extensions import PacketFuzzConfig
-            merged_cfg = PacketFuzzConfig()
-            # Copy relevant campaign options to merged_cfg (add more as needed)
-            merged_cfg.fuzz_weight = getattr(self, 'fuzz_weight', 1.0)
-            merged_cfg.dictionary = getattr(self, 'dictionary', [])
-            merged_cfg.mutators = getattr(self, 'mutator_preference', ["libfuzzer"])
-            merged_cfg.use_scapy_fuzz = getattr(self, 'use_scapy_fuzz', False)
-            merged_cfg.scapy_fuzz_weight = getattr(self, 'scapy_fuzz_weight', 0.1)
-            merged_cfg.dictionary_only_weight = getattr(self, 'dictionary_only_weight', 0.0)
-            # Attach resolved field mapping (not raw overrides)
-            merged_cfg.field_matching = getattr(self, 'resolved_field_mapping', None)
-            merged_cfg.description = getattr(self, 'description', "")
-            # ...add more fields as needed...
-            target_layer.fuzz_config().__dict__.update(merged_cfg.__dict__)

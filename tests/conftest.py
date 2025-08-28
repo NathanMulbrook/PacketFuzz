@@ -164,7 +164,7 @@ class Layer2TestCampaign(FuzzingCampaign):
     """Layer 2 test campaign"""
     name = "Layer 2 Test Campaign"
     target = "192.168.1.0/24"
-    socket_type = "l2"
+    socket_type = "raw_ethernet"
     interface = "eth0"
     iterations = 3
     rate_limit = 10.0

@@ -38,14 +38,21 @@ Example usage with environment variables:
 import argparse
 import sys
 import importlib.util
+import logging
+import os
 from pathlib import Path
 from typing import List, Type
-import os
 
 # ===========================
 # Third-Party Imports
 # ===========================
 # (None required for CLI)
+
+# ===========================
+# Local Imports
+# ===========================
+from .mutators.libfuzzer_mutator import LibFuzzerMutator
+from .dictionary_manager import DictionaryManager
 
 # ===========================
 # Local Imports
@@ -100,9 +107,6 @@ def check_components():
     - FuzzDB dictionary database
     - Native dictionary support integration
     """
-    from .mutators.libfuzzer_mutator import LibFuzzerMutator
-    from .dictionary_manager import DictionaryManager
-    import os
     
     print("Checking component availability...")
     
@@ -182,6 +186,10 @@ def apply_cli_overrides(campaign, args):
     if args.dictionary_config:
         campaign.dictionary_config_file = str(args.dictionary_config)
     
+    # Max iterations override
+    if args.max_iterations is not None:
+        campaign.iterations = args.max_iterations
+    
     # Interface offload control
     if args.disable_offload:
         campaign.disable_interface_offload = True
@@ -204,7 +212,6 @@ def apply_cli_overrides(campaign, args):
             campaign.report_formats = args.report_formats
     
     # Configure separate console and file logging levels
-    import logging
     
     # Helper to get int from environment variable
     def env_int(var): 
@@ -397,6 +404,12 @@ def main():
         default=env_defaults['dictionary_config'],
         help="Path to user dictionary configuration file (overrides campaign settings)."
     )
+    parser.add_argument(
+        "--max-iterations",
+        type=int,
+        default=None,
+        help="Override the number of fuzzing iterations for the campaign (overrides campaign configuration)."
+    )
     
     # Network interface offload control flags (mutually exclusive group)
     offload_group = parser.add_mutually_exclusive_group()
@@ -435,7 +448,6 @@ def main():
     
     # Require LibFuzzer if specified
     if args.require_libfuzzer:
-        from .mutators.libfuzzer_mutator import LibFuzzerMutator
         mutator = LibFuzzerMutator()
         if not mutator.is_libfuzzer_available():
             logger.error("LibFuzzer extension is required but not available. Compile the extension first.")
