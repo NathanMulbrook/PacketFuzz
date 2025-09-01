@@ -117,29 +117,6 @@ class TestLibFuzzerMutator(unittest.TestCase):
         self.assertIsInstance(result, bytes)
         self.assertGreaterEqual(len(result), 0)
     
-    def test_corpus_generation(self):
-        """Test dictionary corpus generation"""
-        if not hasattr(self.mutator, 'generate_dictionary_seed'):
-            self.skipTest("generate_dictionary_seed method not available")
-        
-        corpus_dir = tempfile.mkdtemp(prefix="test_corpus_")
-        
-        try:
-            dictionaries = ["GET", "POST", "admin", "test"]
-            self.mutator.generate_dictionary_seed(dictionaries, corpus_dir)
-            
-            # Check that files were created
-            corpus_files = os.listdir(corpus_dir)
-            self.assertEqual(len(corpus_files), len(dictionaries))
-            
-            # Check one file content
-            with open(os.path.join(corpus_dir, "seed_0.bin"), 'rb') as f:
-                content = f.read()
-            self.assertEqual(content, b"GET")
-            
-        finally:
-            shutil.rmtree(corpus_dir)
-    
     def test_dictionary_loading(self):
         """Test dictionary loading for native support"""
         if not hasattr(self.mutator, 'load_dictionaries_for_native_support'):

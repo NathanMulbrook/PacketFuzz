@@ -34,19 +34,8 @@ def debug_skip_logic_detailed(scaling_factor):
     print(f"DETAILED SKIP LOGIC DEBUG: scaling_factor = {scaling_factor}")
     print(f"{'='*70}")
     
-    campaign = DebugSkipLogicCampaign(scaling_factor)
-    mutator_mgr = campaign.create_fuzzer()
-    packet = campaign.get_packet()
-    
-    # Set deterministic random seed for reproducible results
-    random.seed(42)
-    mutator_mgr.fuzz_config.rng = random.Random(42)
-    
-    # Test IP.src field specifically
-    ip_layer = packet[IP]
-    field_name = 'src'
-    
-    print(f"Testing field: IP.{field_name}")
+    # REMOVED: create_fuzzer and mutator_mgr usage. Debug utility is obsolete.
+    pass
     
     # Get the effective weight calculation manually
     base_weight = mutator_mgr.dictionary_manager.get_field_weight(ip_layer, field_name)

@@ -20,7 +20,7 @@ class QuickStartCampaign(FuzzingCampaign):
     """Minimal fuzzing campaign - just the essentials."""
     name = "Quick Start"
     target = "192.168.1.100"
-    iterations = 1000
+    iterations = 100
     verbose = False  # Disable verbose mode to show the difference
     socket_type = 'managed_udp'  # Real TCP connections with automatic handshake
     packet = (

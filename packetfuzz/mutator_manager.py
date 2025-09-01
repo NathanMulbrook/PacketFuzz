@@ -219,7 +219,7 @@ class MutatorManager:
     # =========================
     # Public API (Main Entry Points)
     # =========================
-    def fuzz_packet(self, packet: Packet, iterations: int = 1) -> List[Packet]:
+    def fuzz_packet(self) -> MutatorManagerData:
         """
         Fuzz a complete packet
         
@@ -232,20 +232,16 @@ class MutatorManager:
         """
         # Field-level fuzzing: mutate individual fields in the packet
         if self.fuzz_config.mode == FuzzMode.FIELD_LEVEL:
-            return self.fuzz_fields(packet, iterations)
+            return self.fuzz_fields()
         # Packet-level fuzzing: mutate the entire packet as a byte sequence
         elif self.fuzz_config.mode == FuzzMode.PACKET_LEVEL:
-            return self._fuzz_packet_level(packet, iterations)
-        # Split iterations between field-level and packet-level fuzzing
-        else:
-            # Ensure at least 1 iteration for field fuzzing when iterations > 0
-            field_iterations = max(1, iterations // 2) if iterations > 0 else 0
-            field_variants = self.fuzz_fields(packet, field_iterations)
-            packet_variants = self._fuzz_packet_level(packet, iterations - len(field_variants))
-            # Combine results from both fuzzing strategies
-            return field_variants + packet_variants
+            return self._fuzz_packet_level()
+        # Both field and packet-level fuzzing: start with field-level for now
+        elif self.fuzz_config.mode == FuzzMode.BOTH:
+            return self.fuzz_fields()  # TODO: implement proper split between field and packet level
+        return self.data
     
-    def fuzz_fields(self, packet: Packet, iterations: int = 1, field_name: Optional[str] = None, merged_field_mapping: Optional[List[dict]] = None) -> List[Packet]:
+    def fuzz_fields(self) -> MutatorManagerData:
         """
         Fuzz fields in a packet, optionally targeting a specific field.
         Args:
@@ -257,19 +253,19 @@ class MutatorManager:
             List of fuzzed packets.
         """
         # Handle edge case where iterations is 0
-        if iterations <= 0:
+        if (self.data.fuzz_config.iterations is None) or (self.data.fuzz_config.iterations <= 0):
             if VERBOSITY_LEVEL >= 1:
-                logger.info(f"[FUZZ] No iterations requested (iterations={iterations})")
-            return []
+                logger.info(f"[FUZZ] No iterations requested (iterations={self.data.fuzz_config.iterations})")
+            return self.data
             
         # Debug logging only in verbose mode
         if VERBOSITY_LEVEL >= 3:  # Only in debug mode
-            write_debug_packet_log([packet], file_path=get_log_file_path("fuzz_fields_input_report.txt"), title="Fuzz Fields Input")
-        
+            write_debug_packet_log(self.data.original_packets, file_path=get_log_file_path("fuzz_fields_input_report.txt"), title="Fuzz Fields Input")
+
         # Diagnostic logging for fuzzing process
         if VERBOSITY_LEVEL >= 2:
             available_fieldtypes = self.data.get_all_fieldtypes()
-            logger.info(f"[FUZZ] Starting field fuzzing: {iterations} iterations, {len(available_fieldtypes)} field types available")
+            logger.info(f"[FUZZ] Starting field fuzzing: {self.data.fuzz_config.iterations} iterations, {len(available_fieldtypes)} field types available")
             if available_fieldtypes:
                 logger.debug(f"[FUZZ] Available field types: {', '.join(available_fieldtypes)}")
         
@@ -290,13 +286,13 @@ class MutatorManager:
         if VERBOSITY_LEVEL >= 3:  # Only in debug mode
             #TODO update reporting
             try:
-                write_debug_packet_log(self.data.packets, file_path=get_log_file_path("fuzz_fields_output_report.txt"), title="Fuzz Fields Output")
+                write_debug_packet_log(self.data.packet_list, file_path=get_log_file_path("fuzz_fields_output_report.txt"), title="Fuzz Fields Output")
             except Exception as e:
                 logger.debug(f"Failed to write packet report: {e}")
                 # Continue execution even if report writing fails
         
         # Return the fuzzed packets from the data object
-        return self.data.packet_list if self.data.packet_list else []
+        return self.data
 
     # =========================
     # Field/Packet Fuzzing Internals
@@ -311,45 +307,52 @@ class MutatorManager:
         Returns:
             List of indexes (0-based) of layers that were NOT fuzzed (due to skipping or failure)
         """
-        
-                # Selection is now handled at the batch level, so proceed with fuzzing
+        # Selection is now handled at the batch level, so proceed with fuzzing
         logger.debug(f"Fuzzing field {field_type} ")
 
         fields_to_fuzz = self.data.get_all_fields_of_type(field_type)
-        
-        #itterate through all fields of this type
-        # field is a fieldmetata object
+
+        # Iterate through all fields of this type
+        failed_indices: List[int] = []
         for field in fields_to_fuzz:
-            #Within this block we are fuzzing a single field
-            #hadle vallues for the field if present
-            dictionary_entries = DictionaryManager.get_dictionary_entries(field.dictionary_paths)
+            # Within this block we are fuzzing a single field
+            # Handle default values for the field if present
             if field is not None and field.default_values:
                 pick_rng = self.fuzz_config.rng or random
-                # Store original value to compare against changes
-                original_value = self.data.get_field_value(field.field_key, field.packet_index)    
-                
                 try:
                     pick = pick_rng.choice(field.default_values)
                     self.data.validate_and_assign(field, pick)
-                    # we are not going to record this mutation, since its not actually a mutation
+                    # Not recording this as a mutation; it's a deterministic assignment
                 except Exception:
-                    logger.warn(f"Failed to assign picked value {pick} to field {field.field_key} in packet index {field.packet_index}, using explicit value") 
+                    logger.warning(
+                        f"Failed to assign picked value {pick} to field {field.field_key} in packet index {field.packet_index}, using explicit value"
+                    )
             else:
+                dictionary_entries = self.dictionary_manager.get_dictionary_entries(
+                    getattr(field, 'dictionary_paths', []) or []
+                )
                 mutator_selection = self._select_mutator_for_field(field)
-                if mutator_selection and mutator_selection is not "skip":
+                if mutator_selection and mutator_selection != "skip":
                     mutator = self.get_mutator_and_initialize(mutator_selection, field, dictionary_entries)
-                    self._mutate_with_retries(field, mutator, dictionary_entries)
-            
-        
-        return True
+                    failed = self._mutate_with_retries(field, mutator, dictionary_entries)
+                    failed_indices.extend(failed)
+
+        return failed_indices
 
     def _select_mutator_for_field(self, field: FieldMetadata) -> str:
-        mutator_selection = random.choice(FieldMetadata.mutator_preferences)
+        # Skip fields with zero weight immediately
+        if field.fuzz_weight == 0.0:
+            return "skip"
+            
+        # Use the field's mutator preferences, or fall back to default
+        preferences = field.mutator_preferences or ["libfuzzer", "scapy", "dictionary_only"]
+        mutator_selection = random.choice(preferences)
         if random.random() < field.dictionary_only_weight :
             mutator_selection = "dictionary_only"
         if random.random() < field.scapy_fuzz_weight:
             mutator_selection = "scapy"
-        if random.random() < field.fuzz_weight:
+        # Use fuzz_weight as probability to CONTINUE fuzzing (higher weight = more likely to fuzz)
+        if random.random() >= field.fuzz_weight:
             mutator_selection = "skip"
 
         return mutator_selection
@@ -416,9 +419,9 @@ class MutatorManager:
 
             try:
                 #Mutate the field
-                mutated_value = mutator.mutate_field(field_info, dictionary_entries, rng=self.fuzz_config.rng)
+                mutated_value = mutator.mutate_field(field_info, dictionaries=dictionary_entries, rng=self.fuzz_config.rng, layer=None)
                 mutator_type = self.get_mutator_type(mutator)
-                success = self.data.validate_and_assign(field_info, mutated_value, mutator_type)
+                success = self.data.validate_and_assign(field_info, value=mutated_value)
                 last_err = None  # Clear error on success
             except Exception as e:
                 last_err = str(e)
@@ -461,22 +464,12 @@ class MutatorManager:
         return [] if success else [0]
 
 
-    def _fuzz_packet_level(self, packet, iterations):
+    def _fuzz_packet_level(self) -> MutatorManagerData:
         """
-        Fuzz the packet at the byte level using the new consolidated API.
-
-        This method treats the entire packet as a raw byte sequence and applies
-        mutation using the configured mutator and relevant dictionaries. The mutation
-        is protocol-agnostic and can alter any part of the packet, including headers,
-        payloads, and structure. This approach is useful for aggressive fuzzing and
-        discovering vulnerabilities that may not be exposed by field-level mutations.
-        The resulting packets may be malformed or non-compliant with protocol standards.
-        
-        Updated to work with the new MutatorManagerData and consolidated DictionaryManager APIs.
+        Fuzz the packet(s) at the byte level using the new consolidated API and MutatorManagerData.
+        Returns MutatorManagerData with mutated packets in packet_list.
         """
-        results = []
-        
-        # Select mutator using new preference system
+        # Select mutator using preference system
         mutator = None
         prefs = self.fuzz_config.mutator_preference or []
         candidates = []
@@ -497,115 +490,83 @@ class MutatorManager:
         if candidates:
             mutator = random.choice(candidates)
         else:
-            # Simple fallback order - initialize if needed
             if LibFuzzerMutator and self.mutators["libfuzzer"] is None:
                 self.mutators["libfuzzer"] = LibFuzzerMutator()
             if DictionaryOnlyMutator and self.mutators["dictionary_only"] is None:
                 self.mutators["dictionary_only"] = DictionaryOnlyMutator()
             if ScapyMutator and self.mutators["scapy"] is None:
                 self.mutators["scapy"] = ScapyMutator()
-            
             mutator = self.mutators["libfuzzer"] or self.mutators["dictionary_only"] or self.mutators["scapy"]
-        
-        # Record usage of selected mutator
+
         try:
             mutator_name = self.get_mutator_type(mutator)
         except Exception:
             mutator_name = "unknown"
-        
-        # Get packet-level dictionaries using consolidated API
-        try:
-            # First try packet-embedded configuration
-            dictionary_paths = self.dictionary_manager.get_packet_dictionaries(packet)
-            
-            # If no packet-specific dictionaries, gather from all layers
-            if not dictionary_paths:
-                all_paths = set()
-                # Walk through all layers and collect their potential dictionaries
-                current_layer = packet
-                while current_layer and not isinstance(current_layer, NoPayload):
-                    layer_name = current_layer.__class__.__name__
-                    
-                    # For each field in the layer, get potential dictionaries
-                    if hasattr(current_layer, 'fields_desc'):
-                        for field_desc in current_layer.fields_desc:
-                            field_name = field_desc.name
-                            
-                            # Create basic field metadata for dictionary resolution
-                            from .mutator_manager_data import FieldMetadata
-                            try:
-                                field_meta = FieldMetadata(
-                                    field_key=f"{layer_name}[0].{field_name}",
-                                    field_name=field_name,
-                                    layer_name=layer_name,
-                                    layer_index=0,
-                                    packet_index=0,
-                                    field_type=field_desc.__class__.__name__,
-                                    field_kind="unknown",
-                                    current_value=getattr(current_layer, field_name, None),
-                                    max_length=getattr(field_desc, 'sz', None)
-                                )
-                                
-                                # Get dictionaries for this field using consolidated logic
-                                field_dicts = self.data._resolve_field_dictionaries(
-                                    field_meta, current_layer, self.dictionary_manager
-                                )
-                                all_paths.update(field_dicts)
-                            except Exception:
-                                # Skip this field if metadata creation fails
-                                continue
-                    
-                    # Move to next layer
-                    if hasattr(current_layer, 'payload'):
-                        current_layer = current_layer.payload
-                    else:
-                        break
-                
-                dictionary_paths = list(all_paths)
-            
-            # Load dictionary entries
-            dictionaries = self.dictionary_manager.get_dictionary_entries(dictionary_paths)
-            
-        except Exception as e:
-            # Log error but continue with empty dictionaries
-            logging.warning(f"Error loading dictionaries for packet-level fuzzing: {e}")
-            dictionaries = []
-        
-        # Perform mutations
-        for _ in range(iterations):
+
+        # Iterate over all packets in MutatorManagerData
+        iters_cfg = getattr(self.fuzz_config, 'iterations', None)
+        iterations = int(iters_cfg) if isinstance(iters_cfg, int) and iters_cfg > 0 else 1
+        mutated_packets = []
+        for packet in self.data.original_packets:
+            # Get packet-level dictionaries using consolidated API
             try:
-                # Convert packet to bytes
-                packet_bytes = bytes(packet)
-                
-                # Mutate the packet bytes using the selected mutator
-                if mutator:
-                    fuzzed_bytes = mutator.mutate_bytes(packet_bytes, dictionaries)
-                else:
-                    # Fallback: just return original bytes
-                    fuzzed_bytes = packet_bytes
-                
-                # Try to reconstruct the packet
-                try:
-                    # Use the same packet class to parse the fuzzed bytes
-                    fuzzed_packet = packet.__class__(fuzzed_bytes)
-                    results.append(fuzzed_packet)
-                except Exception:
-                    # If reconstruction fails, create a raw packet  
-                    from scapy.packet import Raw
-                    fuzzed_packet = Raw(fuzzed_bytes)
-                    results.append(fuzzed_packet)
-                    
+                dictionary_paths = self.dictionary_manager.get_packet_dictionaries(packet)
+                if not dictionary_paths:
+                    all_paths = set()
+                    current_layer = packet
+                    while current_layer and not isinstance(current_layer, NoPayload):
+                        layer_name = current_layer.__class__.__name__
+                        if hasattr(current_layer, 'fields_desc'):
+                            for field_desc in current_layer.fields_desc:
+                                field_name = field_desc.name
+                                from .mutator_manager_data import FieldMetadata
+                                try:
+                                    field_meta = FieldMetadata(
+                                        field_key=f"{layer_name}[0].{field_name}",
+                                        field_name=field_name,
+                                        layer_name=layer_name,
+                                        layer_index=0,
+                                        packet_index=0,
+                                        field_type=field_desc.__class__.__name__,
+                                        field_kind="unknown",
+                                        current_value=getattr(current_layer, field_name, None),
+                                        max_length=getattr(field_desc, 'sz', None)
+                                    )
+                                    field_dicts = self.data._resolve_field_dictionaries(
+                                        field_meta, current_layer, self.dictionary_manager
+                                    )
+                                    all_paths.update(field_dicts)
+                                except Exception:
+                                    continue
+                        if hasattr(current_layer, 'payload'):
+                            current_layer = current_layer.payload
+                        else:
+                            break
+                    dictionary_paths = list(all_paths)
+                dictionaries = self.dictionary_manager.get_dictionary_entries(dictionary_paths)
             except Exception as e:
-                # Log error and continue with next iteration
-                logging.warning(f"Error during packet-level fuzzing iteration: {e}")
-                continue
-        
-        return results
+                logging.warning(f"Error loading dictionaries for packet-level fuzzing: {e}")
+                dictionaries = []
+
+            # Perform mutations for each iteration
+            from scapy.packet import Raw
+            for _ in range(iterations):
+                try:
+                    packet_bytes = bytes(packet)
+                    if mutator:
+                        fuzzed_bytes = mutator.mutate_bytes(packet_bytes, dictionaries)
+                    else:
+                        fuzzed_bytes = packet_bytes
+                    fuzzed_packet = Raw(fuzzed_bytes)
+                    mutated_packets.append(fuzzed_packet)
+                except Exception as e:
+                    logging.warning(f"Error during packet-level fuzzing iteration: {e}")
+                    continue
+
+        # Update MutatorManagerData with mutated packets
+        self.data.packet_list = mutated_packets
+        return self.data
     
-
-
-
-        ########################TODO everything after this should be in the data class
 
 
 

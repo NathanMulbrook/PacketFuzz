@@ -215,7 +215,7 @@ class LibFuzzerMutator(BaseMutator):
                      rng: Optional[random.Random] = None,
                      layer: Optional[Any] = None) -> Any:
         # If libfuzzer is not available, return current value to allow manager to try other mutators
-
+        current_value = getattr(field_info, 'current_value', None)
 
         kind = getattr(field_info, 'kind', 'unknown')
 
@@ -338,12 +338,15 @@ class LibFuzzerMutator(BaseMutator):
                 success = self.load_dictionaries_for_native_support(dict_strings)
                 if success:
                     self._dictionaries_loaded = True
+                    self.initialized = True
                     logger.debug(f"Initialized LibFuzzer with {len(dictionaries)} dictionary entries")
                 return success
             except Exception as e:
                 logger.warning(f"Failed to initialize LibFuzzer with dictionaries: {e}")
                 return False
         
+        # Even without dictionaries, consider the mutator initialized
+        self.initialized = True
         return True
             
 

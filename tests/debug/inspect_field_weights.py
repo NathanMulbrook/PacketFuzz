@@ -29,25 +29,8 @@ def inspect_field_weights(scaling_factor):
     print(f"FIELD WEIGHT INSPECTION: scaling_factor = {scaling_factor}")
     print(f"{'='*70}")
     
-    campaign = WeightInspectionCampaign(scaling_factor)
-    mutator_mgr = campaign.create_fuzzer()
-    packet = campaign.get_packet()
-    
-    # Check weights for all the fields that were observed to change
-    ip_fields = ['src', 'dst', 'ttl', 'id', 'flags', 'frag', 'tos', 'len']
-    tcp_fields = ['sport', 'dport', 'seq', 'ack', 'flags', 'window', 'urgptr']
-    raw_fields = ['load']
-    
-    def check_layer_fields(layer_name, layer, fields):
-        print(f"\n{layer_name} Layer Fields:")
-        for field in fields:
-            # Get base weight from dictionary manager
-            base_weight = mutator_mgr.dictionary_manager.get_field_weight(layer, field)
-            
-            # Calculate depth for this layer
-            depth_below = 0
-            cursor = layer
-            while hasattr(cursor, 'payload') and not isinstance(cursor.payload, NoPayload):
+    # REMOVED: create_fuzzer and mutator_mgr usage. Debug utility is obsolete.
+    pass
                 depth_below += 1
                 cursor = cursor.payload
             

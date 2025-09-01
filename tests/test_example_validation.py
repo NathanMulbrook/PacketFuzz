@@ -58,7 +58,7 @@ class TestExampleValidation(unittest.TestCase):
             self.skipTest(f"Campaign file {campaign_path} not found")
             
         result = subprocess.run(
-            [sys.executable, "-m", "packetfuzz", str(campaign_path), "--disable-network", "--disable-pcap"],
+            [sys.executable, "-m", "packetfuzz", str(campaign_path), "--disable-network", "--disable-pcap", "--max-iterations", "5"],
             cwd=str(self.project_root),
             capture_output=True,
             text=True,

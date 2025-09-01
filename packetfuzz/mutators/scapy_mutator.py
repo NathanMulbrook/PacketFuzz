@@ -20,13 +20,12 @@ class ScapyMutator(BaseMutator):
         # Not meaningful for raw bytes, so just return the input
         return data
 
-    def mutate_field(self, field_info: Any, current_value: Any, dictionaries: Optional[List[bytes]] = None, rng: Optional[random.Random] = None, layer: Optional[Any] = None) -> Any:
+    def mutate_field(self, field_info: Any, dictionaries: Optional[List[bytes]] = None, rng: Optional[random.Random] = None, layer: Optional[Any] = None) -> Any:
         """
         Mutate field using Scapy's fuzz() function based on field type.
         
         Args:
             field_info: Field information with 'kind' attribute
-            current_value: Current field value to mutate
             dictionaries: Dictionary entries (unused by this mutator)
             rng: Random number generator (unused by this mutator)
             layer: Packet layer (unused by this mutator)
@@ -35,15 +34,21 @@ class ScapyMutator(BaseMutator):
             Fuzzed field value or original value if fuzzing fails
         """
         kind = getattr(field_info, 'kind', 'unknown')
+        current_value = getattr(field_info, 'current_value', None)
+        # Scapy's fuzz() operates on Packet; for primitive field values, we can do simple tweaks
         try:
             if kind in ('options', 'list'):
-                base = current_value if current_value is not None else []
-                return fuzz(base)
+                # Return current_value as-is; manager may handle options with layer context
+                return current_value
             if kind in ('string', 'raw'):
-                base = current_value if current_value is not None else ""
-                return fuzz(base)
+                # Append/alter a character
+                s = '' if current_value is None else str(current_value)
+                return (s + 'X') if len(s) < 1024 else s
             # numeric, flags, enum (or unknown)
-            base = current_value if current_value is not None else 0
-            return fuzz(base)
+            v = 0 if current_value is None else current_value
+            try:
+                return int(v) ^ 0x1
+            except Exception:
+                return v
         except Exception:
             return current_value

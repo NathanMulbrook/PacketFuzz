@@ -256,7 +256,13 @@ class TestEndToEndWorkflows(unittest.TestCase):
         
         # Test fuzzer creation with dictionary config
         try:
-            fuzzer = campaign.create_fuzzer()
+            from packetfuzz.mutator_manager import MutatorManager, FuzzConfig
+            config = FuzzConfig(
+                packets=campaign.packet,
+                iterations=getattr(campaign, 'iterations', 1000),
+                global_dict_config_path=getattr(campaign, 'global_dict_config_path', None)
+            )
+            fuzzer = MutatorManager(config)
             assert fuzzer is not None
             
             # Verify dictionary config is loaded
@@ -281,7 +287,9 @@ class TestEndToEndWorkflows(unittest.TestCase):
         
         # Should be able to create fuzzer with PCAP output
         try:
-            fuzzer = campaign.create_fuzzer()
+            from packetfuzz.mutator_manager import MutatorManager, FuzzConfig
+            config = FuzzConfig(packets=campaign.packet, iterations=getattr(campaign, 'iterations', 1000))
+            fuzzer = MutatorManager(config)
             assert fuzzer is not None
         except (ImportError, NotImplementedError):
             # Acceptable if libfuzzer not available
@@ -348,13 +356,15 @@ class TestCrossComponentIntegration(unittest.TestCase):
         campaign = BasicTestCampaign()
         
         try:
-            fuzzer = campaign.create_fuzzer()
+            from packetfuzz.mutator_manager import MutatorManager, FuzzConfig
+            config = FuzzConfig(packets=campaign.packet, iterations=getattr(campaign, 'iterations', 1000))
+            fuzzer = MutatorManager(config)
             assert fuzzer is not None
             
             # Test if fuzzer can access campaign configuration
-            if hasattr(fuzzer, 'config'):
-                config = fuzzer.config
-                assert config is not None
+            if hasattr(fuzzer, 'fuzz_config'):
+                fuzz_config = fuzzer.fuzz_config
+                assert fuzz_config is not None
         except (ImportError, NotImplementedError):
             # Acceptable if libfuzzer not available
             pass
@@ -389,7 +399,7 @@ class TestDataFlowIntegration(unittest.TestCase):
         
         # Fuzzer should be able to use campaign data
         try:
-            fuzzer = campaign.create_fuzzer()
+            from packetfuzz.mutator_manager import MutatorManager, FuzzConfig; config = FuzzConfig(packets=campaign.packet, iterations=getattr(campaign, 'iterations', 1000)); fuzzer = MutatorManager(config)
             if fuzzer is not None:
                 # Fuzzer should have access to config data
                 assert hasattr(fuzzer, 'config') or hasattr(fuzzer, 'dictionary_manager')
@@ -424,7 +434,7 @@ class TestDataFlowIntegration(unittest.TestCase):
         
         # Configuration should flow to fuzzer
         try:
-            fuzzer = campaign.create_fuzzer()
+            from packetfuzz.mutator_manager import MutatorManager, FuzzConfig; config = FuzzConfig(packets=campaign.packet, iterations=getattr(campaign, 'iterations', 1000)); fuzzer = MutatorManager(config)
             if fuzzer is not None and hasattr(fuzzer, 'config'):
                 config = fuzzer.config
                 # Config should reflect campaign settings
@@ -442,7 +452,7 @@ class TestErrorHandlingIntegration(unittest.TestCase):
         
         # Should handle missing libfuzzer gracefully
         try:
-            fuzzer = campaign.create_fuzzer()
+            from packetfuzz.mutator_manager import MutatorManager, FuzzConfig; config = FuzzConfig(packets=campaign.packet, iterations=getattr(campaign, 'iterations', 1000)); fuzzer = MutatorManager(config)
             # If successful, fuzzer should be valid
             if fuzzer is not None:
                 assert isinstance(fuzzer, MutatorManager)
@@ -485,7 +495,8 @@ class TestErrorHandlingIntegration(unittest.TestCase):
         
         # Should handle missing file gracefully
         try:
-            fuzzer = campaign.create_fuzzer()
+            packet = campaign.packet if campaign.packet else campaign.get_packet()
+            from packetfuzz.mutator_manager import MutatorManager, FuzzConfig; config = FuzzConfig(packets=packet, iterations=getattr(campaign, 'iterations', 1000)); fuzzer = MutatorManager(config)
             # If creation succeeds, should work without the missing file
             assert fuzzer is None or isinstance(fuzzer, MutatorManager)
         except (FileNotFoundError, ImportError, NotImplementedError):
@@ -575,7 +586,7 @@ class TestRealWorldScenarios(unittest.TestCase):
         
         # Should be able to create fuzzer for HTTP fuzzing
         try:
-            fuzzer = campaign.create_fuzzer()
+            from packetfuzz.mutator_manager import MutatorManager, FuzzConfig; config = FuzzConfig(packets=campaign.packet, iterations=getattr(campaign, 'iterations', 1000)); fuzzer = MutatorManager(config)
             assert fuzzer is None or isinstance(fuzzer, MutatorManager)
         except (ImportError, NotImplementedError):
             pass
@@ -597,7 +608,7 @@ class TestRealWorldScenarios(unittest.TestCase):
         
         # Should be able to create fuzzer for DNS fuzzing
         try:
-            fuzzer = campaign.create_fuzzer()
+            from packetfuzz.mutator_manager import MutatorManager, FuzzConfig; config = FuzzConfig(packets=campaign.packet, iterations=getattr(campaign, 'iterations', 1000)); fuzzer = MutatorManager(config)
             assert fuzzer is None or isinstance(fuzzer, MutatorManager)
         except (ImportError, NotImplementedError):
             pass
@@ -626,7 +637,7 @@ class TestRealWorldScenarios(unittest.TestCase):
         
         # Should be configured for PCAP output
         try:
-            fuzzer = campaign.create_fuzzer()
+            from packetfuzz.mutator_manager import MutatorManager, FuzzConfig; config = FuzzConfig(packets=campaign.packet, iterations=getattr(campaign, 'iterations', 1000)); fuzzer = MutatorManager(config)
             if fuzzer is not None:
                 # Fuzzer should be configured for PCAP output
                 assert hasattr(fuzzer, 'config') or True  # Basic check

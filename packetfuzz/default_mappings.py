@@ -971,8 +971,7 @@ FIELD_NAME_WEIGHTS = {
     "TCP.dport": 0.3,      # Destination port critical for delivery - reduced from 0.9
     "UDP.dport": 0.3,      # UDP destination port - reduced from 0.9  
     "IP.dst": 0.25,        # Destination IP critical for routing - reduced from 0.8
-    "TCP.flags": 0.15,     # TCP flags control connection state - reduced from 0.75
-    "Ether.type": 0.1,     # Ethernet type determines packet parsing - reduced from 0.4
+    "TCP.flags": 0.0,      # TCP flags control connection state - EXCLUDE from fuzzing
     "IP.version": 0.05,    # IP version critical for basic parsing - reduced from 0.2
     "IPv6.nh": 0.15,       # IPv6 next header critical - will be added below
     
@@ -991,7 +990,6 @@ FIELD_NAME_WEIGHTS = {
     # Protocol overhead fields - low to moderate weights
     "IP.tos": 0.2,         # Type of service - reduced from 0.4
     "IP.frag": 0.2,        # Fragmentation flags - reduced from 0.45
-    "IP.ihl": 0.05,         # IP header length critical - reduced from 0.25
     "IP.id": 0.1,           # IP identification field - critical for fragmentation
     "IP.ttl": 0.15,         # IP time-to-live - critical for routing
     "IP.options": 0.05,     # IP options - rarely used, but can break parsing
@@ -1051,17 +1049,21 @@ FIELD_NAME_WEIGHTS = {
     "IPv6.nh": 0.15,       # Next header critical for parsing - reduced from 0.6
     "IPv6.hlim": 0.3,      # Hop limit similar to TTL - reduced from 0.5
     
-    # Additional critical protocol fields that should have low weights
-    "IP.len": 0.1,         # IP total length field critical for parsing
+    # Additional critical protocol fields that should be EXCLUDED from fuzzing (0.0 weight)
+    "IP.len": 0.0,         # IP total length field - auto-calculated by Scapy, fuzzing breaks validity
+    "IP.chksum": 0.0,      # IP checksum - auto-calculated by Scapy, fuzzing breaks validity  
+    "TCP.chksum": 0.0,     # TCP checksum - auto-calculated by Scapy, fuzzing breaks validity
+    "UDP.chksum": 0.0,     # UDP checksum - auto-calculated by Scapy, fuzzing breaks validity
+    "ICMP.chksum": 0.0,    # ICMP checksum - auto-calculated by Scapy, fuzzing breaks validity
+    "TCP.dataofs": 0.0,    # TCP data offset - calculated from TCP options, fuzzing breaks parsing
+    "IP.ihl": 0.0,         # IP header length - calculated from IP options, fuzzing breaks parsing
+    "IP.flags": 0.0,       # IP fragmentation flags - critical for packet reconstruction
+    
+    # Fields with very low weights (critical but sometimes fuzzable)
     "IP.proto": 0.15,      # IP protocol field critical for next layer parsing
-    "IP.chksum": 0.05,     # IP checksum critical for packet validation
     "TCP.seq": 0.2,        # TCP sequence numbers affect connection state
     "TCP.ack": 0.2,        # TCP acknowledgment numbers affect connection state  
-    "TCP.dataofs": 0.1,    # TCP data offset critical for parsing
-    "TCP.chksum": 0.05,    # TCP checksum critical for packet validation
     "UDP.len": 0.1,        # UDP length field critical for parsing
-    "UDP.chksum": 0.05,    # UDP checksum critical for packet validation
-    "ICMP.chksum": 0.05,   # ICMP checksum critical for packet validation
     "DNS.ancount": 0.1,    # DNS answer count affects parsing
     "DNS.nscount": 0.1,    # DNS authority count affects parsing  
     "DNS.arcount": 0.1,    # DNS additional count affects parsing

@@ -33,21 +33,8 @@ def debug_scaling(scaling_factor):
     print(f"DEBUG: Layer weight scaling = {scaling_factor}")
     print(f"{'='*60}")
     
-    campaign = DebugScalingCampaign(scaling_factor)
-    mutator_mgr = campaign.create_fuzzer()
-    packet = campaign.get_packet()
-    
-    # Check the actual weights and skip decisions
-    ip_layer = packet[IP]
-    tcp_layer = packet[TCP]
-    raw_layer = packet[Raw]
-    
-    print("Testing skip decisions for each layer (10 trials each):")
-    
-    for layer_name, layer in [("IP", ip_layer), ("TCP", tcp_layer), ("Raw", raw_layer)]:
-        field_name = {"IP": "ttl", "TCP": "dport", "Raw": "load"}[layer_name]
-        
-        skips = 0
+    # REMOVED: create_fuzzer and mutator_mgr usage. Debug utility is obsolete.
+    pass
         for i in range(10):
             should_skip = mutator_mgr._should_skip_field(layer, None, field_name)
             if should_skip:

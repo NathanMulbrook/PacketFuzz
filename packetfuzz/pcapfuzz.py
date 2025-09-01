@@ -219,36 +219,23 @@ class PcapFuzzCampaign(FuzzingCampaign):
                 return False
                 
             # Create the fuzzer instance with all processed packets
-            fuzzer = self.create_fuzzer(packets=all_processed_packets, iterations=self.iterations)
-            # Determine sending strategy:
-            # - If iterations is 0 or None: send each processed packet exactly once
-            # - If iterations > 0: send that many total packets, cycling through processed packets if needed
-            any_success = False
-            n = len(all_processed_packets)
+            config = FuzzConfig(
+                mode = FuzzMode.FIELD_LEVEL,  # Default for PCAP fuzzing
+                use_dictionaries = True,
+                fuzz_weight = 1.0,
+                global_dict_config_path = self.global_dict_config_path,
+                mutator_preference = self.mutator_preference or ["libfuzzer"],
+                enable_layer_weight_scaling = self.enable_layer_weight_scaling,
+                layer_weight_scaling = self.layer_weight_scaling,
+                packets = all_processed_packets,
+                iterations = self.iterations
+            )
             
-            if not self.iterations or self.iterations == 0:
-                # Send each packet from PCAP exactly once
-                packets_to_send = all_processed_packets
-                iterations_per_packet = 1
-            else:
-                # Send total of self.iterations packets, cycling through PCAP if needed
-                packets_to_send = [all_processed_packets[i % n] for i in range(self.iterations)]
-                iterations_per_packet = 1
+            fuzzer = MutatorManager(config)
+            self.context.mutator_data = fuzzer.fuzz_packet()
             
-            # Temporarily override iterations for the base fuzzing loop
-            original_iterations = self.iterations
-            self.iterations = iterations_per_packet
-            
-            for pkt in packets_to_send:
-                if self.context and not self.context.is_running:
-                    break  # Stop if campaign is halted externally
-                # Use the base class's fuzzing loop for sending, mutation, and callbacks
-                success = super()._run_fuzzing_loop(fuzzer, pkt)
-                any_success = any_success or success
-            
-            # Restore original iterations value
-            self.iterations = original_iterations
-            return any_success
+            # Use the base class's fuzzing loop for execution with all packets
+            return super()._run_fuzzing_loop()
         except Exception as e:
             logger.error(f"PCAP campaign execution failed: {e}")
             return False

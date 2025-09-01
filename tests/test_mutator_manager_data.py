@@ -287,10 +287,18 @@ class TestPacketPreprocessing(unittest.TestCase):
         mock_dict_manager.get_field_dictionaries.return_value = ["test.txt"]
         mock_dict_manager.get_field_values.return_value = [80, 443]
         
+        # Configure methods that need to return iterables
+        mock_dict_manager.expand_macro.return_value = []
+        mock_dict_manager._resolve_path.return_value = "/mock/path"
+        mock_dict_manager._resolve_advanced_weight.return_value = None
+        mock_dict_manager._resolve_advanced_dictionary.return_value = []
+        mock_dict_manager._resolve_advanced_values.return_value = []
+        
         data_tracker.preprocess_packets(mock_dict_manager)
         
         self.assertTrue(data_tracker.is_preprocessed)
-        self.assertEqual(len(data_tracker.packet_data), 1)
+        # Preprocessing creates copies based on iterations during initialization
+        self.assertEqual(len(data_tracker.packet_data), 100)  # 100 packet copies for iterations
         self.assertGreater(data_tracker.total_fields, 0)
         self.assertGreater(data_tracker.fuzzable_field_count, 0)
     
@@ -309,10 +317,18 @@ class TestPacketPreprocessing(unittest.TestCase):
         mock_dict_manager.get_field_dictionaries.return_value = []
         mock_dict_manager.get_field_values.return_value = []
         
+        # Configure methods that need to return iterables
+        mock_dict_manager.expand_macro.return_value = []
+        mock_dict_manager._resolve_path.return_value = "/mock/path"
+        mock_dict_manager._resolve_advanced_weight.return_value = None
+        mock_dict_manager._resolve_advanced_dictionary.return_value = []
+        mock_dict_manager._resolve_advanced_values.return_value = []
+        
         data_tracker.preprocess_packets(mock_dict_manager)
         
         self.assertTrue(data_tracker.is_preprocessed)
-        self.assertEqual(len(data_tracker.packet_data), 2)
+        # Preprocessing creates copies based on iterations during initialization  
+        self.assertEqual(len(data_tracker.packet_data), 200)  # 200 packet copies (2 packets × 100 iterations cycling)
         self.assertGreater(data_tracker.total_fields, 0)
     
     def test_layer_collision_handling(self):
@@ -325,7 +341,7 @@ class TestPacketPreprocessing(unittest.TestCase):
         data_tracker.preprocess_packets()
         
         self.assertTrue(data_tracker.is_preprocessed)
-        self.assertEqual(data_tracker.layer_collision_count, 1)  # One packet with collisions
+        self.assertEqual(data_tracker.layer_collision_count, 1000)  # 1000 packet copies with collisions (default iterations)
         
         # Check collision summary
         collision_summary = data_tracker.get_collision_summary()
@@ -435,7 +451,7 @@ class TestQueryInterface(unittest.TestCase):
         self.assertIsNone(invalid_field)
         
         # Test with invalid packet index
-        invalid_field = self.data_tracker.get_field_by_key(field_key, 999)
+        invalid_field = self.data_tracker.get_field_by_key(field_key, 9999)  # Use index beyond the iteration count
         self.assertIsNone(invalid_field)
     
     def test_processing_summary(self):
@@ -617,8 +633,8 @@ class TestIntegrationScenarios(unittest.TestCase):
         self.assertEqual(data_tracker.total_packets, 100)
         self.assertGreater(data_tracker.total_fields, 0)
         
-        # Verify all packets were processed
-        self.assertEqual(len(data_tracker.packet_data), 100)
+        # Verify all packets were processed with iteration multiplication
+        self.assertEqual(len(data_tracker.packet_data), 10000)  # 100 packets × 100 iterations cycling (up to 10000 total)
         
         # Verify global index was built
         self.assertGreater(len(data_tracker.global_field_index), 0)

@@ -245,6 +245,7 @@ class CampaignContext:
     fuzz_history: List[FuzzHistoryEntry] = field(default_factory=list)
     max_history_size: int = 1000  # Limit history size to prevent memory issues
     socket: Optional[Any] = None  # Placeholder for socket object if needed
+    mutator_data: Optional[MutatorManagerData] = None  # Placeholder for mutator data if needed
 
 
 class CallbackManager:
@@ -695,7 +696,7 @@ class FuzzingCampaign:
     mapping_merge_mode: str = "merge"  # 'merge' or 'override'
     
     # Mutator configuration
-    mutator_preference: Optional[List[str]] = None  # Campaign mutator preference (defaults to ["libfuzzer"])
+    mutator_preference: Optional[List[str]] = ["libfuzzer"]  # Campaign mutator preference (defaults to ["libfuzzer"])
     
     # Layer-weight scaling controls (campaign-level overrides)
     # Lower values reduce fuzzing of outer layers more aggressively:
@@ -787,62 +788,7 @@ class FuzzingCampaign:
                     self.advanced_field_mapping_overrides = []
                 self.advanced_field_mapping_overrides.extend(fuzz_only_entries)
 
-    def create_fuzzer(self, mutator_preference: Optional[list[str]] = None, 
-                     packets: Optional[Union[Packet, List[Packet]]] = None,
-                     iterations: Optional[int] = None) -> 'MutatorManager':
-        """
-        Create a packetfuzz instance configured for this campaign.
-        mutator_preference: Override the campaign's default mutator preference.
-                           If None, uses self.mutator_preference.
-        packets: Optional packet(s) to include in configuration.
-                If None, will use campaign packet.
-        iterations: Optional iteration count to include in configuration.
-                   If None, will use campaign iterations.
-        """
-        # Use parameter if provided, otherwise use campaign's default
-        effective_preference = mutator_preference or self.mutator_preference or ["libfuzzer"]
-        
-        # Determine packet(s) to use
-        effective_packets = packets or self.get_packet_with_embedded_config()
-        
-        # Determine iterations to use
-        effective_iterations = iterations or getattr(self, 'iterations', None)
-        
-        dict_config_path = self.user_mapping_file or self.global_dict_config_path
-        
-        # Determine fuzz mode from campaign attributes
-        fuzz_mode = FuzzMode.BOTH  # Default
-        if hasattr(self, 'fuzz_mode'):
-            mode_str = getattr(self, 'fuzz_mode', 'both').lower()
-            if mode_str == 'field':
-                fuzz_mode = FuzzMode.FIELD_LEVEL
-            elif mode_str == 'binary' or mode_str == 'packet':
-                fuzz_mode = FuzzMode.PACKET_LEVEL
-            elif mode_str == 'both':
-                fuzz_mode = FuzzMode.BOTH
-            elif mode_str == 'none':
-                fuzz_mode = FuzzMode.BOTH  # Keep BOTH but will skip mutations
-        
-        config = FuzzConfig(
-            mode = fuzz_mode,
-            use_dictionaries = True,
-            fuzz_weight = 1.0,
-            global_dict_config_path = dict_config_path,
-            mutator_preference = effective_preference,
-            enable_layer_weight_scaling = getattr(self, 'enable_layer_weight_scaling', True),
-            layer_weight_scaling = getattr(self, 'layer_weight_scaling', None),
-            # Include packet and iteration information in config
-            packets = effective_packets,
-            iterations = effective_iterations
-        )
-        fuzzer = MutatorManager(config)
-        # Do not copy/store mutator data separately; keep a handle to the fuzzer
-        # so we can retrieve data on demand to avoid staleness and duplication.
-        try:
-            self.last_fuzzer = fuzzer
-        except Exception:
-            pass
-        return fuzzer
+
 
     def get_mutator_data(self) -> Optional['MutatorManagerData']:
         """
@@ -856,34 +802,75 @@ class FuzzingCampaign:
         except Exception:
             return None
 
-    def get_packet_with_embedded_config(self) -> Optional[Packet]:
+    def create_fuzzer(self, packets: Optional[Union[Packet, List[Packet]]] = None, 
+                     iterations: Optional[int] = None) -> 'MutatorManager':
         """
-        Get the campaign packet with embedded configuration applied.
-        This method can be overridden by subclasses to programmatically
-        add embedded configuration to packets.
-        In the new FuzzField-direct approach, we pass FuzzField objects 
-        directly to the mutator without extraction.
+        Create a MutatorManager instance for this campaign.
         
-        Provides backward compatibility with get_packet() method.
+        Args:
+            packets: Packet(s) to fuzz (defaults to self.packet)
+            iterations: Number of iterations (defaults to self.iterations)
+            
+        Returns:
+            MutatorManager instance ready for fuzzing
         """
-        # First try the packet attribute
-        if self.packet is not None:
-            return self.packet
+        from .mutator_manager import MutatorManager, FuzzConfig, FuzzMode
         
-        # Backward compatibility: try get_packet() method
-        if hasattr(self, 'get_packet') and callable(getattr(self, 'get_packet')):
-            return getattr(self, 'get_packet')()  # type: ignore
+        # Use provided packets or fall back to campaign packet
+        if packets is None:
+            packets = self.packet
         
-        return None
+        # Use provided iterations or fall back to campaign iterations
+        if iterations is None:
+            iterations = self.iterations
+            
+        # Handle mode selection
+        fuzz_mode = FuzzMode.BOTH  # Default mode
+        if hasattr(self, 'mode') and getattr(self, 'mode', None):
+            mode_str = str(getattr(self, 'mode')).lower()
+            if mode_str in ['field', 'field_level']:
+                fuzz_mode = FuzzMode.FIELD_LEVEL
+            elif mode_str in ['packet', 'packet_level']:
+                fuzz_mode = FuzzMode.PACKET_LEVEL
+            elif mode_str in ['both', 'combined']:
+                fuzz_mode = FuzzMode.BOTH
+            elif mode_str == 'none':
+                fuzz_mode = FuzzMode.BOTH  # Keep BOTH but will skip mutations
+        
+        config = FuzzConfig(
+            mode = fuzz_mode,
+            use_dictionaries = True,
+            fuzz_weight = 1.0,
+            global_dict_config_path = self.global_dict_config_path,
+            mutator_preference = self.mutator_preference or ["libfuzzer"],
+            enable_layer_weight_scaling = self.enable_layer_weight_scaling,
+            layer_weight_scaling = self.layer_weight_scaling,
+            # Include packet and iteration information in config
+            packets = packets,
+            iterations = iterations
+        )
+        
+        fuzzer = MutatorManager(config)
+        return fuzzer
+
 
     def validate_campaign(self) -> bool:
         """Validate campaign configuration"""
         errors = []
-        
-        # Check if we have a packet from either attribute or method
-        packet = self.get_packet_with_embedded_config()
+        packet = getattr(self, 'packet', None)
+        # If no packet assigned, try to obtain one via get_packet()
         if packet is None:
-            errors.append("Campaign packet is None (set packet attribute or implement get_packet method)")
+            get_fn = getattr(self, 'get_packet', None)
+            if callable(get_fn):
+                try:
+                    packet = get_fn()
+                    if packet is not None:
+                        self.packet = packet
+                except Exception as e:
+                    errors.append(f"Failed to retrieve packet via get_packet(): {e}")
+        # Check if we have a packet
+        if packet is None:
+            errors.append("Campaign packet is None (set the 'packet' attribute)")
         if self.target is None:
             errors.append("Campaign target is None")
         # Validate socket_type if specified
@@ -891,17 +878,27 @@ class FuzzingCampaign:
             valid_types = ['raw_ethernet', 'raw_ip', 'raw_tcp', 'raw_udp', 'managed_tcp', 'managed_udp', 'canbus']
             if self.socket_type not in valid_types:
                 errors.append(f"Invalid socket_type {self.socket_type}, must be one of {valid_types}")
-            if packet and self.socket_type == "raw_ethernet" and not packet.haslayer(Ether):
-                errors.append("Raw Ethernet (socket_type='raw_ethernet') campaign requires Ethernet header")
-            if packet and self.socket_type in ["l3", "tcp", "udp"] and not packet.haslayer(IP):
-                errors.append(f"socket_type='{self.socket_type}' campaign requires IP header")
-        
+            if packet and self.socket_type == "raw_ethernet":
+                try:
+                    from scapy.layers.l2 import Ether
+                    if not packet.haslayer(Ether):
+                        errors.append("Raw Ethernet (socket_type='raw_ethernet') campaign requires Ethernet header")
+                except ImportError:
+                    errors.append("Scapy Ether layer not available for validation")
+            if packet and self.socket_type in ["l3", "tcp", "udp"]:
+                try:
+                    from scapy.layers.inet import IP
+                    if not packet.haslayer(IP):
+                        errors.append(f"socket_type='{self.socket_type}' campaign requires IP header")
+                except ImportError:
+                    errors.append("Scapy IP layer not available for validation")
         # Log validation errors if verbose mode is enabled
         if errors and self.verbose:
             for error in errors:
                 logger.error(error)
-        
         return len(errors) == 0
+
+
 
     def get_pcap_path(self) -> Optional[Path]:
         """
@@ -993,6 +990,7 @@ class FuzzingCampaign:
 
     def _populate_connection_fields(self, packet: Packet) -> None:
         """
+        #TODO review if this is needed or wanted
         Populate connection fields to prevent TCP retransmission flags in PCAP output.
         
         Uses Scapy's native RandInt/RandShort classes for maximum built-in integration.
@@ -1061,19 +1059,38 @@ class FuzzingCampaign:
                 raise PermissionError("Root privileges required for network operations")
 
             # Create fuzzer
-            fuzzer = self.create_fuzzer()
-            # Expose fuzzer for reporting (mutator usage counts)
+            # Determine fuzz mode from campaign attributes
+            fuzz_mode = FuzzMode.BOTH  # Default
+            if hasattr(self, 'fuzz_mode'):
+                mode_str = getattr(self, 'fuzz_mode', 'both').lower()
+                if mode_str == 'field':
+                    fuzz_mode = FuzzMode.FIELD_LEVEL
+                elif mode_str == 'binary' or mode_str == 'packet':
+                    fuzz_mode = FuzzMode.PACKET_LEVEL
+                elif mode_str == 'both':
+                    fuzz_mode = FuzzMode.BOTH
+                elif mode_str == 'none':
+                    fuzz_mode = FuzzMode.BOTH  # Keep BOTH but will skip mutations
+            
+            config = FuzzConfig(
+                mode = fuzz_mode,
+                use_dictionaries = True,
+                fuzz_weight = 1.0,
+                global_dict_config_path = self.global_dict_config_path,
+                mutator_preference = self.mutator_preference or ["libfuzzer"],
+                enable_layer_weight_scaling = self.enable_layer_weight_scaling,
+                layer_weight_scaling = self.layer_weight_scaling,
+                # Include packet and iteration information in config
+                packets = self.packet,
+                iterations = self.iterations
+            )
+            fuzzer = MutatorManager(config)
+            self.context.mutator_data = fuzzer.fuzz_packet()
+
             try:
                 self.last_fuzzer = fuzzer
             except Exception:
                 pass
-
-            # Get packet with embedded config
-            packet = self.get_packet_with_embedded_config()
-            if packet is None:
-                if self.verbose:
-                    logger.error("No packet available for fuzzing")
-                return False
 
             # Start monitor thread if callback provided
             self._start_monitor_thread()
@@ -1085,13 +1102,14 @@ class FuzzingCampaign:
                 logger.info(f"   Iterations: {self.iterations}")
                 logger.info(f"   Layer: {self.socket_type}")
                 logger.info(f"   Rate limit: {self.rate_limit} packets/sec")
-                if hasattr(packet, 'has_fuzz_config') and packet.has_fuzz_config():  # type: ignore[attr-defined]
+                pkt_for_info = getattr(self, 'packet', None)
+                if hasattr(pkt_for_info, 'has_fuzz_config') and pkt_for_info.has_fuzz_config():  # type: ignore[attr-defined]
                     logger.info("   ### Packet has embedded fuzzing configuration")
                 if self.pre_launch_callback or self.pre_send_callback or self.post_send_callback or self.crash_callback or self.no_success_callback or self.monitor_callback:
                     logger.info("   ### Callbacks enabled")
 
             # Execute fuzzing iterations
-            success = self._run_fuzzing_loop(fuzzer, packet)
+            success = self._run_fuzzing_loop()
 
             # Stop monitor thread
             self._stop_monitor_thread()
@@ -1193,7 +1211,7 @@ class FuzzingCampaign:
 
 
 
-    def _run_fuzzing_loop(self, fuzzer: 'MutatorManager', packet: Packet) -> bool:
+    def _run_fuzzing_loop(self) -> bool:
         """
         Run the main fuzzing loop with callback integration.
         
@@ -1205,8 +1223,8 @@ class FuzzingCampaign:
         serialize_failure_count = 0
         start_time = time.time()
         pcap_writer = None
-        merged_field_mapping = self._load_merged_field_mapping()
-        # ...existing code (rest of method body, properly indented)...
+        mutator_data = getattr(self.context, 'mutator_data', None) if self.context else None
+        fuzzed_packets = mutator_data.packet_list if mutator_data and getattr(mutator_data, 'packet_list', None) is not None else []
         
         try:
             # Configure network interface offload settings if enabled
@@ -1243,10 +1261,10 @@ class FuzzingCampaign:
                     # Choose linktype so raw bytes (IP) are stored correctly in PCAP
                     linktype = 1  # Default to Ethernet
                     try:
-                        if packet is not None:
-                            if packet.haslayer(Ether):
+                        if mutator_data and getattr(mutator_data, 'packet_list', None) is not None:
+                            if "ETH" in mutator_data.get_all_layer_types():
                                 linktype = 1
-                            elif packet.haslayer(IP):
+                            elif "IP" in mutator_data.get_all_layer_types():
                                 # RAW IP packets should use LINKTYPE_RAW (101)
                                 linktype = 101
                     except Exception:
@@ -1266,21 +1284,9 @@ class FuzzingCampaign:
                         pcap_path = fallback_path
                     except Exception as e2:
                         logger.error(f"[PCAP] Fallback writer initialization failed: {e2}")
-            # Create empty list in case no packet is provided
-            fuzzed_packets = [None] * self.iterations
-            # Create the fuzzed packets
-            if packet and not self.custom_send_callback:
-                fuzzed_packets = fuzzer.fuzz_fields(packet, self.iterations, merged_field_mapping=merged_field_mapping)
-                # Ensure we have enough packets for all iterations
-                if len(fuzzed_packets) < self.iterations:
-                    # If fewer packets returned than iterations, repeat the available packets
-                    while len(fuzzed_packets) < self.iterations:
-                        for p in fuzzer.fuzz_fields(packet, 1, merged_field_mapping=merged_field_mapping):
-                            fuzzed_packets.append(p)
-                            if len(fuzzed_packets) >= self.iterations:
-                                break            
+
             #Iterate over the fuzzed packets
-            for iteration in range(self.iterations or 1000):
+            for iteration in range(self.iterations):
                 # Update context with current iteration
                 if self.context:
                     self.context.iteration = iteration
@@ -1295,23 +1301,25 @@ class FuzzingCampaign:
                 if self.duration and (time.time() - start_time) >= self.duration:
                     break
                 
-                # Auto-detect socket type from packet if not specified
+                # Auto-detect socket type from fuzzed packet if not specified
                 if not self.socket_type:
-                    if packet and packet.haslayer(TCP):
+                    current_packet = fuzzed_packets[iteration] if fuzzed_packets and iteration < len(fuzzed_packets) else None
+                    if current_packet and current_packet.haslayer(TCP):
                         self.socket_type = 'raw_tcp'
-                    elif packet and packet.haslayer(UDP):
+                    elif current_packet and current_packet.haslayer(UDP):
                         self.socket_type = 'raw_udp'
-                    elif packet and packet.haslayer(IP):
+                    elif current_packet and current_packet.haslayer(IP):
                         self.socket_type = 'raw_ip'
-                    elif packet and packet.haslayer(Ether):
+                    elif current_packet and current_packet.haslayer(Ether):
                         self.socket_type = 'raw_ethernet'
-                    elif packet and packet.haslayer(CAN):
+                    elif current_packet and current_packet.haslayer(CAN):
                         self.socket_type = 'canbus'
                     else:
                         raise ValueError("Cannot auto-detect socket type from packet and not specified — please specify socket_type")
 
                 # Open sockets for sending only if network output is enabled
                 # TODO: make this also accept functions that return a socket object
+                s = None
                 if network_enabled:
                     if self.socket_type == 'raw_ethernet':
                         # Raw Ethernet - user provides complete Ethernet frame
@@ -1340,42 +1348,42 @@ class FuzzingCampaign:
                         # Note: TCP connections require connect() call in send logic
                     else:
                         raise ValueError(f"Unknown socket_type: {self.socket_type}")
+                if self.context:
                     self.context.socket = s  # Store socket in context for custom send callback
-                else:
-                    self.context.socket = None
 
                 # Execute pre-send callback with error handling
                 if self.pre_send_callback and self.context:
+                    pkt_arg = fuzzed_packets[iteration] if fuzzed_packets and iteration < len(fuzzed_packets) else None
                     result = self.callback_manager.execute_callback(
-                        self.pre_send_callback, "pre_send", self.context, fuzzed_packets[iteration]
+                        self.pre_send_callback, "pre_send", self.context, pkt_arg
                     )
                     
                     # Handle callback result - determine if execution should continue
                     if result == CallbackResult.FAIL_CRASH:
-                        self.callback_manager.handle_crash("pre_send", fuzzed_packets[iteration], self.context)
+                        self.callback_manager.handle_crash("pre_send", pkt_arg, self.context)
                         return False
                     elif result == CallbackResult.NO_SUCCESS:
-                        self.callback_manager.handle_no_success("pre_send", self.context, fuzzed_packets[iteration])
+                        self.callback_manager.handle_no_success("pre_send", self.context, pkt_arg)
                 
                 # Execute custom send callback (replaces default packet sending behavior)
                 if self.custom_send_callback and self.context:
                     result = self.callback_manager.execute_callback(
-                        self.custom_send_callback, "custom_send", self.context, fuzzed_packets[iteration]
+                        self.custom_send_callback, "custom_send", self.context, pkt_arg
                     )
                     
                     # Custom send callback error handling
                     if result == CallbackResult.FAIL_CRASH:
-                        self.callback_manager.handle_crash("custom_send", fuzzed_packets[iteration], self.context)
+                        self.callback_manager.handle_crash("custom_send", pkt_arg, self.context)
                         return False
                     elif result == CallbackResult.NO_SUCCESS:
-                        self.callback_manager.handle_no_success("custom_send", self.context, fuzzed_packets[iteration]) 
+                        self.callback_manager.handle_no_success("custom_send", self.context, pkt_arg) 
                 # Default packet sending behavior (if no custom send callback)
-                elif fuzzed_packets[iteration] is not None:
+                elif fuzzed_packets and iteration < len(fuzzed_packets) and fuzzed_packets[iteration] is not None:
                     # Create history entry for this iteration with enhanced metadata
                     packet = fuzzed_packets[iteration]
                     
                     # Get the fuzzed fields for this specific packet iteration
-                    fuzzed_fields = fuzzer.get_fuzzed_fields_for_packet(iteration) if hasattr(fuzzer, 'get_fuzzed_fields_for_packet') else []
+                    fuzzed_fields = mutator_data.get_fuzzed_fields_for_packet(iteration) if mutator_data else []
                     
                     history_entry = FuzzHistoryEntry(
                         packet=packet,
@@ -1419,12 +1427,12 @@ class FuzzingCampaign:
                     # Send using Python socket
                 
                     try:
-                        pkt = fuzzed_packets[iteration]
+                        pkt = fuzzed_packets[iteration] if fuzzed_packets and iteration < len(fuzzed_packets) else None
                         if pkt is None:
                             continue
                         
                         # Get the fuzzed fields for this specific packet iteration for logging
-                        fuzzed_fields = fuzzer.get_fuzzed_fields_for_packet(iteration) if hasattr(fuzzer, 'get_fuzzed_fields_for_packet') else []
+                        fuzzed_fields = mutator_data.get_fuzzed_fields_for_packet(iteration) if mutator_data else []
                         fuzzed_fields_str = ', '.join(fuzzed_fields) if fuzzed_fields else 'None'
                         
                         if self.verbose:
@@ -1550,15 +1558,16 @@ class FuzzingCampaign:
                     
                 # Execute post-send callback
                 if self.post_send_callback and self.context:
+                    post_pkt = fuzzed_packets[iteration] if fuzzed_packets and iteration < len(fuzzed_packets) else None
                     result = self.callback_manager.execute_callback(
-                        self.post_send_callback, "post_send", self.context, fuzzed_packets[iteration], response
+                        self.post_send_callback, "post_send", self.context, post_pkt, response
                     )
                     
                     if result == CallbackResult.FAIL_CRASH:
-                        self.callback_manager.handle_crash("post_send", fuzzed_packets[iteration], self.context)
+                        self.callback_manager.handle_crash("post_send", post_pkt, self.context)
                         return False
                     elif result == CallbackResult.NO_SUCCESS:
-                        self.callback_manager.handle_no_success("post_send", self.context, fuzzed_packets[iteration], response)
+                        self.callback_manager.handle_no_success("post_send", self.context, post_pkt, response)
                 
                 
                 packets_sent += 1

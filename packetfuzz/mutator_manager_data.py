@@ -327,7 +327,7 @@ class MutatorManagerData:
         
         # Extract packet and iteration information
         self.packets = fuzz_config.packets
-        self.iterations = fuzz_config.iterations or 1000  # Default if not specified
+        self.iterations = fuzz_config.iterations or DEFAULT_MAX_MUTATIONS # Default if not specified
         
         # Validate inputs
         if self.packets is None:
@@ -381,7 +381,9 @@ class MutatorManagerData:
         start_time = datetime.now()
         
         try:
-            # Create deep copies of packets first
+            # CRITICAL: Create deep copies with iteration logic during preprocessing
+            # USER REQUIREMENT: ITERATION MULTIPLICATION MUST HAPPEN DURING PREPROCESSING
+            # DO NOT MOVE THIS LOGIC TO A LATER PHASE!
             self._create_packet_copies()
             
             # Process each packet to extract field metadata
@@ -425,23 +427,43 @@ class MutatorManagerData:
     
     def _create_packet_copies(self) -> None:
         """
-        Create deep copies of all packets to prevent side effects during mutation.
-        This is called at the start of preprocessing to ensure original packets
-        remain unmodified.
+        Create deep copies of packets with proper iteration logic during preprocessing.
+        
+        ITERATION LOGIC APPLIED DURING PREPROCESSING:
+        - Single packet + iterations: Create `iterations` copies of that packet
+        - Packet list shorter than iterations: Cycle through list until we have `iterations` packets  
+        - Packet list longer than iterations: Use only the first `iterations` packets
+        - Single iteration: Use original packets as-is
+        
+        THIS MUST HAPPEN DURING PREPROCESSING - DO NOT CHANGE THIS AGAIN!
         """
         import copy
         
-        logger.debug(f"Creating deep copies of {len(self.packet_list)} packets")
+        # Normalize packets from config to a list
+        if isinstance(self.fuzz_config.packets, list):
+            self.original_packets = list(self.fuzz_config.packets)
+        else:
+            self.original_packets = [self.fuzz_config.packets]
         
-        # Store original packets if needed later
-        self.original_packets = self.packet_list.copy()
+        if not self.iterations or self.iterations <= 1:
+            # Single iteration: use original packets as-is
+            self.packet_list = [copy.deepcopy(pkt) for pkt in self.original_packets]
+            logger.debug(f"Single iteration: created {len(self.packet_list)} packet copies")
+            return
+            
+        # Multiple iterations: implement cycling logic DURING PREPROCESSING
+        self.packet_list = []
+        num_original = len(self.original_packets)
         
-        # Create deep copies for processing
-        self.packet_list = [copy.deepcopy(packet) for packet in self.packet_list]
+        for i in range(self.iterations):
+            # Cycle through original packets using modulo
+            packet_index = i % num_original
+            self.packet_list.append(copy.deepcopy(self.original_packets[packet_index]))
         
-        logger.debug("Packet deep copies created successfully")
-    
-    def _process_single_packet(self, packet: Packet, packet_idx: int, 
+        logger.debug(f"PREPROCESSING: Created {len(self.packet_list)} packet copies for {self.iterations} iterations "
+                    f"(cycling through {num_original} original packets)")
+
+    def _process_single_packet(self, packet: Packet, packet_idx: int,
                               dictionary_manager: Optional[Any]) -> PacketData:
         """
         Process a single packet to extract all field metadata.
@@ -1524,7 +1546,8 @@ class MutatorManagerData:
             field_metadata = field
         # Get layer and field name
         packet_data = self.packet_data[field_metadata.packet_index]
-        layer = packet_data.packet.getlayer(field_metadata.layer_name, field_metadata.layer_index)
+        # Scapy uses 1-based indexing for getlayer, but our layer_index is 0-based
+        layer = packet_data.packet.getlayer(field_metadata.layer_name, field_metadata.layer_index + 1)
         fname = field_metadata.field_name
         # Use provided value or current_value
         assign_value = value if value is not None else field_metadata.current_value
@@ -1699,6 +1722,19 @@ class MutatorManagerData:
             for field_metadata in packet_data.fields.values():
                 field_types.add(field_metadata.field_type)
         return list(field_types)
+    
+    def get_all_layer_types(self) -> List[str]:
+        """Get list of all unique layer types across all packets."""
+        layer_types = set()
+        for packet_data in self.packet_data:
+            pkt = getattr(packet_data, 'packet', None)
+            while pkt:
+                layer_types.add(type(pkt).__name__)
+                if hasattr(pkt, 'payload') and pkt.payload and pkt.payload != pkt:
+                    pkt = pkt.payload
+                else:
+                    break
+        return sorted(layer_types)
     
     def get_fields_by_layer(self, layer_name: str) -> List[FieldMetadata]:
         """Get all fields belonging to a specific layer type."""

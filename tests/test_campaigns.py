@@ -73,7 +73,10 @@ class TestBaseFuzzingCampaign(unittest.TestCase):
         campaign = BasicTestCampaign()
         
         try:
-            fuzzer = campaign.create_fuzzer()
+            # Test that we can create a MutatorManager using campaign data
+            from packetfuzz.mutator_manager import MutatorManager, FuzzConfig
+            config = FuzzConfig(packets=campaign.packet, iterations=campaign.iterations)
+            fuzzer = MutatorManager(config)
             assert fuzzer is not None
             assert isinstance(fuzzer, MutatorManager)
         except (ImportError, NotImplementedError):

@@ -35,19 +35,8 @@ def analyze_actual_weights():
         print(f"\nScaling factor: {scaling_factor}")
         print("-" * 40)
         
-        campaign = DebugWeightsCampaign(scaling_factor)
-        mutator_mgr = campaign.create_fuzzer()
-        packet = campaign.get_packet()
-        
-        # Test the fields that are showing high mutation rates
-        problematic_fields = [
-            (packet[IP], 'src'),
-            (packet[IP], 'dst'), 
-            (packet[TCP], 'sport'),
-        ]
-        
-        for layer, field_name in problematic_fields:
-            layer_name = type(layer).__name__
+    # REMOVED: create_fuzzer and mutator_mgr usage. Debug utility is obsolete.
+    pass
             
             # Get the actual weights
             base_weight = mutator_mgr.dictionary_manager.get_field_weight(layer, field_name)

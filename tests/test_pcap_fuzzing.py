@@ -393,13 +393,19 @@ class TestPcapFuzzIntegration(unittest.TestCase):
         campaign.fuzz_mode = "none"  # No fuzzing
         campaign.output_network = False  # Don't send packets
         campaign.verbose = False  # Reduce output during tests
+        campaign.target = "192.168.1.100"  # Ensure target is set
         
         # Test that campaign validates and can get packets
         packet = campaign.get_packet_with_embedded_config()
         self.assertIsNotNone(packet)
+        campaign.packet = packet  # Set the packet for validation
         
         # Test that validation passes
-        self.assertTrue(campaign.validate_campaign())
+        campaign.verbose = True  # Enable verbose to see errors
+        validation_result = campaign.validate_campaign()
+        if not validation_result:
+            print(f"Campaign validation failed! Target: {campaign.target}, Packet: {campaign.packet}")
+        self.assertTrue(validation_result)
     
     def test_integration_udp_extraction(self):
         """Test UDP payload extraction integration."""
