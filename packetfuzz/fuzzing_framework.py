@@ -42,6 +42,7 @@ from scapy.utils import wrpcap
 
 # Local imports
 from .mutator_manager import FuzzConfig, FuzzMode, MutatorManager
+from .mutator_manager_data import MutatorManagerData
 from .utils.packet_report import ReportingEngine, ReportLevel, write_crash_report, generate_campaign_reports, write_fuzz_history_dump
 
 # Constants
@@ -725,6 +726,9 @@ class FuzzingCampaign:
     #  - 'skip' : do not write PCAP for this iteration and do not send
     pcap_serialize_failure_mode: str = 'fail'
 
+    # Campaign state - runtime data
+    # Note: Avoid storing separate copies of mutator data; retrieve from active fuzzer when needed
+
 
 
     def __init__(self):
@@ -783,14 +787,26 @@ class FuzzingCampaign:
                     self.advanced_field_mapping_overrides = []
                 self.advanced_field_mapping_overrides.extend(fuzz_only_entries)
 
-    def create_fuzzer(self, mutator_preference: Optional[list[str]] = None) -> 'MutatorManager':
+    def create_fuzzer(self, mutator_preference: Optional[list[str]] = None, 
+                     packets: Optional[Union[Packet, List[Packet]]] = None,
+                     iterations: Optional[int] = None) -> 'MutatorManager':
         """
         Create a packetfuzz instance configured for this campaign.
         mutator_preference: Override the campaign's default mutator preference.
                            If None, uses self.mutator_preference.
+        packets: Optional packet(s) to include in configuration.
+                If None, will use campaign packet.
+        iterations: Optional iteration count to include in configuration.
+                   If None, will use campaign iterations.
         """
         # Use parameter if provided, otherwise use campaign's default
         effective_preference = mutator_preference or self.mutator_preference or ["libfuzzer"]
+        
+        # Determine packet(s) to use
+        effective_packets = packets or self.get_packet_with_embedded_config()
+        
+        # Determine iterations to use
+        effective_iterations = iterations or getattr(self, 'iterations', None)
         
         dict_config_path = self.user_mapping_file or self.global_dict_config_path
         config = FuzzConfig(
@@ -800,9 +816,31 @@ class FuzzingCampaign:
             global_dict_config_path = dict_config_path,
             mutator_preference = effective_preference,
             enable_layer_weight_scaling = getattr(self, 'enable_layer_weight_scaling', True),
-            layer_weight_scaling = getattr(self, 'layer_weight_scaling', None)
+            layer_weight_scaling = getattr(self, 'layer_weight_scaling', None),
+            # Include packet and iteration information in config
+            packets = effective_packets,
+            iterations = effective_iterations
         )
-        return MutatorManager(config)
+        fuzzer = MutatorManager(config)
+        # Do not copy/store mutator data separately; keep a handle to the fuzzer
+        # so we can retrieve data on demand to avoid staleness and duplication.
+        try:
+            self.last_fuzzer = fuzzer
+        except Exception:
+            pass
+        return fuzzer
+
+    def get_mutator_data(self) -> Optional['MutatorManagerData']:
+        """
+        Retrieve the MutatorManagerData from the most recent fuzzer on demand.
+        This avoids storing separate references and keeps data authoritative.
+        Returns None if a fuzzer hasn't been created yet.
+        """
+        try:
+            fuzzer = getattr(self, 'last_fuzzer', None)
+            return getattr(fuzzer, 'data', None)
+        except Exception:
+            return None
 
     def get_packet_with_embedded_config(self) -> Optional[Packet]:
         """
@@ -1218,7 +1256,15 @@ class FuzzingCampaign:
             fuzzed_packets = [None] * self.iterations
             # Create the fuzzed packets
             if packet and not self.custom_send_callback:
-                fuzzed_packets = fuzzer.fuzz_fields(packet, self.iterations, merged_field_mapping=merged_field_mapping)            
+                fuzzed_packets = fuzzer.fuzz_fields(packet, self.iterations, merged_field_mapping=merged_field_mapping)
+                # Ensure we have enough packets for all iterations
+                if len(fuzzed_packets) < self.iterations:
+                    # If fewer packets returned than iterations, repeat the available packets
+                    while len(fuzzed_packets) < self.iterations:
+                        for p in fuzzer.fuzz_fields(packet, 1, merged_field_mapping=merged_field_mapping):
+                            fuzzed_packets.append(p)
+                            if len(fuzzed_packets) >= self.iterations:
+                                break            
             #Iterate over the fuzzed packets
             for iteration in range(self.iterations or 1000):
                 # Update context with current iteration

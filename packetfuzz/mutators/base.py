@@ -9,6 +9,7 @@ import logging
 import random
 from abc import ABC, abstractmethod
 from typing import Any, List, Optional, Union
+from ..mutator_manager_data import FieldMetadata
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +21,7 @@ class BaseMutator(ABC):
     Provides a common interface for different mutation strategies
     (libFuzzer C extension, pure Python, etc.)
     """
+    initialized: bool = False  # Indicates if the mutator has been initialized with corpus data
     
     def __init__(self, seed: Optional[int] = None):
         """Initialize the mutator with optional random seed."""
@@ -42,8 +44,7 @@ class BaseMutator(ABC):
 
     @abstractmethod
     def mutate_field(self,
-                     field_info: Any,
-                     current_value: Any,
+                     field_info: FieldMetadata,
                      dictionaries: Optional[List[bytes]] = None,
                      rng: Optional[random.Random] = None,
                      layer: Optional[Any] = None) -> Any:
@@ -62,7 +63,7 @@ class BaseMutator(ABC):
         """
         raise NotImplementedError()
 
-    def initialize(self, field_info: Any, seed_data: List[Any], rng: Optional[random.Random] = None) -> bool:
+    def initialize(self, field_metatadata: FieldMetadata, seed_data: List[Any], rng: Optional[random.Random] = None) -> bool:
         """
         Initialize corpus for this mutator with seed data.
         
@@ -78,6 +79,7 @@ class BaseMutator(ABC):
             List of candidate values ready for field assignment
         """
         # Default implementation returns empty list (no corpus support)
+        self.initialized = True
         return []
     
     def teardown(self) -> None:

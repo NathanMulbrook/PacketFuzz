@@ -44,7 +44,7 @@ def test_skip_probability(scaling_factor, trials=100):  # Reduced trials for fas
     
     # Set a fixed seed for reproducible results
     random.seed(42)
-    mutator_mgr.config.rng = random.Random(42)
+    mutator_mgr.fuzz_config.rng = random.Random(42)
     
     for _ in range(trials):
         if mutator_mgr._should_skip_field(ip_layer, None, 'ttl'):

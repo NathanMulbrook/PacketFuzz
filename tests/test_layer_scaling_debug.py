@@ -37,23 +37,11 @@ def test_scaling_factor(scaling_factor):
     mutator_mgr = campaign.create_fuzzer()
     
     print(f"Campaign layer_weight_scaling: {campaign.layer_weight_scaling}")
-    print(f"MutatorManager config layer_weight_scaling: {mutator_mgr.config.layer_weight_scaling}")
-    print(f"MutatorManager config enable_layer_weight_scaling: {mutator_mgr.config.enable_layer_weight_scaling}")
+    print(f"MutatorManager config layer_weight_scaling: {mutator_mgr.fuzz_config.layer_weight_scaling}")
+    print(f"MutatorManager config enable_layer_weight_scaling: {mutator_mgr.fuzz_config.enable_layer_weight_scaling}")
     
-    # Test the actual weight calculation
+    # Test the actual mutation functionality (without obsolete _should_skip_field method)
     packet = campaign.get_packet()
-    ip_layer = packet[IP]
-    tcp_layer = packet[TCP] 
-    raw_layer = packet[Raw]
-    
-    # Check what the mutator thinks it should do for each layer
-    ip_skip = mutator_mgr._should_skip_field(ip_layer, None, 'ttl')
-    tcp_skip = mutator_mgr._should_skip_field(tcp_layer, None, 'dport') 
-    raw_skip = mutator_mgr._should_skip_field(raw_layer, None, 'load')
-    
-    print(f"IP layer (ttl) should_skip: {ip_skip}")
-    print(f"TCP layer (dport) should_skip: {tcp_skip}")
-    print(f"Raw layer (load) should_skip: {raw_skip}")
     
     # Run a few iterations to see actual mutations
     print("\nRunning 5 mutations to see if packets change...")
@@ -90,8 +78,8 @@ def test_scaling_factor(scaling_factor):
         
         # Verify that the scaling factor is properly configured
         assert campaign.layer_weight_scaling == scaling_factor
-        assert mutator_mgr.config.layer_weight_scaling == scaling_factor
-        assert mutator_mgr.config.enable_layer_weight_scaling == True
+        assert mutator_mgr.fuzz_config.layer_weight_scaling == scaling_factor
+        assert mutator_mgr.fuzz_config.enable_layer_weight_scaling == True
             
     finally:
         if os.path.exists(tmp_path):

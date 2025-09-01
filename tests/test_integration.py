@@ -476,6 +476,10 @@ class TestErrorHandlingIntegration(unittest.TestCase):
         class MissingFileCampaign(FuzzingCampaign):
             name = "Missing File Campaign"
             dictionary_config_file = "nonexistent_config.py"
+            
+            def get_packet(self):
+                from scapy.all import IP, TCP, Raw
+                return IP(dst="127.0.0.1")/TCP(dport=80)/Raw(b"test")
         
         campaign = MissingFileCampaign()
         

@@ -12,6 +12,24 @@ from typing import List, Optional
 logger = logging.getLogger(__name__)
 
 
+def calculate_layer_depth_below(layer) -> int:
+    """
+    Calculate the depth of layers below the current layer.
+    
+    Args:
+        layer: The current layer to calculate depth from
+        
+    Returns:
+        int: Number of layers below the current layer (0 = innermost, 1+ = outer layers)
+    """
+    depth_below = 0
+    cursor = layer
+    while hasattr(cursor, 'payload') and cursor.payload.__class__.__name__ != 'NoPayload':
+        depth_below += 1
+        cursor = cursor.payload
+    return depth_below
+
+
 def find_field_descriptor(packet, field_name: str):
     """
     Look up field descriptor by name in packet's field definitions.

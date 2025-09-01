@@ -40,7 +40,7 @@ def debug_skip_logic_detailed(scaling_factor):
     
     # Set deterministic random seed for reproducible results
     random.seed(42)
-    mutator_mgr.config.rng = random.Random(42)
+    mutator_mgr.fuzz_config.rng = random.Random(42)
     
     # Test IP.src field specifically
     ip_layer = packet[IP]

@@ -211,13 +211,11 @@ class LibFuzzerMutator(BaseMutator):
     # --- New API: type-aware field mutation ---
     def mutate_field(self,
                      field_info: Any,
-                     current_value: Any,
                      dictionaries: Optional[List[bytes]] = None,
                      rng: Optional[random.Random] = None,
                      layer: Optional[Any] = None) -> Any:
         # If libfuzzer is not available, return current value to allow manager to try other mutators
-        if not self.is_libfuzzer_available():
-            return current_value
+
 
         kind = getattr(field_info, 'kind', 'unknown')
 

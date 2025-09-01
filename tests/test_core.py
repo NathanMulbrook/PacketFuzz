@@ -367,12 +367,13 @@ class TestCoreFuzzer(unittest.TestCase):
     
     def test_scapy_fuzzer_creation(self):
         """Test MutatorManager creation"""
-        config = FuzzConfig()
+        packet = create_test_packet("tcp")
+        config = FuzzConfig(packets=[packet])
         fuzzer = MutatorManager(config)
         
         assert fuzzer is not None
-        assert fuzzer.config.mode == FuzzMode.BOTH
-        assert fuzzer.config.use_dictionaries == True
+        assert fuzzer.fuzz_config.mode == FuzzMode.BOTH
+        assert fuzzer.fuzz_config.use_dictionaries == True
     
     def test_fuzzer_with_embedded_config_and_validation(self):
         """Test fuzzer working with embedded configuration and validate results"""
@@ -383,7 +384,7 @@ class TestCoreFuzzer(unittest.TestCase):
         tcp_layer.field_fuzz('dport').fuzz_weight = 0.8
         
         # Create fuzzer
-        config = FuzzConfig(mode=FuzzMode.BOTH, use_dictionaries=True)
+        config = FuzzConfig(mode=FuzzMode.BOTH, use_dictionaries=True, packets=[packet])
         fuzzer = MutatorManager(config)
         
         assert fuzzer is not None

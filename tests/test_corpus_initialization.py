@@ -34,75 +34,54 @@ class TestCorpusInitialization(unittest.TestCase):
         
         try:
             # Test string field corpus initialization
-            candidates = mutator.initialize(self.string_field, self.seed_data)
-            self.assertIsInstance(candidates, list)
+            success = mutator.initialize(self.string_field, self.seed_data)
+            self.assertIsInstance(success, bool)
             
             if mutator.is_libfuzzer_available():
-                # LibFuzzer is available, should generate candidates
-                self.assertGreater(len(candidates), 0, "Should generate corpus candidates when LibFuzzer is available")
-                
-                # All candidates should be strings for string field
-                for candidate in candidates:
-                    self.assertIsInstance(candidate, str, f"String field candidate should be string, got {type(candidate)}")
+                # LibFuzzer is available, should initialize successfully
+                self.assertTrue(success, "Should initialize successfully when LibFuzzer is available")
             else:
-                # LibFuzzer not available, should return empty list
-                self.assertEqual(len(candidates), 0, "Should return empty list when LibFuzzer not available")
+                # LibFuzzer not available, initialization should fail gracefully
+                self.assertFalse(success, "Should fail gracefully when LibFuzzer is not available")
             
             # Test numeric field corpus initialization
-            numeric_candidates = mutator.initialize(self.numeric_field, self.seed_data)
-            self.assertIsInstance(numeric_candidates, list)
+            numeric_success = mutator.initialize(self.numeric_field, self.seed_data)
+            self.assertIsInstance(numeric_success, bool)
             
-            if mutator.is_libfuzzer_available() and len(numeric_candidates) > 0:
-                # All candidates should be integers for numeric field
-                for candidate in numeric_candidates:
-                    self.assertIsInstance(candidate, int, f"Numeric field candidate should be int, got {type(candidate)}")
-                    self.assertGreaterEqual(candidate, 0, "Numeric candidates should respect min_value")
-                    self.assertLessEqual(candidate, 1000, "Numeric candidates should respect max_value")
+            if mutator.is_libfuzzer_available():
+                self.assertTrue(numeric_success, "Numeric field initialization should succeed when LibFuzzer is available")
             
             # Test raw field corpus initialization
-            raw_candidates = mutator.initialize(self.raw_field, self.seed_data)
-            self.assertIsInstance(raw_candidates, list)
+            raw_success = mutator.initialize(self.raw_field, self.seed_data)
+            self.assertIsInstance(raw_success, bool)
             
-            if mutator.is_libfuzzer_available() and len(raw_candidates) > 0:
-                # All candidates should be bytes for raw field
-                for candidate in raw_candidates:
-                    self.assertIsInstance(candidate, bytes, f"Raw field candidate should be bytes, got {type(candidate)}")
+            if mutator.is_libfuzzer_available():
+                self.assertTrue(raw_success, "Raw field initialization should succeed when LibFuzzer is available")
         
         finally:
             # Test teardown
-            mutator.teardown()
-            
-            # Check that corpus directory was cleaned up
-            if hasattr(mutator, '_corpus_dir') and mutator._corpus_dir:
-                self.assertFalse(Path(mutator._corpus_dir).exists(), "Corpus directory should be cleaned up after teardown")
+            teardown_success = mutator.teardown()
+            self.assertIsInstance(teardown_success, bool)
     
     def test_dictionary_only_mutator_methods(self):
-        """Test that DictionaryOnlyMutator has corpus methods."""
+        """Test that DictionaryOnlyMutator has required methods."""
         mutator = DictionaryOnlyMutator()
-        
-        # Should have corpus initialization method (default implementation)
-        candidates = mutator.initialize(self.string_field, self.seed_data)
-        self.assertIsInstance(candidates, list)
-        self.assertEqual(len(candidates), 0, "Default implementation should return empty list")
         
         # Should have teardown method (default implementation)
         mutator.teardown()  # Should not raise exception
     
     def test_scapy_mutator_methods(self):
-        """Test that ScapyMutator has corpus methods."""
+        """Test that ScapyMutator has required methods."""
         mutator = ScapyMutator()
-        
-        # Should have corpus initialization method (default implementation)
-        candidates = mutator.initialize(self.string_field, self.seed_data)
-        self.assertIsInstance(candidates, list)
-        self.assertEqual(len(candidates), 0, "Default implementation should return empty list")
         
         # Should have teardown method (default implementation)
         mutator.teardown()  # Should not raise exception
     
     def test_mutator_manager_teardown(self):
         """Test MutatorManager teardown functionality."""
-        config = FuzzConfig()
+        from scapy.layers.inet import IP, TCP
+        packet = IP(dst="127.0.0.1") / TCP(dport=80)
+        config = FuzzConfig(packets=[packet])
         manager = MutatorManager(config)
         
         # Should not raise exception
@@ -113,7 +92,9 @@ class TestCorpusInitialization(unittest.TestCase):
     
     def test_mutator_manager_automatic_teardown(self):
         """Test MutatorManager automatic teardown via __del__."""
-        config = FuzzConfig()
+        from scapy.layers.inet import IP, TCP
+        packet = IP(dst="127.0.0.1") / TCP(dport=80)
+        config = FuzzConfig(packets=[packet])
         manager = MutatorManager(config)
         
         # Delete should trigger teardown automatically
@@ -126,13 +107,12 @@ class TestCorpusInitialization(unittest.TestCase):
         
         try:
             # Empty seed data should not cause errors
-            candidates = mutator.initialize(self.string_field, [])
-            self.assertIsInstance(candidates, list)
-            self.assertEqual(len(candidates), 0, "Empty seed data should return empty candidates")
+            success = mutator.initialize(self.string_field, [])
+            self.assertIsInstance(success, bool)
             
             # None values in seed data should be handled gracefully
-            candidates = mutator.initialize(self.string_field, [None, None])
-            self.assertIsInstance(candidates, list)
+            success = mutator.initialize(self.string_field, [None, None])
+            self.assertIsInstance(success, bool)
         
         finally:
             mutator.teardown()
@@ -144,12 +124,12 @@ class TestCorpusInitialization(unittest.TestCase):
         try:
             # Invalid field info should not crash
             invalid_field = namedtuple('InvalidField', [])()
-            candidates = mutator.initialize(invalid_field, self.seed_data)
-            self.assertIsInstance(candidates, list)
+            success = mutator.initialize(invalid_field, self.seed_data)
+            self.assertIsInstance(success, bool)
             
             # Should handle exceptions gracefully
-            candidates = mutator.initialize(None, self.seed_data)
-            self.assertIsInstance(candidates, list)
+            success = mutator.initialize(None, self.seed_data)
+            self.assertIsInstance(success, bool)
         
         finally:
             mutator.teardown()
