@@ -37,6 +37,26 @@ logger = logging.getLogger(__name__)
 
 
 # ============================================================================
+# Configuration Constants
+# ============================================================================
+
+# Report generation settings
+DEFAULT_MAX_FINDINGS = 100
+DEFAULT_TOP_MUTATORS_COUNT = 10
+DEFAULT_TOP_FIELDS_COUNT = 10
+MAX_PROTOCOL_ANALYSIS_DEPTH = 50
+VULNERABILITY_CONFIDENCE_THRESHOLD = 0.7
+
+# Performance settings
+METRICS_CALCULATION_TIMEOUT = 30  # seconds
+PROTOCOL_ANALYSIS_TIMEOUT = 60   # seconds
+
+# Export format settings
+MAX_REPORT_SIZE_MB = 50
+DEFAULT_HTML_TEMPLATE_TIMEOUT = 10  # seconds
+
+
+# ============================================================================
 # Report Data Structures
 # ============================================================================
 
@@ -74,6 +94,11 @@ class ReportMetrics:
     packets_with_fuzzed_fields: int = 0
     packets_without_fuzzed_fields: int = 0
     most_fuzzed_fields: List[str] = field(default_factory=list)  # Top fuzzed fields
+    
+    # Mutator usage tracking
+    mutator_usage: Dict[str, int] = field(default_factory=dict)  # mutator_name -> usage_count
+    total_mutations_applied: int = 0
+    most_used_mutators: List[str] = field(default_factory=list)  # Top mutators by usage
 
 
 @dataclass
@@ -138,6 +163,160 @@ class ExporterInterface:
 
 
 # ============================================================================
+# Core Reporting Engine Components
+# ============================================================================
+
+class MetricsCalculator:
+    """Handles calculation of various metrics from campaign data"""
+    
+    @staticmethod
+    def calculate_basic_metrics(history_entries: List[Any]) -> Dict[str, Any]:
+        """Calculate basic packet and timing metrics"""
+        if not history_entries:
+            return {
+                'total_packets': 0,
+                'successful_packets': 0,
+                'failed_packets': 0,
+                'serialization_failures': 0,
+                'crash_count': 0
+            }
+        
+        return {
+            'total_packets': len(history_entries),
+            'successful_packets': len([h for h in history_entries if not h.serialization_failed]),
+            'failed_packets': len([h for h in history_entries if h.serialization_failed]),
+            'serialization_failures': len([h for h in history_entries if h.serialization_failed]),
+            'crash_count': len([h for h in history_entries if h.crashed])
+        }
+    
+    @staticmethod
+    def calculate_field_metrics(history_entries: List[Any]) -> Dict[str, Any]:
+        """Calculate field-level fuzzing metrics"""
+        try:
+            field_distribution = {}
+            packets_with_fields = 0
+            packets_without_fields = 0
+            
+            for entry in history_entries:
+                if hasattr(entry, 'fuzzed_fields') and entry.fuzzed_fields:
+                    packets_with_fields += 1
+                    for field_name in entry.fuzzed_fields:
+                        field_distribution[field_name] = field_distribution.get(field_name, 0) + 1
+                else:
+                    packets_without_fields += 1
+            
+            # Get top most fuzzed fields using configuration constant
+            sorted_fields = sorted(field_distribution.items(), key=lambda x: x[1], reverse=True)
+            most_fuzzed_fields = [field for field, count in sorted_fields[:DEFAULT_TOP_FIELDS_COUNT]]
+            
+            return {
+                'fuzzed_field_distribution': field_distribution,
+                'packets_with_fuzzed_fields': packets_with_fields,
+                'packets_without_fuzzed_fields': packets_without_fields,
+                'most_fuzzed_fields': most_fuzzed_fields
+            }
+        except Exception as e:
+            logger.error(f"Failed to calculate field metrics: {e}")
+            return {
+                'fuzzed_field_distribution': {},
+                'packets_with_fuzzed_fields': 0,
+                'packets_without_fuzzed_fields': len(history_entries) if history_entries else 0,
+                'most_fuzzed_fields': []
+            }
+    
+    @staticmethod
+    def calculate_protocol_metrics(history_entries: List[Any]) -> Dict[str, Any]:
+        """Calculate protocol and network-level metrics"""
+        protocol_distribution = {}
+        port_coverage = set()
+        payload_sizes = []
+        
+        for entry in history_entries:
+            if entry.protocol:
+                protocol_distribution[entry.protocol] = protocol_distribution.get(entry.protocol, 0) + 1
+            if entry.target_port:
+                port_coverage.add(entry.target_port)
+            if entry.payload_size:
+                payload_sizes.append(entry.payload_size)
+        
+        unique_targets = len(set(h.target_host for h in history_entries if h.target_host))
+        
+        return {
+            'protocol_distribution': protocol_distribution,
+            'port_coverage': port_coverage,
+            'payload_sizes': payload_sizes,
+            'unique_targets': unique_targets
+        }
+    
+    @staticmethod
+    def calculate_timing_metrics(history_entries: List[Any]) -> Dict[str, Any]:
+        """Calculate timing and performance metrics"""
+        timestamps = [h.timestamp_sent for h in history_entries if h.timestamp_sent]
+        
+        if len(timestamps) < 2:
+            return {
+                'campaign_duration': None,
+                'packets_per_second': 0.0
+            }
+        
+        duration = max(timestamps) - min(timestamps)
+        packets_per_second = len(history_entries) / duration.total_seconds() if duration.total_seconds() > 0 else 0.0
+        
+        return {
+            'campaign_duration': duration,
+            'packets_per_second': packets_per_second
+        }
+
+
+class MutatorAnalyzer:
+    """Handles analysis of mutator usage and effectiveness"""
+    
+    @staticmethod
+    def extract_mutator_metrics(mutator_data: Any) -> Dict[str, Any]:
+        """Extract comprehensive mutator metrics from MutatorManagerData"""
+        if not mutator_data:
+            logger.info("No mutator data available for enhanced metrics")
+            return {
+                'mutator_usage': {},
+                'total_mutations_applied': 0,
+                'most_used_mutators': []
+            }
+        
+        try:
+            mutator_usage = {}
+            total_mutations = 0
+            
+            # Get mutator usage summary
+            if hasattr(mutator_data, 'get_mutator_usage_summary'):
+                mutator_usage = mutator_data.get_mutator_usage_summary()
+                total_mutations = sum(mutator_usage.values())
+            
+            # Calculate most used mutators using configuration constant
+            sorted_mutators = sorted(mutator_usage.items(), key=lambda x: x[1], reverse=True)
+            most_used_mutators = [mutator for mutator, count in sorted_mutators[:DEFAULT_TOP_MUTATORS_COUNT]]
+            
+            # Log additional processing info if available
+            if hasattr(mutator_data, 'get_processing_summary'):
+                processing_summary = mutator_data.get_processing_summary()
+                logger.debug(f"Mutator processing summary: {processing_summary}")
+            
+            return {
+                'mutator_usage': mutator_usage,
+                'total_mutations_applied': total_mutations,
+                'most_used_mutators': most_used_mutators
+            }
+            
+        except Exception as e:
+            logger.warning(f"Failed to extract mutator metrics - this could indicate mutator manager issues: {e}")
+            # TODO: Consider propagating specific mutator failures to help with debugging mutator manager issues
+            return {
+                'mutator_usage': {},
+                'total_mutations_applied': 0,
+                'most_used_mutators': []
+            }
+
+
+# ============================================================================
 # Core Reporting Engine
 # ============================================================================
 
@@ -181,12 +360,26 @@ class ReportingEngine:
     def generate_report(
         self,
         campaign: Any,
+        campaign_context: Any,
         history_entries: List[Any],
         level: ReportLevel = ReportLevel.TECHNICAL,
         output_format: str = 'html',
         output_path: Optional[str] = None
     ) -> str:
-        """Generate comprehensive report for campaign"""
+        """
+        Generate comprehensive report for campaign
+        
+        Args:
+            campaign: The fuzzing campaign instance
+            campaign_context: Campaign context containing mutator data and runtime info
+            history_entries: List of FuzzHistoryEntry objects from the campaign
+            level: Report detail level (executive, technical, forensics)
+            output_format: Export format (html, json, csv, etc.)
+            output_path: Optional custom output path
+            
+        Returns:
+            Path to the generated report file
+        """
         # Validate inputs
         if level not in self.generators:
             raise ValueError(f"Unsupported report level: {level}. Available: {self.get_available_levels()}")
@@ -194,8 +387,8 @@ class ReportingEngine:
         if output_format not in self.exporters:
             raise ValueError(f"Unsupported output format: {output_format}. Available: {self.get_available_formats()}")
         
-        # Calculate core metrics
-        metrics = self._calculate_metrics(history_entries)
+        # Calculate core metrics with campaign context
+        metrics = self._calculate_metrics(history_entries, campaign_context)
         
         # Perform protocol analysis
         protocol_analysis = self.protocol_analyzer.analyze_campaign(history_entries)
@@ -215,51 +408,66 @@ class ReportingEngine:
         
         return exporter.export(content, output_path)
     
-    def _calculate_metrics(self, history_entries: List[Any]) -> ReportMetrics:
-        """Calculate comprehensive metrics from history entries"""
+    def _calculate_metrics(self, history_entries: List[Any], campaign_context: Any) -> ReportMetrics:
+        """
+        Calculate comprehensive metrics from history entries and campaign context
+        
+        Args:
+            history_entries: List of FuzzHistoryEntry objects
+            campaign_context: CampaignContext containing mutator data and runtime info
+            
+        Returns:
+            ReportMetrics object with comprehensive campaign analytics
+        """
         metrics = ReportMetrics()
         
         if not history_entries:
             return metrics
         
-        metrics.total_packets = len(history_entries)
-        metrics.successful_packets = len([h for h in history_entries if not h.serialization_failed])
-        metrics.failed_packets = metrics.total_packets - metrics.successful_packets
-        metrics.serialization_failures = len([h for h in history_entries if h.serialization_failed])
-        metrics.crash_count = len([h for h in history_entries if h.crashed])
+        # Calculate metrics using modular utility classes
+        basic_metrics = MetricsCalculator.calculate_basic_metrics(history_entries)
+        field_metrics = MetricsCalculator.calculate_field_metrics(history_entries)
+        protocol_metrics = MetricsCalculator.calculate_protocol_metrics(history_entries)
+        timing_metrics = MetricsCalculator.calculate_timing_metrics(history_entries)
         
-        # Collect protocol distribution and fuzzed field statistics
-        for entry in history_entries:
-            if entry.protocol:
-                metrics.protocol_distribution[entry.protocol] = metrics.protocol_distribution.get(entry.protocol, 0) + 1
-            if entry.target_port:
-                metrics.port_coverage.add(entry.target_port)
-            if entry.payload_size:
-                metrics.payload_sizes.append(entry.payload_size)
-            
-            # Track fuzzed fields
-            if hasattr(entry, 'fuzzed_fields') and entry.fuzzed_fields:
-                metrics.packets_with_fuzzed_fields += 1
-                for field_name in entry.fuzzed_fields:
-                    metrics.fuzzed_field_distribution[field_name] = metrics.fuzzed_field_distribution.get(field_name, 0) + 1
-            else:
-                metrics.packets_without_fuzzed_fields += 1
+        # Extract mutator data for enhanced analytics
+        mutator_data = getattr(campaign_context, 'mutator_data', None)
+        mutator_metrics = MutatorAnalyzer.extract_mutator_metrics(mutator_data)
         
-        # Calculate timing metrics
-        timestamps = [h.timestamp_sent for h in history_entries if h.timestamp_sent]
-        if len(timestamps) >= 2:
-            metrics.campaign_duration = max(timestamps) - min(timestamps)
-            if metrics.campaign_duration and metrics.campaign_duration.total_seconds() > 0:
-                metrics.packets_per_second = metrics.total_packets / metrics.campaign_duration.total_seconds()
-        
-        metrics.unique_targets = len(set(h.target_host for h in history_entries if h.target_host))
-        
-        # Calculate most fuzzed fields (top 10)
-        if metrics.fuzzed_field_distribution:
-            sorted_fields = sorted(metrics.fuzzed_field_distribution.items(), key=lambda x: x[1], reverse=True)
-            metrics.most_fuzzed_fields = [field for field, count in sorted_fields[:10]]
+        # Populate ReportMetrics object
+        self._populate_metrics(metrics, basic_metrics, field_metrics, protocol_metrics, timing_metrics, mutator_metrics)
         
         return metrics
+    
+    def _populate_metrics(self, metrics: ReportMetrics, basic: Dict, field: Dict, protocol: Dict, timing: Dict, mutator: Dict) -> None:
+        """Populate ReportMetrics object from calculated metric dictionaries"""
+        # Basic metrics
+        metrics.total_packets = basic['total_packets']
+        metrics.successful_packets = basic['successful_packets']
+        metrics.failed_packets = basic['failed_packets']
+        metrics.serialization_failures = basic['serialization_failures']
+        metrics.crash_count = basic['crash_count']
+        
+        # Field metrics
+        metrics.fuzzed_field_distribution = field['fuzzed_field_distribution']
+        metrics.packets_with_fuzzed_fields = field['packets_with_fuzzed_fields']
+        metrics.packets_without_fuzzed_fields = field['packets_without_fuzzed_fields']
+        metrics.most_fuzzed_fields = field['most_fuzzed_fields']
+        
+        # Protocol metrics
+        metrics.protocol_distribution = protocol['protocol_distribution']
+        metrics.port_coverage = protocol['port_coverage']
+        metrics.payload_sizes = protocol['payload_sizes']
+        metrics.unique_targets = protocol['unique_targets']
+        
+        # Timing metrics
+        metrics.campaign_duration = timing['campaign_duration']
+        metrics.packets_per_second = timing['packets_per_second']
+        
+        # Mutator metrics
+        metrics.mutator_usage = mutator['mutator_usage']
+        metrics.total_mutations_applied = mutator['total_mutations_applied']
+        metrics.most_used_mutators = mutator['most_used_mutators']
     
     def _detect_vulnerabilities(
         self, 
@@ -369,6 +577,7 @@ class ProtocolIntelligenceAnalyzer:
     
     def _analyze_protocol_group(self, protocol: str, entries: List[Any]) -> ProtocolAnalysis:
         """Generic analysis of a group of entries - no protocol assumptions"""
+        # TODO: Consider adding configurable analysis depth and timeout controls for large datasets
         unique_ports = set()
         payload_variations = 0
         error_patterns = Counter()
@@ -626,6 +835,7 @@ class ForensicsGenerator(ReportGeneratorInterface):
     
     def _generate_reproduction_data(self, findings: List[VulnerabilityFinding]) -> Dict[str, str]:
         """Generate base64-encoded reproduction data"""
+        # TODO: Consider adding compression for large reproduction datasets and size limits
         reproduction_data = {}
         
         for finding in findings:
@@ -1049,6 +1259,7 @@ def generate_campaign_report(
     
     return engine.generate_report(
         campaign=campaign,
+        campaign_context=campaign_context,
         history_entries=history_entries,
         level=report_level,
         output_format=output_format,
@@ -1205,10 +1416,19 @@ def export_findings_to_sarif(findings: List[VulnerabilityFinding], output_path: 
     return exporter.export(content, output_path)
 
 
-def calculate_campaign_metrics(history_entries: List[Any]) -> ReportMetrics:
-    """Calculate comprehensive campaign metrics"""
+def calculate_campaign_metrics(history_entries: List[Any], campaign_context: Any) -> ReportMetrics:
+    """
+    Calculate comprehensive campaign metrics
+    
+    Args:
+        history_entries: List of FuzzHistoryEntry objects
+        campaign_context: CampaignContext containing mutator data
+        
+    Returns:
+        ReportMetrics with comprehensive analytics
+    """
     engine = ReportingEngine()
-    return engine._calculate_metrics(history_entries)
+    return engine._calculate_metrics(history_entries, campaign_context)
 
 
 def write_crash_report(
