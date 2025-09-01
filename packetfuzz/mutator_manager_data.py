@@ -607,7 +607,7 @@ class MutatorManagerData:
         field_kind = self._categorize_field_type(layer, field_name)
         
         # Extract field constraints
-        constraints = self._extract_field_constraints(layer, field_desc)
+        constraints = self._extract_field_constraints(layer, field_desc, layer_name, field_name)
         
         # Create base metadata
         field_metadata = FieldMetadata(
@@ -664,19 +664,20 @@ class MutatorManagerData:
             type_chain = get_field_type_chain(layer, field_name)
             
             if type_chain:
-                primary_type = type_chain[0]
+                # Check the entire inheritance chain, not just the primary type
+                for type_name in type_chain:
+                    # Categorize based on type hierarchy
+                    if any(typ in type_name for typ in ['Int', 'Byte', 'Short', 'Bit']):
+                        return "numeric"
+                    elif any(typ in type_name for typ in ['Str', 'String']):
+                        return "string"
+                    elif any(typ in type_name for typ in ['Enum']):
+                        return "enum"
+                    elif any(typ in type_name for typ in ['Flag']):
+                        return "flags"
                 
-                # Categorize based on type hierarchy
-                if any(typ in primary_type for typ in ['Int', 'Byte', 'Short', 'Bit']):
-                    return "numeric"
-                elif any(typ in primary_type for typ in ['Str', 'String']):
-                    return "string"
-                elif any(typ in primary_type for typ in ['Enum']):
-                    return "enum"
-                elif any(typ in primary_type for typ in ['Flag']):
-                    return "flags"
-                else:
-                    return "unknown"
+                # If no match found in inheritance chain, return unknown
+                return "unknown"
             
         except ImportError:
             # Fallback to field descriptor-based logic
@@ -706,13 +707,15 @@ class MutatorManagerData:
                 
         return "unknown"
     
-    def _extract_field_constraints(self, layer: Packet, field_desc: Field) -> Dict[str, Any]:
+    def _extract_field_constraints(self, layer: Packet, field_desc: Field, layer_name: str, field_name: str) -> Dict[str, Any]:
         """
         Extract field constraints using field utilities for consistency.
         
         Args:
             layer: Scapy layer containing the field
             field_desc: Scapy field descriptor
+            layer_name: Name of the layer (e.g., 'HTTPRequest')
+            field_name: Name of the field (e.g., 'Method')
             
         Returns:
             Dictionary of constraint information
@@ -731,12 +734,28 @@ class MutatorManagerData:
                 'is_signed': False
             }
             
-            # Map properties to constraints
+            # Map properties to constraints with fuzzing-friendly adjustments
             if 'length' in properties:
                 constraints['max_length'] = properties['length']
             if 'size' in properties:
                 constraints['max_length'] = properties['size']
-                
+            
+            # Fix overly restrictive size constraints for HTTP header values
+            # Scapy's _HTTPHeaderField uses sz=2 (for header indexes), but for fuzzing
+            # header values we need realistic limits
+            if layer_name in ['HTTPRequest', 'HTTPResponse']:
+                if field_name == 'Method':
+                    constraints['max_length'] = 32  # HTTP methods: GET, POST, etc.
+                elif field_name in ['Path']:
+                    constraints['max_length'] = 8192  # URLs can be long
+                elif field_name in ['Host']:
+                    constraints['max_length'] = 253  # DNS hostname limit
+                elif field_name in ['User_Agent']:
+                    constraints['max_length'] = 2048  # User agents can be long
+                # For other HTTP fields, if size is unreasonably small, use a reasonable default
+                elif constraints.get('max_length') and constraints['max_length'] < 128:
+                    constraints['max_length'] = 1024  # General reasonable default
+                    
             # Add field-specific constraints using MutatorManager logic
             from scapy.fields import (BitField, ByteField, ShortField, IntField, 
                                      EnumField, IntEnumField, StrField)
@@ -772,9 +791,9 @@ class MutatorManagerData:
             
         except ImportError:
             # Fallback to original logic if utils not available
-            return self._extract_field_constraints_fallback(layer, field_desc)
+            return self._extract_field_constraints_fallback(layer, field_desc, layer_name, field_name)
     
-    def _extract_field_constraints_fallback(self, layer: Packet, field_desc: Field) -> Dict[str, Any]:
+    def _extract_field_constraints_fallback(self, layer: Packet, field_desc: Field, layer_name: str, field_name: str) -> Dict[str, Any]:
         """
         Fallback method for extracting field constraints when field_utils is unavailable.
         
@@ -1679,9 +1698,15 @@ class MutatorManagerData:
         return mutator_usage
 
     def get_all_fuzzed_fields(self) -> List[str]:
-        """Get list of all field keys that are fuzzed across all packets."""
+        """
+        Get list of all field keys that are fuzzed across all packets.
+        
+        Note: Currently returns fields that have been mutated globally across
+        all iterations due to architectural limitations.
+        """
         fuzzed_fields = set()
         for packet_data in self.packet_data:
+            # Only check fields marked as fuzzable during preprocessing
             for field_key in packet_data.fuzzable_fields:
                 field_metadata = packet_data.fields.get(field_key)
                 if field_metadata and field_metadata.mutation_count > 0:
@@ -1689,10 +1714,20 @@ class MutatorManagerData:
         return list(fuzzed_fields)
     
     def get_fuzzed_fields_for_packet(self, packet_index: int) -> List[str]:
-        """Get list of fuzzed field keys for a specific packet by index."""
+        """
+        Get list of field keys that were actually mutated for a specific packet iteration.
+        
+        Note: This method currently has an architectural limitation - the MutatorManager
+        processes all field types globally rather than per-iteration, so this will
+        return fields that have been mutated across all iterations for now.
+        
+        TODO: Implement proper per-iteration field tracking
+        """
         if 0 <= packet_index < len(self.packet_data):
             packet_data = self.packet_data[packet_index]
             fuzzed_fields = set()
+            # For now, only check fields marked as fuzzable during preprocessing
+            # until we implement proper per-iteration tracking
             for field_key in packet_data.fuzzable_fields:
                 field_metadata = packet_data.fields.get(field_key)
                 if field_metadata and field_metadata.mutation_count > 0:

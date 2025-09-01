@@ -33,7 +33,7 @@ class ScapyMutator(BaseMutator):
         Returns:
             Fuzzed field value or original value if fuzzing fails
         """
-        kind = getattr(field_info, 'kind', 'unknown')
+        kind = getattr(field_info, 'kind', None) or getattr(field_info, 'field_kind', 'unknown')
         current_value = getattr(field_info, 'current_value', None)
         # Scapy's fuzz() operates on Packet; for primitive field values, we can do simple tweaks
         try:

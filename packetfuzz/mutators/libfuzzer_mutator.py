@@ -13,6 +13,8 @@ import re
 from pathlib import Path
 from typing import Any, List, Optional
 
+logger = logging.getLogger(__name__)
+
 # Third-party imports
 from scapy.fields import Field
 
@@ -116,18 +118,27 @@ class LibFuzzerMutator(BaseMutator):
                 dict_entries[i] = ctypes.c_char_p(entry.encode('utf-8', errors='ignore'))
             # Load into LibFuzzer memory only
             result = self._lib.load_dictionaries_native(dict_entries, len(dictionaries))
+            logger.debug(f"LibFuzzer dictionary loading result: {result} (entries: {len(dictionaries)})")
             if result == -1:
                 logger.error("Error loading dictionaries: allocation or internal error.")
                 return False
-            elif result == 0:
-                if dictionaries:
-                    logger.error(f"No dictionaries loaded, but non-empty dictionary list was provided! (entries: {len(dictionaries)})")
-                else:
-                    logger.debug("No dictionaries loaded (empty list or None provided).")
-                return True
             else:
-                logger.debug(f"Loaded {len(dictionaries)} dictionary entries into LibFuzzer")
-                return True
+                # Verify actual loaded count to determine success
+                try:
+                    loaded_count = self._lib.get_loaded_dict_count()
+                    if loaded_count > 0:
+                        logger.debug(f"Successfully loaded {loaded_count} dictionary entries into LibFuzzer")
+                        return True
+                    else:
+                        if dictionaries:
+                            logger.error(f"No dictionaries loaded, but non-empty dictionary list was provided! (entries: {len(dictionaries)})")
+                        else:
+                            logger.debug("No dictionaries loaded (empty list or None provided).")
+                        return True  # Still return True to not block fuzzing
+                except Exception as e:
+                    logger.warning(f"Failed to verify dictionary loading: {e}")
+                    # Assume success if we can't verify
+                    return True
         except Exception as e:
             logger.error(f"Exception loading dictionaries: {e}")
             return False
@@ -216,8 +227,11 @@ class LibFuzzerMutator(BaseMutator):
                      layer: Optional[Any] = None) -> Any:
         # If libfuzzer is not available, return current value to allow manager to try other mutators
         current_value = getattr(field_info, 'current_value', None)
+        # Try both 'kind' and 'field_kind' for compatibility
+        kind = getattr(field_info, 'kind', None) or getattr(field_info, 'field_kind', 'unknown')
 
-        kind = getattr(field_info, 'kind', 'unknown')
+        if not self.is_libfuzzer_available():
+            return current_value
 
         # Helper: mutate some bytes, return bytes
         def mutate_bytes_seed(b: bytes) -> bytes:
@@ -271,30 +285,40 @@ class LibFuzzerMutator(BaseMutator):
             return val
 
         if kind == 'string':
-            # If current value is None/empty, use a dictionary entry as seed
-            if current_value is None or str(current_value).strip() == "":
-                if dictionaries and len(dictionaries) > 0:
-                    # Use a random dictionary entry as seed
-                    import random
-                    random_dict_entry = random.choice(dictionaries)
-                    if isinstance(random_dict_entry, bytes):
-                        seed = random_dict_entry
-                    else:
-                        seed = str(random_dict_entry).encode('utf-8', errors='ignore')
+            # Always use dictionary entries as seeds for better fuzzing diversity
+            # Skip using current field values as seeds - let LibFuzzer work with dictionary content
+            if dictionaries and len(dictionaries) > 0:
+                # Use a random dictionary entry as seed
+                import random
+                random_dict_entry = random.choice(dictionaries)
+                if isinstance(random_dict_entry, bytes):
+                    seed = random_dict_entry
                 else:
-                    # Fallback: use a small default seed instead of empty
-                    seed = b"test"
+                    seed = str(random_dict_entry).encode('utf-8', errors='ignore')
             else:
-                seed = str(current_value).encode('utf-8', errors='ignore')
+                # Fallback: use a generic seed to let LibFuzzer generate content
+                seed = b"fuzz"
+            
+            if hasattr(field_info, 'field_name') and field_info.field_name in ['Method', 'Path', 'Host', 'User_Agent']:
+                logger.info(f"LibFuzzer: Mutating {field_info.field_name} with dictionary seed: {seed}")
             
             mutated = mutate_bytes_seed(seed)
+            
+            if hasattr(field_info, 'field_name') and field_info.field_name in ['Method', 'Path', 'Host', 'User_Agent']:
+                logger.info(f"LibFuzzer: Got mutated bytes: {mutated} (length: {len(mutated)})")
+            
             try:
                 s = mutated.decode('utf-8', errors='ignore')
             except Exception:
                 s = mutated.decode('latin-1', errors='ignore')
+                
+            # Apply field-specific length constraints for realistic fuzzing
             max_len = getattr(field_info, 'max_length', None)
             if isinstance(max_len, int) and max_len > 0:
+                if hasattr(field_info, 'field_name') and field_info.field_name in ['Method', 'Path', 'Host', 'User_Agent']:
+                    logger.info(f"LibFuzzer: Clamping {field_info.field_name} from length {len(s)} to max_length {max_len}")
                 s = s[:max_len]
+                
             return s
 
         if kind in ('options', 'list'):
@@ -353,7 +377,7 @@ class LibFuzzerMutator(BaseMutator):
     
     def _bytes_to_field_value(self, data: bytes, field_info: Any) -> Any:
         """Convert mutated bytes back to appropriate field value based on field type."""
-        kind = getattr(field_info, 'kind', 'unknown')
+        kind = getattr(field_info, 'kind', None) or getattr(field_info, 'field_kind', 'unknown')
         
         if kind in ('numeric', 'flags', 'enum'):
             try:

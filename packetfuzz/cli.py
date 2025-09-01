@@ -211,6 +211,10 @@ def apply_cli_overrides(campaign, args):
         else:
             campaign.report_formats = args.report_formats
     
+    # Report level
+    if hasattr(args, 'report_level') and args.report_level:
+        campaign.report_level = args.report_level
+    
     # Configure separate console and file logging levels
     
     # Helper to get int from environment variable
@@ -386,6 +390,13 @@ def main():
         default=env_defaults['report_formats'],
         help="Report output formats (can specify multiple). Use 'all' for all formats. "
              "Can also set PACKETFUZZ_REPORT_FORMATS as comma-separated list (default: json)"
+    )
+    output_group.add_argument(
+        "--report-level",
+        choices=['executive', 'technical', 'forensics', 'advanced'],
+        default='advanced',
+        help="Report detail level: executive (high-level overview), technical (security analysis), "
+             "forensics (deep packet analysis), advanced (fuzzing performance metrics)"
     )
     
     parser.add_argument(

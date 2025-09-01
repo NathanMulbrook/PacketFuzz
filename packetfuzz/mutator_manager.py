@@ -431,8 +431,8 @@ class MutatorManager:
         if not success:
             logger.warning(f"Field mutation failed after {attempts} attempts: {field_info.field_key}: {last_err}")
             
-            # Track failure in field metadata
-            field_info.failed_mutations += 1
+            # Record failure using centralized tracking
+            self.data.record_field_mutation(field_info.field_key, field_info.packet_index, False, mutator_type if 'mutator_type' in locals() else "unknown")
             
             # Revert to original value through the data class
             try:
@@ -452,12 +452,11 @@ class MutatorManager:
             except Exception as e:
                 logger.debug(f"Exception during revert for {field_info.field_key}: {e}")
         else:
-            # Track successful mutation
-            field_info.successful_mutations += 1
-            field_info.mutation_count += 1
-            field_info.last_mutated = datetime.now()
+            # Record successful mutation using centralized tracking
+            self.data.record_field_mutation(field_info.field_key, field_info.packet_index, True, mutator_type if 'mutator_type' in locals() else "unknown")
             
             if field_info.field_name in self.CRITICAL_FIELDS:
+                logger.debug(f"Mutate with retries result for {field_info.field_key}: {field_info.current_value}")
                 logger.debug(f"Mutate with retries result for {field_info.field_key}: {field_info.current_value}")
 
         # Return list of failed indices (empty if success, [0] if failed)

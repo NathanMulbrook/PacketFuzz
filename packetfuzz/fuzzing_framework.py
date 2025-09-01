@@ -43,6 +43,7 @@ from scapy.utils import wrpcap
 # Local imports
 from .mutator_manager import FuzzConfig, FuzzMode, MutatorManager
 from .mutator_manager_data import MutatorManagerData
+from .socket_types import SocketType
 from .utils.packet_report import ReportingEngine, ReportLevel, write_crash_report, generate_campaign_reports, write_fuzz_history_dump
 
 # Constants
@@ -718,9 +719,10 @@ class FuzzingCampaign:
 
     # Reporting configuration
     report_formats: List[str] = ['markdown']                       # List of report formats to generate (html, json, csv, sarif, markdown, yaml)
+    report_level: str = "advanced"                                  # Report detail level (executive, technical, forensics, advanced)
 
     # --- Socket logic additions ---
-    socket_type: Optional[str] = None    # User can specify: 'raw_ethernet', 'raw_ip', 'raw_tcp', 'raw_udp', 'managed_tcp', 'managed_udp', "canbus" or None for auto
+    socket_type: Optional[Union[SocketType, str]] = None    # Socket type for network operations - see SocketType enum for options
     # Behavior when mutated packet fails to serialize to bytes
     # Options:
     #  - 'fail' : raise RuntimeError (strict, default)
@@ -788,7 +790,18 @@ class FuzzingCampaign:
                     self.advanced_field_mapping_overrides = []
                 self.advanced_field_mapping_overrides.extend(fuzz_only_entries)
 
-
+    def _normalize_socket_type(self) -> Optional[SocketType]:
+        """
+        Convert socket_type to SocketType enum if it's a string, for backward compatibility.
+        Returns None if socket_type is None or if conversion fails.
+        """
+        if self.socket_type is None:
+            return None
+        if isinstance(self.socket_type, SocketType):
+            return self.socket_type
+        if isinstance(self.socket_type, str):
+            return SocketType.from_string(self.socket_type)
+        return None
 
     def get_mutator_data(self) -> Optional['MutatorManagerData']:
         """
@@ -875,23 +888,25 @@ class FuzzingCampaign:
             errors.append("Campaign target is None")
         # Validate socket_type if specified
         if self.socket_type is not None:
-            valid_types = ['raw_ethernet', 'raw_ip', 'raw_tcp', 'raw_udp', 'managed_tcp', 'managed_udp', 'canbus']
-            if self.socket_type not in valid_types:
-                errors.append(f"Invalid socket_type {self.socket_type}, must be one of {valid_types}")
-            if packet and self.socket_type == "raw_ethernet":
-                try:
-                    from scapy.layers.l2 import Ether
-                    if not packet.haslayer(Ether):
-                        errors.append("Raw Ethernet (socket_type='raw_ethernet') campaign requires Ethernet header")
-                except ImportError:
-                    errors.append("Scapy Ether layer not available for validation")
-            if packet and self.socket_type in ["l3", "tcp", "udp"]:
-                try:
-                    from scapy.layers.inet import IP
-                    if not packet.haslayer(IP):
-                        errors.append(f"socket_type='{self.socket_type}' campaign requires IP header")
-                except ImportError:
-                    errors.append("Scapy IP layer not available for validation")
+            # Normalize socket_type to enum and validate
+            normalized_socket_type = self._normalize_socket_type()
+            if normalized_socket_type is None:
+                errors.append(f"Invalid socket_type {self.socket_type}, must be a SocketType enum value or valid string")
+            else:
+                if packet and normalized_socket_type == SocketType.RAW_ETHERNET:
+                    try:
+                        from scapy.layers.l2 import Ether
+                        if not packet.haslayer(Ether):
+                            errors.append("Raw Ethernet (socket_type=SocketType.RAW_ETHERNET) campaign requires Ethernet header")
+                    except ImportError:
+                        errors.append("Scapy Ether layer not available for validation")
+                if packet and normalized_socket_type in [SocketType.RAW_IP, SocketType.RAW_TCP, SocketType.RAW_UDP]:
+                    try:
+                        from scapy.layers.inet import IP
+                        if not packet.haslayer(IP):
+                            errors.append(f"socket_type={normalized_socket_type} campaign requires IP header")
+                    except ImportError:
+                        errors.append("Scapy IP layer not available for validation")
         # Log validation errors if verbose mode is enabled
         if errors and self.verbose:
             for error in errors:
@@ -987,6 +1002,52 @@ class FuzzingCampaign:
             return packet[UDP].dport
         
         return None
+
+    def _complete_packet_layers(self, packet: Packet) -> Packet:
+        """
+        Add missing layer headers to make packet PCAP-compatible.
+        
+        This ensures packets have complete layer structure for proper PCAP writing.
+        Application-layer-only packets (like HTTP) are wrapped with appropriate
+        lower-layer headers to prevent PCAP corruption.
+        
+        Args:
+            packet: Original packet that may be missing lower layers
+            
+        Returns:
+            Packet with complete layer structure
+        """
+        from scapy.layers.l2 import Ether
+        from scapy.layers.inet import IP, TCP, UDP
+        
+        # If packet already has Ethernet layer, it's complete
+        if packet.haslayer(Ether):
+            return packet
+            
+        # Check if packet has IP layer
+        if not packet.haslayer(IP):
+            # Check if it has TCP/UDP layer
+            if not packet.haslayer(TCP) and not packet.haslayer(UDP):
+                # Pure application layer - add TCP/IP/Ethernet
+                # Use random ports to avoid port reuse issues
+                import random
+                sport = random.randint(49152, 65535)  # Ephemeral port range
+                dport = getattr(self, 'target_port', 80)  # Use campaign target port or default
+                completed = Ether(dst="ff:ff:ff:ff:ff:ff", src="00:00:00:00:00:00") / \
+                           IP(dst="127.0.0.1", src="127.0.0.1") / \
+                           TCP(dport=dport, sport=sport) / packet
+            else:
+                # Has TCP/UDP but no IP - add IP/Ethernet  
+                completed = Ether(dst="ff:ff:ff:ff:ff:ff", src="00:00:00:00:00:00") / \
+                           IP(dst="127.0.0.1", src="127.0.0.1") / packet
+        else:
+            # Has IP but no Ethernet - add Ethernet
+            completed = Ether(dst="ff:ff:ff:ff:ff:ff", src="00:00:00:00:00:00") / packet
+            
+        if self.verbose:
+            logger.debug(f"[PCAP] Completed packet layers: {[layer.__name__ for layer in completed.layers()]}")
+            
+        return completed
 
     def _populate_connection_fields(self, packet: Packet) -> None:
         """
@@ -1135,7 +1196,7 @@ class FuzzingCampaign:
                 generate_campaign_reports(
                     campaign=self,
                     campaign_context=self.context,
-                    level="executive",
+                    level=getattr(self, 'report_level', 'executive'),
                     output_formats=self.report_formats,
                     output_directory=None  # Auto-generated path
                 )
@@ -1258,18 +1319,9 @@ class FuzzingCampaign:
                     logger.info(f"Initializing PCAP output to: {pcap_path}")
                 try:
                     from scapy.utils import PcapWriter
-                    # Choose linktype so raw bytes (IP) are stored correctly in PCAP
-                    linktype = 1  # Default to Ethernet
-                    try:
-                        if mutator_data and getattr(mutator_data, 'packet_list', None) is not None:
-                            if "ETH" in mutator_data.get_all_layer_types():
-                                linktype = 1
-                            elif "IP" in mutator_data.get_all_layer_types():
-                                # RAW IP packets should use LINKTYPE_RAW (101)
-                                linktype = 101
-                    except Exception:
-                        # If detection fails, keep default
-                        linktype = 1
+                    # Always use Ethernet linktype since _complete_packet_layers() adds Ethernet headers
+                    # to all packets written to PCAP, regardless of original packet layers
+                    linktype = 1  # Ethernet linktype for proper PCAP encapsulation
 
                     # Use campaign's append setting for PCAP behavior
                     pcap_writer = PcapWriter(str(pcap_path), append=self.append_pcap, sync=True, linktype=linktype)
@@ -1305,49 +1357,54 @@ class FuzzingCampaign:
                 if not self.socket_type:
                     current_packet = fuzzed_packets[iteration] if fuzzed_packets and iteration < len(fuzzed_packets) else None
                     if current_packet and current_packet.haslayer(TCP):
-                        self.socket_type = 'raw_tcp'
+                        self.socket_type = SocketType.RAW_TCP
                     elif current_packet and current_packet.haslayer(UDP):
-                        self.socket_type = 'raw_udp'
+                        self.socket_type = SocketType.RAW_UDP
                     elif current_packet and current_packet.haslayer(IP):
-                        self.socket_type = 'raw_ip'
+                        self.socket_type = SocketType.RAW_IP
                     elif current_packet and current_packet.haslayer(Ether):
-                        self.socket_type = 'raw_ethernet'
+                        self.socket_type = SocketType.RAW_ETHERNET
                     elif current_packet and current_packet.haslayer(CAN):
-                        self.socket_type = 'canbus'
+                        self.socket_type = SocketType.CANBUS
                     else:
                         raise ValueError("Cannot auto-detect socket type from packet and not specified — please specify socket_type")
+                
+                # Normalize socket_type for consistent usage
+                socket_type = self._normalize_socket_type()
+                if socket_type is None:
+                    raise ValueError(f"Invalid socket_type: {self.socket_type}")
 
                 # Open sockets for sending only if network output is enabled
                 # TODO: make this also accept functions that return a socket object
                 s = None
                 if network_enabled:
-                    if self.socket_type == 'raw_ethernet':
+                    if socket_type == SocketType.RAW_ETHERNET:
                         # Raw Ethernet - user provides complete Ethernet frame
                         s = socket.socket(socket.AF_PACKET, socket.SOCK_RAW)
                         s.bind((self.interface, 0))
-                    elif self.socket_type == 'canbus':
+                    elif socket_type == SocketType.CANBUS:
                         # CAN bus - keep unchanged
                         s = socket.socket(socket.PF_CAN, socket.SOCK_RAW, socket.CAN_RAW)
                         s.bind((self.interface,))
-                    elif self.socket_type == 'raw_ip':
+                    elif socket_type == SocketType.RAW_IP:
                         # IP-only - user provides IP packet, kernel adds Ethernet
                         s = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_RAW)
-                    elif self.socket_type == 'raw_tcp':
+                    elif socket_type == SocketType.RAW_TCP:
                         # Transport-only TCP - user provides TCP packet, kernel adds IP + Ethernet
                         s = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_TCP)
-                    elif self.socket_type == 'raw_udp':
+                    elif socket_type == SocketType.RAW_UDP:
                         # Transport-only UDP - user provides UDP packet, kernel adds IP + Ethernet
                         s = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_UDP)
-                    elif self.socket_type == 'managed_udp':
+                    elif socket_type == SocketType.MANAGED_UDP:
                         # Real UDP connection - user provides application data, kernel handles UDP + IP + Ethernet
                         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
                         # Note: UDP connections can use connect() for efficiency or sendto() for flexibility
-                    elif self.socket_type == 'managed_tcp':
+                    elif socket_type == SocketType.MANAGED_TCP:
                         # Real TCP connection - user provides application data, kernel handles full TCP stack
                         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                         # Note: TCP connections require connect() call in send logic
                     else:
-                        raise ValueError(f"Unknown socket_type: {self.socket_type}")
+                        raise ValueError(f"Unknown socket_type: {socket_type}")
                 if self.context:
                     self.context.socket = s  # Store socket in context for custom send callback
 
@@ -1440,13 +1497,19 @@ class FuzzingCampaign:
                             logger.info(f"[SEND] Fuzzed fields: {fuzzed_fields_str}")
                         # Apply campaign target addressing based on network layer (using local pkt)
                         try:
-                            if (self.socket_type in ("l3", "udp", "tcp")) and pkt.haslayer(IP):
+                            if (socket_type in (SocketType.RAW_IP, SocketType.RAW_UDP, SocketType.RAW_TCP)) and pkt.haslayer(IP):
                                 pkt[IP].dst = self.target
-                            elif self.socket_type == "l2" and pkt.haslayer(Ether):
+                            elif socket_type == SocketType.RAW_ETHERNET and pkt.haslayer(Ether):
                                 pkt[Ether].dst = self.target
                         except Exception:
                             pass
-                        # Serialize packet to bytes first so PCAP contains exactly what is sent
+                        
+                        # Create a separate copy for PCAP output to avoid contaminating field analysis
+                        # Keep the original fuzzed packet intact for field reporting
+                        pcap_pkt = pkt.copy()
+                        pcap_pkt = self._complete_packet_layers(pcap_pkt)
+                        
+                        # Serialize the PCAP packet to bytes
                         pkt_bytes = None
                         serialize_error = None
                         try:
@@ -1454,9 +1517,9 @@ class FuzzingCampaign:
                             
                             # Populate connection fields to prevent TCP retransmission flags
                             # Uses Scapy's native field manipulation before serialization
-                            self._populate_connection_fields(pkt)
+                            self._populate_connection_fields(pcap_pkt)
                             
-                            pkt_bytes = bytes(pkt)
+                            pkt_bytes = bytes(pcap_pkt)
                             # Store serialized bytes in history entry
                             if self.context and self.context.fuzz_history:
                                 self.context.fuzz_history[-1].packet_bytes = pkt_bytes
@@ -1475,7 +1538,7 @@ class FuzzingCampaign:
                                     self.context.serialize_failures = []  # type: ignore[attr-defined]
                                 self.context.serialize_failures.append({  # type: ignore[attr-defined]
                                     'iteration': iteration,
-                                    'packet': pkt,
+                                    'packet': pkt,  # Use original fuzzed packet for error analysis
                                     'error': str(e)
                                 })
 
@@ -1503,11 +1566,11 @@ class FuzzingCampaign:
 
                         if network_enabled and self.output_network and self.context and self.context.socket and pkt_bytes is not None:
                             sock = self.context.socket
-                            if self.socket_type == "l2":
+                            if socket_type == SocketType.RAW_ETHERNET:
                                 # Layer 2: send raw Ethernet frame
                                 send_success = sock.send(pkt_bytes)
                             else:
-                                # Layer 3: send raw IP packet
+                                # Layer 3+: send raw IP packet
                                 # For AF_INET/SOCK_RAW, need to provide destination address
                                 send_success = sock.sendto(pkt_bytes, (self.target, 0))
 
@@ -1526,7 +1589,7 @@ class FuzzingCampaign:
                     #TODO update for canbus
                     if network_enabled and self.capture_responses and send_success:
                         try:
-                            if self.socket_type == "l2":
+                            if socket_type == SocketType.RAW_ETHERNET:
                                 # Layer 2: Use sniff() with a filter for Ethernet frames
                                 response = sniff(
                                     iface=self.interface,

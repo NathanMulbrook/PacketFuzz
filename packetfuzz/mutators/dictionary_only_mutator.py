@@ -103,7 +103,7 @@ class DictionaryOnlyMutator(BaseMutator):
                      dictionaries: Optional[List[bytes]] = None,
                      rng: Optional[random.Random] = None,
                      layer: Optional[Any] = None) -> Any:
-        kind = getattr(field_info, 'kind', 'unknown')
+        kind = getattr(field_info, 'kind', None) or getattr(field_info, 'field_kind', 'unknown')
         field_name = getattr(field_info, 'field_name', 'unknown')
         current_value = getattr(field_info, 'current_value', None)
         r = rng if isinstance(rng, random.Random) else random.Random()

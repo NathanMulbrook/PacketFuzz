@@ -65,6 +65,7 @@ class ReportLevel(Enum):
     EXECUTIVE = "executive"      # High-level overview for management
     TECHNICAL = "technical"      # Mid-level analysis for security teams
     FORENSICS = "forensics"      # Deep packet analysis for researchers
+    ADVANCED = "advanced"        # Detailed fuzzing performance and mutator analysis
 
 
 @dataclass
@@ -94,6 +95,9 @@ class ReportMetrics:
     packets_with_fuzzed_fields: int = 0
     packets_without_fuzzed_fields: int = 0
     most_fuzzed_fields: List[str] = field(default_factory=list)  # Top fuzzed fields
+    
+    # Enhanced field metadata tracking - direct access to FieldMetadata objects
+    detailed_field_metadata: Dict[str, Any] = field(default_factory=dict)  # field_name -> FieldMetadata dict
     
     # Mutator usage tracking
     mutator_usage: Dict[str, int] = field(default_factory=dict)  # mutator_name -> usage_count
@@ -279,12 +283,14 @@ class MutatorAnalyzer:
             return {
                 'mutator_usage': {},
                 'total_mutations_applied': 0,
-                'most_used_mutators': []
+                'most_used_mutators': [],
+                'detailed_field_metadata': {}
             }
         
         try:
             mutator_usage = {}
             total_mutations = 0
+            detailed_field_metadata = {}
             
             # Get mutator usage summary
             if hasattr(mutator_data, 'get_mutator_usage_summary'):
@@ -295,6 +301,44 @@ class MutatorAnalyzer:
             sorted_mutators = sorted(mutator_usage.items(), key=lambda x: x[1], reverse=True)
             most_used_mutators = [mutator for mutator, count in sorted_mutators[:DEFAULT_TOP_MUTATORS_COUNT]]
             
+            # Extract detailed field metadata from all fuzzable fields
+            if hasattr(mutator_data, 'get_all_fuzzable_fields'):
+                try:
+                    fuzzable_fields = mutator_data.get_all_fuzzable_fields()
+                    for field_metadata in fuzzable_fields:
+                        # Convert FieldMetadata to a JSON-serializable dict
+                        field_dict = {
+                            'field_key': field_metadata.field_key,
+                            'layer_name': field_metadata.layer_name,
+                            'field_name': field_metadata.field_name,
+                            'layer_index': field_metadata.layer_index,
+                            'packet_index': field_metadata.packet_index,
+                            'field_type': field_metadata.field_type,
+                            'field_kind': field_metadata.field_kind,
+                            'current_value': str(field_metadata.current_value) if field_metadata.current_value is not None else None,
+                            'fuzz_weight': field_metadata.fuzz_weight,
+                            'base_weight': field_metadata.base_weight,
+                            'final_scaling_factor': field_metadata.final_scaling_factor,
+                            'dictionary_paths': field_metadata.dictionary_paths.copy() if field_metadata.dictionary_paths else [],
+                            'mutator_preferences': field_metadata.mutator_preferences.copy() if field_metadata.mutator_preferences else [],
+                            'min_value': field_metadata.min_value,
+                            'max_value': field_metadata.max_value,
+                            'max_length': field_metadata.max_length,
+                            'enum_values': field_metadata.enum_values.copy() if field_metadata.enum_values else None,
+                            'is_signed': field_metadata.is_signed,
+                            'is_fuzzable': field_metadata.is_fuzzable,
+                            'exclusion_reason': field_metadata.exclusion_reason,
+                            'config_source': field_metadata.config_source,
+                            'mutation_count': field_metadata.mutation_count,
+                            'successful_mutations': field_metadata.successful_mutations,
+                            'failed_mutations': field_metadata.failed_mutations,
+                            'last_mutated': field_metadata.last_mutated.isoformat() if field_metadata.last_mutated else None,
+                        }
+                        detailed_field_metadata[field_metadata.field_key] = field_dict
+                    logger.debug(f"Extracted detailed metadata for {len(detailed_field_metadata)} fields")
+                except Exception as e:
+                    logger.warning(f"Failed to extract field metadata: {e}")
+            
             # Log additional processing info if available
             if hasattr(mutator_data, 'get_processing_summary'):
                 processing_summary = mutator_data.get_processing_summary()
@@ -303,7 +347,8 @@ class MutatorAnalyzer:
             return {
                 'mutator_usage': mutator_usage,
                 'total_mutations_applied': total_mutations,
-                'most_used_mutators': most_used_mutators
+                'most_used_mutators': most_used_mutators,
+                'detailed_field_metadata': detailed_field_metadata
             }
             
         except Exception as e:
@@ -312,7 +357,8 @@ class MutatorAnalyzer:
             return {
                 'mutator_usage': {},
                 'total_mutations_applied': 0,
-                'most_used_mutators': []
+                'most_used_mutators': [],
+                'detailed_field_metadata': {}
             }
 
 
@@ -327,7 +373,8 @@ class ReportingEngine:
         self.generators = {
             ReportLevel.EXECUTIVE: ExecutiveSummaryGenerator(),
             ReportLevel.TECHNICAL: TechnicalAnalysisGenerator(),
-            ReportLevel.FORENSICS: ForensicsGenerator()
+            ReportLevel.FORENSICS: ForensicsGenerator(),
+            ReportLevel.ADVANCED: AdvancedPerformanceGenerator()
         }
         self.exporters = {
             'html': HTMLExporter(),
@@ -468,6 +515,9 @@ class ReportingEngine:
         metrics.mutator_usage = mutator['mutator_usage']
         metrics.total_mutations_applied = mutator['total_mutations_applied']
         metrics.most_used_mutators = mutator['most_used_mutators']
+        
+        # Enhanced field metadata
+        metrics.detailed_field_metadata = mutator.get('detailed_field_metadata', {})
     
     def _detect_vulnerabilities(
         self, 
@@ -683,7 +733,11 @@ class ExecutiveSummaryGenerator(ReportGeneratorInterface):
                 "ports_tested": list(metrics.port_coverage),
                 "packets_per_second": metrics.packets_per_second,
                 "fuzzed_field_distribution": dict(metrics.fuzzed_field_distribution),
-                "field_fuzzing_rate": f"{(metrics.packets_with_fuzzed_fields/metrics.total_packets*100):.1f}%" if metrics.total_packets > 0 else "0%"
+                "field_fuzzing_rate": f"{(metrics.packets_with_fuzzed_fields/metrics.total_packets*100):.1f}%" if metrics.total_packets > 0 else "0%",
+                "detailed_field_metadata": metrics.detailed_field_metadata,  # Already in dict format
+                "mutator_usage": dict(metrics.mutator_usage),
+                "total_mutations_applied": metrics.total_mutations_applied,
+                "most_used_mutators": metrics.most_used_mutators
             }
         }
     
@@ -843,6 +897,438 @@ class ForensicsGenerator(ReportGeneratorInterface):
                 reproduction_data[finding.finding_id] = base64.b64encode(finding.reproduction_data).decode()
         
         return reproduction_data
+
+
+class AdvancedPerformanceGenerator(ReportGeneratorInterface):
+    """Generate advanced fuzzing performance and mutator analysis reports"""
+    
+    def generate(
+        self, 
+        campaign: Any, 
+        metrics: ReportMetrics, 
+        protocol_analysis: Dict[str, ProtocolAnalysis], 
+        findings: List[VulnerabilityFinding]
+    ) -> Dict[str, Any]:
+        """Generate advanced performance analysis content"""
+        
+        # Extract mutator data from campaign context
+        mutator_data = None
+        if hasattr(campaign, 'get_mutator_data'):
+            mutator_data = campaign.get_mutator_data()
+        elif hasattr(campaign, 'context') and hasattr(campaign.context, 'mutator_data'):
+            mutator_data = campaign.context.mutator_data
+        
+        performance_data = {
+            "report_type": "advanced_performance",
+            "campaign_name": getattr(campaign, "name", campaign.__class__.__name__),
+            "target": getattr(campaign, "target", "unknown"),
+            "timestamp": datetime.now().isoformat(),
+            
+            # Core performance metrics
+            "performance_summary": self._generate_performance_summary(metrics, mutator_data),
+            
+            # Detailed mutator analysis
+            "mutator_analysis": self._generate_mutator_analysis(mutator_data),
+            
+            # Field performance metrics
+            "field_performance": self._generate_field_performance(mutator_data),
+            
+            # Weight scaling analysis
+            "weight_analysis": self._generate_weight_analysis(mutator_data),
+            
+            # Campaign configuration analysis
+            "campaign_config": self._generate_campaign_config(mutator_data),
+            
+            # Mutation effectiveness metrics
+            "mutation_effectiveness": self._generate_mutation_effectiveness(mutator_data, metrics),
+            
+            # Dictionary utilization
+            "dictionary_analysis": self._generate_dictionary_analysis(mutator_data),
+            
+            # Performance recommendations
+            "recommendations": self._generate_performance_recommendations(mutator_data, metrics)
+        }
+        
+        return performance_data
+    
+    def _generate_performance_summary(self, metrics: ReportMetrics, mutator_data: Any) -> Dict[str, Any]:
+        """Generate high-level performance summary"""
+        if not mutator_data:
+            return {"error": "No mutator data available"}
+        
+        try:
+            summary = {
+                "total_fields": mutator_data.total_fields,
+                "fuzzable_fields": mutator_data.fuzzable_field_count,
+                "fuzzable_percentage": round((mutator_data.fuzzable_field_count / mutator_data.total_fields * 100), 2) if mutator_data.total_fields > 0 else 0,
+                "packets_processed": mutator_data.total_packets,
+                "average_fields_per_packet": round(mutator_data.total_fields / mutator_data.total_packets, 2) if mutator_data.total_packets > 0 else 0,
+                "mutation_attempts": sum(getattr(field, 'mutation_count', 0) for field in mutator_data.get_all_fuzzable_fields()),
+                "successful_mutations": sum(getattr(field, 'successful_mutations', 0) for field in mutator_data.get_all_fuzzable_fields()),
+                "failed_mutations": sum(getattr(field, 'failed_mutations', 0) for field in mutator_data.get_all_fuzzable_fields())
+            }
+            
+            if summary["mutation_attempts"] > 0:
+                summary["mutation_success_rate"] = round((summary["successful_mutations"] / summary["mutation_attempts"] * 100), 2)
+            else:
+                summary["mutation_success_rate"] = 0
+                
+            return summary
+        except Exception as e:
+            return {"error": f"Failed to generate performance summary: {str(e)}"}
+    
+    def _generate_mutator_analysis(self, mutator_data: Any) -> Dict[str, Any]:
+        """Analyze mutator usage and effectiveness"""
+        if not mutator_data:
+            return {"error": "No mutator data available"}
+        
+        try:
+            # Get mutator usage summary
+            mutator_usage = mutator_data.get_mutator_usage_summary()
+            
+            analysis = {
+                "mutator_usage_distribution": mutator_usage,
+                "most_used_mutator": max(mutator_usage.items(), key=lambda x: x[1]) if mutator_usage else None,
+                "total_mutator_invocations": sum(mutator_usage.values()),
+                "unique_mutators_used": len(mutator_usage)
+            }
+            
+            # Analyze mutator preferences
+            field_mutator_prefs = {}
+            for field in mutator_data.get_all_fuzzable_fields():
+                if hasattr(field, 'mutator_preferences') and field.mutator_preferences:
+                    for mutator in field.mutator_preferences:
+                        if mutator not in field_mutator_prefs:
+                            field_mutator_prefs[mutator] = 0
+                        field_mutator_prefs[mutator] += 1
+            
+            analysis["mutator_preferences_distribution"] = field_mutator_prefs
+            
+            return analysis
+        except Exception as e:
+            return {"error": f"Failed to generate mutator analysis: {str(e)}"}
+    
+    def _generate_field_performance(self, mutator_data: Any) -> Dict[str, Any]:
+        """Analyze individual field performance metrics"""
+        if not mutator_data:
+            return {"error": "No mutator data available"}
+        
+        try:
+            field_stats = []
+            
+            for field in mutator_data.get_all_fuzzable_fields():
+                field_info = {
+                    "field_key": field.field_key,
+                    "field_name": field.field_name,
+                    "field_kind": field.field_kind,
+                    "layer_name": field.layer_name,
+                    "base_weight": getattr(field, 'base_weight', field.fuzz_weight),
+                    "final_weight": field.fuzz_weight,
+                    "scaling_factor": getattr(field, 'final_scaling_factor', 1.0),
+                    "mutation_count": getattr(field, 'mutation_count', 0),
+                    "successful_mutations": getattr(field, 'successful_mutations', 0),
+                    "failed_mutations": getattr(field, 'failed_mutations', 0),
+                    "dictionary_count": len(field.dictionary_paths),
+                    "default_values_count": len(field.default_values),
+                    "mutator_preferences": field.mutator_preferences,
+                    "config_source": field.config_source,
+                    "last_mutated": getattr(field, 'last_mutated', None)
+                }
+                
+                # Calculate success rate
+                if field_info["mutation_count"] > 0:
+                    field_info["success_rate"] = round((field_info["successful_mutations"] / field_info["mutation_count"] * 100), 2)
+                else:
+                    field_info["success_rate"] = 0
+                
+                field_stats.append(field_info)
+            
+            # Sort by mutation count (most active fields first)
+            field_stats.sort(key=lambda x: x["mutation_count"], reverse=True)
+            
+            return {
+                "total_fields_analyzed": len(field_stats),
+                "field_details": field_stats,
+                "top_performing_fields": field_stats[:10],  # Top 10 by mutation count
+                "field_config_sources": Counter([f["config_source"] for f in field_stats]),
+                "weight_scaling_impact": self._analyze_weight_scaling_impact(field_stats)
+            }
+        except Exception as e:
+            return {"error": f"Failed to generate field performance: {str(e)}"}
+    
+    def _generate_weight_analysis(self, mutator_data: Any) -> Dict[str, Any]:
+        """Analyze weight scaling and its impact"""
+        if not mutator_data:
+            return {"error": "No mutator data available"}
+        
+        try:
+            weight_data = []
+            
+            for field in mutator_data.get_all_fuzzable_fields():
+                weight_info = {
+                    "field_key": field.field_key,
+                    "base_weight": getattr(field, 'base_weight', field.fuzz_weight),
+                    "layer_scaled_weight": getattr(field, 'layer_scaled_weight', field.fuzz_weight),
+                    "campaign_scaled_weight": getattr(field, 'campaign_scaled_weight', field.fuzz_weight),
+                    "final_weight": field.fuzz_weight,
+                    "layer_scaling_factor": getattr(field, 'layer_scaling_factor', 1.0),
+                    "campaign_scaling_factor": getattr(field, 'campaign_scaling_factor', 1.0),
+                    "final_scaling_factor": getattr(field, 'final_scaling_factor', 1.0)
+                }
+                weight_data.append(weight_info)
+            
+            # Calculate scaling statistics
+            layer_scalings = [w["layer_scaling_factor"] for w in weight_data if w["layer_scaling_factor"] != 1.0]
+            campaign_scalings = [w["campaign_scaling_factor"] for w in weight_data if w["campaign_scaling_factor"] != 1.0]
+            
+            analysis = {
+                "total_fields_with_scaling": len([w for w in weight_data if w["final_scaling_factor"] != 1.0]),
+                "average_layer_scaling": round(sum(layer_scalings) / len(layer_scalings), 3) if layer_scalings else 1.0,
+                "average_campaign_scaling": round(sum(campaign_scalings) / len(campaign_scalings), 3) if campaign_scalings else 1.0,
+                "weight_distribution": {
+                    "min_final_weight": min([w["final_weight"] for w in weight_data]) if weight_data else 0,
+                    "max_final_weight": max([w["final_weight"] for w in weight_data]) if weight_data else 0,
+                    "avg_final_weight": round(sum([w["final_weight"] for w in weight_data]) / len(weight_data), 3) if weight_data else 0
+                },
+                "scaling_effectiveness": self._calculate_scaling_effectiveness(weight_data)
+            }
+            
+            return analysis
+        except Exception as e:
+            return {"error": f"Failed to generate weight analysis: {str(e)}"}
+    
+    def _generate_campaign_config(self, mutator_data: Any) -> Dict[str, Any]:
+        """Analyze campaign-level configuration"""
+        if not mutator_data:
+            return {"error": "No mutator data available"}
+        
+        try:
+            config = mutator_data.fuzz_config
+            
+            campaign_info = {
+                "fuzz_mode": config.mode.value if hasattr(config.mode, 'value') else str(config.mode),
+                "max_mutations": config.max_mutations,
+                "use_dictionaries": config.use_dictionaries,
+                "global_fuzz_weight": config.fuzz_weight,
+                "fuzz_weight_scale": config.fuzz_weight_scale,
+                "layer_weight_scaling_enabled": config.enable_layer_weight_scaling,
+                "layer_weight_scaling_factor": config.layer_weight_scaling,
+                "mutator_preferences": config.mutator_preference,
+                "single_packet_mode": getattr(mutator_data, 'is_single_packet', None),
+                "total_iterations": config.iterations
+            }
+            
+            # Additional configuration analysis
+            if config.iterations:
+                campaign_info["estimated_total_mutations"] = config.iterations * len(mutator_data.get_all_fuzzable_fields())
+            else:
+                campaign_info["estimated_total_mutations"] = "Unknown (iterations not set)"
+            campaign_info["dictionary_usage_enabled"] = config.use_dictionaries
+            
+            return campaign_info
+        except Exception as e:
+            return {"error": f"Failed to generate campaign config: {str(e)}"}
+    
+    def _generate_mutation_effectiveness(self, mutator_data: Any, metrics: ReportMetrics) -> Dict[str, Any]:
+        """Analyze mutation effectiveness and coverage"""
+        if not mutator_data:
+            return {"error": "No mutator data available"}
+        
+        try:
+            effectiveness = {
+                "field_coverage": {
+                    "total_available_fields": mutator_data.total_fields,
+                    "fuzzable_fields": mutator_data.fuzzable_field_count,
+                    "actually_fuzzed_fields": len([f for f in mutator_data.get_all_fuzzable_fields() if getattr(f, 'mutation_count', 0) > 0]),
+                    "coverage_percentage": 0
+                },
+                "mutation_distribution": {},
+                "effectiveness_score": 0
+            }
+            
+            # Calculate coverage percentage
+            if mutator_data.fuzzable_field_count > 0:
+                effectiveness["field_coverage"]["coverage_percentage"] = round(
+                    (effectiveness["field_coverage"]["actually_fuzzed_fields"] / mutator_data.fuzzable_field_count * 100), 2
+                )
+            
+            # Analyze mutation distribution by field type
+            field_type_mutations = {}
+            for field in mutator_data.get_all_fuzzable_fields():
+                field_kind = field.field_kind
+                mutation_count = getattr(field, 'mutation_count', 0)
+                
+                if field_kind not in field_type_mutations:
+                    field_type_mutations[field_kind] = {"count": 0, "mutations": 0}
+                
+                field_type_mutations[field_kind]["count"] += 1
+                field_type_mutations[field_kind]["mutations"] += mutation_count
+            
+            effectiveness["mutation_distribution"] = field_type_mutations
+            
+            # Calculate basic effectiveness score (0-100)
+            coverage_score = effectiveness["field_coverage"]["coverage_percentage"]
+            mutation_score = min(100, sum([info["mutations"] for info in field_type_mutations.values()]) / 10)  # Scale mutations
+            effectiveness["effectiveness_score"] = round((coverage_score + mutation_score) / 2, 2)
+            
+            return effectiveness
+        except Exception as e:
+            return {"error": f"Failed to generate mutation effectiveness: {str(e)}"}
+    
+    def _generate_dictionary_analysis(self, mutator_data: Any) -> Dict[str, Any]:
+        """Analyze dictionary usage and effectiveness"""
+        if not mutator_data:
+            return {"error": "No mutator data available"}
+        
+        try:
+            dictionary_stats = {
+                "fields_with_dictionaries": 0,
+                "total_dictionary_files": set(),
+                "dictionary_distribution": {},
+                "most_common_dictionaries": []
+            }
+            
+            for field in mutator_data.get_all_fuzzable_fields():
+                if field.dictionary_paths:
+                    dictionary_stats["fields_with_dictionaries"] += 1
+                    dictionary_stats["total_dictionary_files"].update(field.dictionary_paths)
+                    
+                    for dict_path in field.dictionary_paths:
+                        if dict_path not in dictionary_stats["dictionary_distribution"]:
+                            dictionary_stats["dictionary_distribution"][dict_path] = 0
+                        dictionary_stats["dictionary_distribution"][dict_path] += 1
+            
+            # Convert set to count
+            dictionary_stats["total_dictionary_files"] = len(dictionary_stats["total_dictionary_files"])
+            
+            # Get most common dictionaries
+            if dictionary_stats["dictionary_distribution"]:
+                dictionary_stats["most_common_dictionaries"] = sorted(
+                    dictionary_stats["dictionary_distribution"].items(),
+                    key=lambda x: x[1],
+                    reverse=True
+                )[:10]
+            
+            return dictionary_stats
+        except Exception as e:
+            return {"error": f"Failed to generate dictionary analysis: {str(e)}"}
+    
+    def _generate_performance_recommendations(self, mutator_data: Any, metrics: ReportMetrics) -> List[str]:
+        """Generate performance improvement recommendations"""
+        recommendations = []
+        
+        if not mutator_data:
+            recommendations.append("No mutator data available for analysis")
+            return recommendations
+        
+        try:
+            # Analyze field coverage
+            fuzzable_fields = mutator_data.get_all_fuzzable_fields()
+            actually_fuzzed = [f for f in fuzzable_fields if getattr(f, 'mutation_count', 0) > 0]
+            
+            if len(actually_fuzzed) < len(fuzzable_fields) * 0.5:
+                recommendations.append("Consider increasing iteration count or fuzz weights - only {:.1f}% of fuzzable fields were actually mutated".format(
+                    len(actually_fuzzed) / len(fuzzable_fields) * 100 if fuzzable_fields else 0
+                ))
+            
+            # Analyze mutation failures
+            total_mutations = sum([getattr(f, 'mutation_count', 0) for f in fuzzable_fields])
+            failed_mutations = sum([getattr(f, 'failed_mutations', 0) for f in fuzzable_fields])
+            
+            if total_mutations > 0 and failed_mutations / total_mutations > 0.2:
+                recommendations.append("High mutation failure rate ({:.1f}%) - check field constraints and mutator compatibility".format(
+                    failed_mutations / total_mutations * 100
+                ))
+            
+            # Analyze weight scaling impact
+            fields_with_scaling = [f for f in fuzzable_fields if getattr(f, 'final_scaling_factor', 1.0) != 1.0]
+            if len(fields_with_scaling) > 0:
+                avg_scaling = sum([getattr(f, 'final_scaling_factor', 1.0) for f in fields_with_scaling]) / len(fields_with_scaling)
+                if avg_scaling < 0.5:
+                    recommendations.append("Weight scaling is significantly reducing fuzz weights (avg factor: {:.2f}) - consider adjusting scaling parameters".format(avg_scaling))
+            
+            # Analyze dictionary usage
+            fields_with_dicts = [f for f in fuzzable_fields if f.dictionary_paths]
+            if len(fields_with_dicts) < len(fuzzable_fields) * 0.3:
+                recommendations.append("Low dictionary utilization ({:.1f}%) - consider adding more field-specific dictionaries".format(
+                    len(fields_with_dicts) / len(fuzzable_fields) * 100 if fuzzable_fields else 0
+                ))
+            
+            # Check mutator preferences diversity
+            mutator_usage = mutator_data.get_mutator_usage_summary()
+            if len(mutator_usage) == 1:
+                recommendations.append("Only one mutator type used - consider enabling multiple mutators for better coverage")
+            
+            if not recommendations:
+                recommendations.append("Campaign performance looks good - no specific recommendations at this time")
+                
+        except Exception as e:
+            recommendations.append(f"Failed to generate recommendations: {str(e)}")
+        
+        return recommendations
+    
+    def _analyze_weight_scaling_impact(self, field_stats: List[Dict]) -> Dict[str, Any]:
+        """Analyze the impact of weight scaling on field selection"""
+        impact_analysis = {
+            "fields_affected_by_scaling": 0,
+            "average_scaling_reduction": 0,
+            "highly_scaled_fields": []
+        }
+        
+        scaling_factors = []
+        for field in field_stats:
+            scaling_factor = field.get("scaling_factor", 1.0)
+            if scaling_factor != 1.0:
+                impact_analysis["fields_affected_by_scaling"] += 1
+                scaling_factors.append(scaling_factor)
+                
+                if scaling_factor < 0.3:  # Highly scaled down
+                    impact_analysis["highly_scaled_fields"].append({
+                        "field_key": field["field_key"],
+                        "scaling_factor": scaling_factor,
+                        "original_weight": field["base_weight"],
+                        "final_weight": field["final_weight"]
+                    })
+        
+        if scaling_factors:
+            impact_analysis["average_scaling_reduction"] = round(1 - (sum(scaling_factors) / len(scaling_factors)), 3)
+        
+        return impact_analysis
+    
+    def _calculate_scaling_effectiveness(self, weight_data: List[Dict]) -> Dict[str, Any]:
+        """Calculate how effective the weight scaling is"""
+        effectiveness = {
+            "scaling_distribution": {
+                "no_scaling": 0,
+                "light_scaling": 0,  # 0.7-1.0
+                "moderate_scaling": 0,  # 0.3-0.7
+                "heavy_scaling": 0   # 0.0-0.3
+            },
+            "scaling_impact_score": 0
+        }
+        
+        for weight in weight_data:
+            factor = weight["final_scaling_factor"]
+            if factor >= 1.0:
+                effectiveness["scaling_distribution"]["no_scaling"] += 1
+            elif factor >= 0.7:
+                effectiveness["scaling_distribution"]["light_scaling"] += 1
+            elif factor >= 0.3:
+                effectiveness["scaling_distribution"]["moderate_scaling"] += 1
+            else:
+                effectiveness["scaling_distribution"]["heavy_scaling"] += 1
+        
+        # Calculate impact score (0-100, higher means more diverse scaling)
+        total_fields = len(weight_data)
+        if total_fields > 0:
+            diversity_score = (
+                effectiveness["scaling_distribution"]["light_scaling"] * 0.3 +
+                effectiveness["scaling_distribution"]["moderate_scaling"] * 0.7 +
+                effectiveness["scaling_distribution"]["heavy_scaling"] * 1.0
+            ) / total_fields * 100
+            effectiveness["scaling_impact_score"] = round(diversity_score, 2)
+        
+        return effectiveness
 
 
 # ============================================================================
@@ -1141,7 +1627,12 @@ class MarkdownExporter(ExporterInterface):
         md = f"# PacketFuzz {report_type.replace('_', ' ').title()}\n\n"
         md += f"**Generated:** {content.get('timestamp', 'unknown')}\n\n"
         
-        if "executive_summary" in content:
+        # Handle advanced performance reports
+        if report_type == "advanced_performance":
+            md += self._generate_advanced_performance_markdown(content)
+        
+        # Handle executive summary reports  
+        elif "executive_summary" in content:
             summary = content["executive_summary"]
             md += "## Executive Summary\n\n"
             md += f"- **Target:** {content.get('target', 'unknown')}\n"
@@ -1168,6 +1659,130 @@ class MarkdownExporter(ExporterInterface):
             md += f"- **Total Packets:** {metrics.get('total_packets', 0)}\n"
             md += f"- **Successful:** {metrics.get('successful_packets', 0)}\n"
             md += f"- **Failed:** {metrics.get('failed_packets', 0)}\n\n"
+        
+        return md
+    
+    def _generate_advanced_performance_markdown(self, content: Dict[str, Any]) -> str:
+        """Generate markdown content for advanced performance reports"""
+        md = ""
+        
+        # Campaign info
+        md += f"**Campaign:** {content.get('campaign_name', 'Unknown')}\n"
+        md += f"**Target:** {content.get('target', 'Unknown')}\n\n"
+        
+        # Performance Summary
+        if "performance_summary" in content:
+            summary = content["performance_summary"]
+            md += "## Performance Summary\n\n"
+            md += f"- **Total Fields:** {summary.get('total_fields', 0)}\n"
+            md += f"- **Fuzzable Fields:** {summary.get('fuzzable_fields', 0)}\n"
+            md += f"- **Fuzzable Percentage:** {summary.get('fuzzable_percentage', 0)}%\n"
+            md += f"- **Packets Processed:** {summary.get('packets_processed', 0)}\n"
+            md += f"- **Average Fields per Packet:** {summary.get('average_fields_per_packet', 0)}\n"
+            md += f"- **Mutation Attempts:** {summary.get('mutation_attempts', 0)}\n"
+            md += f"- **Successful Mutations:** {summary.get('successful_mutations', 0)}\n"
+            md += f"- **Failed Mutations:** {summary.get('failed_mutations', 0)}\n"
+            md += f"- **Mutation Success Rate:** {summary.get('mutation_success_rate', 0)}%\n\n"
+        
+        # Mutator Analysis
+        if "mutator_analysis" in content:
+            analysis = content["mutator_analysis"]
+            md += "## Mutator Analysis\n\n"
+            if analysis.get("mutator_usage_distribution"):
+                md += "### Mutator Usage Distribution\n\n"
+                md += "| Mutator | Usage Count |\n|---|---|\n"
+                for mutator, count in sorted(analysis["mutator_usage_distribution"].items(), key=lambda x: x[1], reverse=True):
+                    md += f"| {mutator} | {count} |\n"
+                md += "\n"
+            
+            md += f"- **Total Mutator Invocations:** {analysis.get('total_mutator_invocations', 0)}\n"
+            md += f"- **Unique Mutators Used:** {analysis.get('unique_mutators_used', 0)}\n"
+            if analysis.get('most_used_mutator'):
+                mutator, count = analysis['most_used_mutator']
+                md += f"- **Most Used Mutator:** {mutator} ({count} times)\n"
+            md += "\n"
+        
+        # Weight Analysis
+        if "weight_analysis" in content:
+            weights = content["weight_analysis"]
+            md += "## Weight Analysis\n\n"
+            md += f"- **Fields with Scaling:** {weights.get('total_fields_with_scaling', 0)}\n"
+            md += f"- **Average Layer Scaling:** {weights.get('average_layer_scaling', 1.0)}\n"
+            md += f"- **Average Campaign Scaling:** {weights.get('average_campaign_scaling', 1.0)}\n"
+            
+            if "weight_distribution" in weights:
+                dist = weights["weight_distribution"]
+                md += f"- **Weight Range:** {dist.get('min_final_weight', 0)} - {dist.get('max_final_weight', 0)}\n"
+                md += f"- **Average Final Weight:** {dist.get('avg_final_weight', 0)}\n"
+            md += "\n"
+        
+        # Campaign Configuration
+        if "campaign_config" in content:
+            config = content["campaign_config"]
+            md += "## Campaign Configuration\n\n"
+            md += f"- **Fuzz Mode:** {config.get('fuzz_mode', 'unknown')}\n"
+            md += f"- **Max Mutations:** {config.get('max_mutations', 0)}\n"
+            md += f"- **Use Dictionaries:** {config.get('use_dictionaries', False)}\n"
+            md += f"- **Global Fuzz Weight:** {config.get('global_fuzz_weight', 0)}\n"
+            md += f"- **Fuzz Weight Scale:** {config.get('fuzz_weight_scale', 1.0)}\n"
+            md += f"- **Layer Weight Scaling Enabled:** {config.get('layer_weight_scaling_enabled', False)}\n"
+            md += f"- **Single Packet Mode:** {config.get('single_packet_mode', False)}\n"
+            md += f"- **Total Iterations:** {config.get('total_iterations', 0)}\n"
+            md += f"- **Estimated Total Mutations:** {config.get('estimated_total_mutations', 0)}\n"
+            if config.get('mutator_preferences'):
+                md += f"- **Mutator Preferences:** {', '.join(config['mutator_preferences'])}\n"
+            md += "\n"
+        
+        # Mutation Effectiveness
+        if "mutation_effectiveness" in content:
+            effectiveness = content["mutation_effectiveness"]
+            md += "## Mutation Effectiveness\n\n"
+            
+            if "field_coverage" in effectiveness:
+                coverage = effectiveness["field_coverage"]
+                md += f"- **Field Coverage:** {coverage.get('coverage_percentage', 0)}%\n"
+                md += f"- **Actually Fuzzed Fields:** {coverage.get('actually_fuzzed_fields', 0)} / {coverage.get('fuzzable_fields', 0)}\n"
+            
+            md += f"- **Effectiveness Score:** {effectiveness.get('effectiveness_score', 0)}/100\n"
+            
+            if "mutation_distribution" in effectiveness:
+                md += "\n### Mutation Distribution by Field Type\n\n"
+                md += "| Field Type | Field Count | Total Mutations |\n|---|---|---|\n"
+                for field_type, info in effectiveness["mutation_distribution"].items():
+                    md += f"| {field_type} | {info.get('count', 0)} | {info.get('mutations', 0)} |\n"
+            md += "\n"
+        
+        # Dictionary Analysis
+        if "dictionary_analysis" in content:
+            dicts = content["dictionary_analysis"]
+            md += "## Dictionary Analysis\n\n"
+            md += f"- **Fields with Dictionaries:** {dicts.get('fields_with_dictionaries', 0)}\n"
+            md += f"- **Total Dictionary Files:** {dicts.get('total_dictionary_files', 0)}\n"
+            
+            if dicts.get('most_common_dictionaries'):
+                md += "\n### Most Common Dictionaries\n\n"
+                md += "| Dictionary | Usage Count |\n|---|---|\n"
+                for dict_path, count in dicts['most_common_dictionaries'][:10]:
+                    md += f"| {dict_path} | {count} |\n"
+            md += "\n"
+        
+        # Performance Recommendations
+        if "recommendations" in content:
+            recommendations = content["recommendations"]
+            md += "## Performance Recommendations\n\n"
+            for i, recommendation in enumerate(recommendations, 1):
+                md += f"{i}. {recommendation}\n"
+            md += "\n"
+        
+        # Top Performing Fields (from field_performance)
+        if "field_performance" in content:
+            field_perf = content["field_performance"]
+            if field_perf.get("top_performing_fields"):
+                md += "## Top Performing Fields (by mutation count)\n\n"
+                md += "| Field | Layer | Mutations | Success Rate | Final Weight |\n|---|---|---|---|---|\n"
+                for field in field_perf["top_performing_fields"][:10]:
+                    md += f"| {field.get('field_name', 'unknown')} | {field.get('layer_name', 'unknown')} | {field.get('mutation_count', 0)} | {field.get('success_rate', 0)}% | {field.get('final_weight', 0)} |\n"
+                md += "\n"
         
         return md
 
@@ -1253,7 +1868,8 @@ def generate_campaign_report(
     level_map = {
         "executive": ReportLevel.EXECUTIVE,
         "technical": ReportLevel.TECHNICAL,
-        "forensics": ReportLevel.FORENSICS
+        "forensics": ReportLevel.FORENSICS,
+        "advanced": ReportLevel.ADVANCED
     }
     report_level = level_map.get(level, ReportLevel.TECHNICAL)
     
