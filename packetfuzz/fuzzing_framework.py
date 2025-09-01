@@ -809,8 +809,22 @@ class FuzzingCampaign:
         effective_iterations = iterations or getattr(self, 'iterations', None)
         
         dict_config_path = self.user_mapping_file or self.global_dict_config_path
+        
+        # Determine fuzz mode from campaign attributes
+        fuzz_mode = FuzzMode.BOTH  # Default
+        if hasattr(self, 'fuzz_mode'):
+            mode_str = getattr(self, 'fuzz_mode', 'both').lower()
+            if mode_str == 'field':
+                fuzz_mode = FuzzMode.FIELD_LEVEL
+            elif mode_str == 'binary' or mode_str == 'packet':
+                fuzz_mode = FuzzMode.PACKET_LEVEL
+            elif mode_str == 'both':
+                fuzz_mode = FuzzMode.BOTH
+            elif mode_str == 'none':
+                fuzz_mode = FuzzMode.BOTH  # Keep BOTH but will skip mutations
+        
         config = FuzzConfig(
-            mode = FuzzMode.BOTH,
+            mode = fuzz_mode,
             use_dictionaries = True,
             fuzz_weight = 1.0,
             global_dict_config_path = dict_config_path,

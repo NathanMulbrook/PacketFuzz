@@ -258,15 +258,20 @@ class MutatorManager:
         """
         # Handle edge case where iterations is 0
         if iterations <= 0:
+            if VERBOSITY_LEVEL >= 1:
+                logger.info(f"[FUZZ] No iterations requested (iterations={iterations})")
             return []
             
         # Debug logging only in verbose mode
         if VERBOSITY_LEVEL >= 3:  # Only in debug mode
             write_debug_packet_log([packet], file_path=get_log_file_path("fuzz_fields_input_report.txt"), title="Fuzz Fields Input")
         
-
-        
-
+        # Diagnostic logging for fuzzing process
+        if VERBOSITY_LEVEL >= 2:
+            available_fieldtypes = self.data.get_all_fieldtypes()
+            logger.info(f"[FUZZ] Starting field fuzzing: {iterations} iterations, {len(available_fieldtypes)} field types available")
+            if available_fieldtypes:
+                logger.debug(f"[FUZZ] Available field types: {', '.join(available_fieldtypes)}")
         
         # Step 2: Initialize tracking for all packets
         
@@ -274,13 +279,12 @@ class MutatorManager:
         # Since all packets are deep copies of the same original, we can use the first packet as template
    
         for field_type in self.data.get_all_fieldtypes():
-            #TODO update this fuction
             self._fuzz_field_in_layer(field_type)
         
-        # Step 4: FORCE_FUZZ - Ensure at least one field is fuzzed per packet
-        for packet_idx in self.data.get_unfuzzed_packets():
-            pass
-            #TODO add logic or method to force fuzz a field in a packet
+        # Diagnostic logging for fuzzing results
+        if VERBOSITY_LEVEL >= 2:
+            fuzzed_count = len(self.data.packet_list) if self.data.packet_list else 0
+            logger.info(f"[FUZZ] Field fuzzing complete: generated {fuzzed_count} fuzzed packets")
         
         # Write debug report of all fuzzed packets (only in debug mode)
         if VERBOSITY_LEVEL >= 3:  # Only in debug mode
@@ -308,45 +312,36 @@ class MutatorManager:
             List of indexes (0-based) of layers that were NOT fuzzed (due to skipping or failure)
         """
         
-        # Selection is now handled at the batch level, so proceed with fuzzing
+                # Selection is now handled at the batch level, so proceed with fuzzing
         logger.debug(f"Fuzzing field {field_type} ")
 
         fields_to_fuzz = self.data.get_all_fields_of_type(field_type)
         
-        # Get dictionary entries for this field type
-        try:
-            # Collect dictionary paths from all fields of this type
-            all_dict_paths = set()
-            for field in fields_to_fuzz:
-                if field and hasattr(field, 'dictionary_paths'):
-                    all_dict_paths.update(field.dictionary_paths or [])
-            dictionary_entries = self.dictionary_manager.get_dictionary_entries(list(all_dict_paths))
-        except Exception:
-            dictionary_entries = []
+        #itterate through all fields of this type
+        # field is a fieldmetata object
+        for field in fields_to_fuzz:
+            #Within this block we are fuzzing a single field
+            #hadle vallues for the field if present
+            dictionary_entries = DictionaryManager.get_dictionary_entries(field.dictionary_paths)
+            if field is not None and field.default_values:
+                pick_rng = self.fuzz_config.rng or random
+                # Store original value to compare against changes
+                original_value = self.data.get_field_value(field.field_key, field.packet_index)    
+                
+                try:
+                    pick = pick_rng.choice(field.default_values)
+                    self.data.validate_and_assign(field, pick)
+                    # we are not going to record this mutation, since its not actually a mutation
+                except Exception:
+                    logger.warn(f"Failed to assign picked value {pick} to field {field.field_key} in packet index {field.packet_index}, using explicit value") 
+            else:
+                mutator_selection = self._select_mutator_for_field(field)
+                if mutator_selection and mutator_selection is not "skip":
+                    mutator = self.get_mutator_and_initialize(mutator_selection, field, dictionary_entries)
+                    self._mutate_with_retries(field, mutator, dictionary_entries)
+            
         
-        not_fuzzed_indices = []
-        
-        #iterate through all fields of this type
-        # field is a fieldmetadata object
-        for i, field in enumerate(fields_to_fuzz):
-            try:
-                #Within this block we are fuzzing a single field
-                #handle values for the field if present
-                if field is not None and field.default_values:
-                    pick_rng = self.fuzz_config.rng or random
-                    # Store original value to compare against changes
-                    original_value = self.data.get_field_value(field.field_key, field.packet_index)    
-                    
-                    # Continue with field fuzzing logic here...
-                    # For now, mark as not fuzzed as placeholder
-                    not_fuzzed_indices.append(i)
-                else:
-                    not_fuzzed_indices.append(i)
-            except Exception as e:
-                logger.debug(f"Error fuzzing field {field}: {e}")
-                not_fuzzed_indices.append(i)
-        
-        return not_fuzzed_indices
+        return True
 
     def _select_mutator_for_field(self, field: FieldMetadata) -> str:
         mutator_selection = random.choice(FieldMetadata.mutator_preferences)

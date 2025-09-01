@@ -197,8 +197,7 @@ class PcapFuzzCampaign(FuzzingCampaign):
         try:
             # Ensure campaign context is initialized
             self.context = self.context or CampaignContext(self)
-            # Create the fuzzer instance for this campaign
-            fuzzer = self.create_fuzzer()
+            
             pcap_folder = Path(self.pcap_folder)
             if not pcap_folder.exists():
                 logger.warning(f"PCAP folder not found: {self.pcap_folder}")
@@ -218,6 +217,9 @@ class PcapFuzzCampaign(FuzzingCampaign):
             if not all_processed_packets:
                 logger.warning("No packets found in PCAP(s) after processing.")
                 return False
+                
+            # Create the fuzzer instance with all processed packets
+            fuzzer = self.create_fuzzer(packets=all_processed_packets, iterations=self.iterations)
             # Determine sending strategy:
             # - If iterations is 0 or None: send each processed packet exactly once
             # - If iterations > 0: send that many total packets, cycling through processed packets if needed

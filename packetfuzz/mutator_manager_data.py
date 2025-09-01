@@ -1685,6 +1685,13 @@ class MutatorManagerData:
                 fields.append(packet_data.fields[field_key])
         return fields
     
+    def get_fuzzable_field_keys(self) -> List[str]:
+        """Get all fuzzable field keys across all packets."""
+        field_keys = []
+        for packet_data in self.packet_data:
+            field_keys.extend(packet_data.fuzzable_fields)
+        return field_keys
+    
     def get_all_fieldtypes(self) -> List[str]:
         """Get list of all unique field types across all packets."""
         field_types = set()
