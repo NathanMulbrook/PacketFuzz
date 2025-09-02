@@ -65,6 +65,7 @@ def run_example_category_cli(category_name, directory):
     return successes, failures
 
 def main():
+        "Main entry point for running all examples."""
     print("PacketFuzzER - CLI-BASED CAMPAIGN VALIDATION RUNNER")
     print("=" * 60)
     print()

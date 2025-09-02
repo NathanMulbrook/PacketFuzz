@@ -5,6 +5,7 @@ from scapy.layers.inet import IP, TCP
 from packetfuzz.fuzzing_framework import FuzzingCampaign
 
 class MinimalTestCampaign(FuzzingCampaign):
+        "Minimal campaign for testing purposes."""
     name = "MinimalTestCampaign"
     target = "127.0.0.1"
     packet = IP(dst="127.0.0.1")/TCP(dport=80)

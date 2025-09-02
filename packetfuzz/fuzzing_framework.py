@@ -121,6 +121,7 @@ class CrashInfo:
     crash_id: str = field(init=False)
 
     def __post_init__(self):
+        """Generate unique crash ID based on timestamp."""
         self.crash_id = f"crash_{self.timestamp.strftime('%Y%m%d_%H%M%S_%f')}"
 
 
@@ -138,6 +139,7 @@ class FuzzHistoryEntry:
     
     # Fuzzing tracking
     fuzzed_fields: Optional[List[str]] = None  # List of fields that were actually fuzzed (e.g., ["HTTP Request.Method", "IP.src"])
+    field_mutators: Optional[Dict[str, str]] = None  # Mapping of field -> mutator used (e.g., {"HTTPRequest[0].Method": "libfuzzer"})
     
     # Serialization tracking
     packet_bytes: Optional[bytes] = None  # Serialized packet bytes (for PCAP replay)
@@ -257,6 +259,7 @@ class CallbackManager:
     """
     
     def __init__(self, campaign: Any):
+        """Initialize CallbackManager with campaign reference."""
         self.campaign = campaign
     
     def execute_callback(self, callback_func: Optional[Callable], callback_type: str, 
@@ -434,6 +437,7 @@ class FuzzField:
                  use_scapy_fuzz: bool = False,
                  dictionary_only_weight: float = 0.0,
                  dictionary_override: bool = False):
+        """Initialize FuzzField with field-specific fuzzing configuration."""
         self.values = values or []
         self.dictionaries = dictionaries or []
         self.fuzz_weight = fuzz_weight
@@ -487,24 +491,30 @@ class FuzzField:
         return data[idx]
     
     def __iter__(self):
+        """Iterate over bytes representation."""
         return iter(self._coerce_to_bytes())
     
     def __int__(self) -> int:
+        """Convert to integer representation."""
         val = self.choose_value()
         return int(val) if val is not None else 0
     
     def __str__(self) -> str:
+        """String representation of FuzzField."""
         val = self.choose_value()
         return str(val) if val is not None else ""
     
     def __bytes__(self) -> bytes:
+        """Bytes representation of FuzzField."""
         return self._coerce_to_bytes()
     
     def __repr__(self) -> str:
+        """Detailed representation of FuzzField."""
         return f"FuzzField(values={self.values})"
 
     # Support concatenation with bytes/str to cooperate with Scapy encoders
     def __add__(self, other):
+        """Add operation for FuzzField."""
         if isinstance(other, (bytes, bytearray)):
             return self._coerce_to_bytes() + bytes(other)
         if isinstance(other, str):
@@ -512,6 +522,7 @@ class FuzzField:
         return NotImplemented
 
     def __radd__(self, other):
+        """Reverse add operation for FuzzField."""
         if isinstance(other, (bytes, bytearray)):
             return bytes(other) + self._coerce_to_bytes()
         if isinstance(other, str):
@@ -1470,6 +1481,18 @@ class FuzzingCampaign:
                     # Get the fuzzed fields for this specific packet iteration
                     fuzzed_fields = mutator_data.get_fuzzed_fields_for_packet(iteration) if mutator_data else []
                     
+                    # Get mutator information for this specific packet iteration
+                    mutator_info = mutator_data.get_mutators_for_packet(iteration) if mutator_data else {}
+                    
+                    # Format mutation_applied field with mutator information
+                    mutation_applied = None
+                    if mutator_info:
+                        # Create a summary of mutators used: "libfuzzer(3), dictionary_only(2)"
+                        mutator_counts = {}
+                        for mutator in mutator_info.values():
+                            mutator_counts[mutator] = mutator_counts.get(mutator, 0) + 1
+                        mutation_applied = ", ".join([f"{mutator}({count})" for mutator, count in mutator_counts.items()])
+                    
                     history_entry = FuzzHistoryEntry(
                         packet=packet,
                         timestamp_sent=datetime.now(),
@@ -1479,6 +1502,8 @@ class FuzzingCampaign:
                         protocol=self._extract_protocol(packet),  # Extract protocol info
                         target_port=self._extract_target_port(packet),  # Extract target port
                         fuzzed_fields=fuzzed_fields,  # Add fuzzed fields tracking
+                        field_mutators=mutator_info,  # Add detailed field -> mutator mapping
+                        mutation_applied=mutation_applied,  # Add mutator summary
                     )
                     
                     # Manage history size limit
@@ -1776,6 +1801,7 @@ class FuzzingCampaign:
         return merged
 
     def __repr__(self) -> str:
+        """Detailed representation of FuzzField."""
         return (f"{self.__class__.__name__}(name={self.name}, "
                 f"target={self.target}, "
                 f"iterations={self.iterations}, "

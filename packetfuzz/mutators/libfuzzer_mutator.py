@@ -172,8 +172,8 @@ class LibFuzzerMutator(BaseMutator):
         - Multiple rounds allow LibFuzzer to build upon previous mutations
         - Round count is random (0-30) for variety
         """
-        # Random round count between 0 and 30
-        round_count = self._rng.randint(0, 30)
+        # Random round count between 0 and 3 (reduced for performance)
+        round_count = self._rng.randint(0, 3)
         
         max_length = max_length or DEFAULT_MAX_OUTPUT_SIZE
         
@@ -260,7 +260,19 @@ class LibFuzzerMutator(BaseMutator):
         return self._lib is not None
 
     def _ensure_dictionaries_loaded(self, dictionaries: List[bytes]) -> bool:
-        """Ensure dictionaries are loaded into LibFuzzer's native dictionary system"""
+        """
+        Ensure dictionaries are loaded into LibFuzzer's native dictionary system.
+        
+        Converts byte dictionaries to string format and loads them into the C extension
+        for enhanced mutation capabilities.
+        
+        Args:
+            dictionaries: List of dictionary entries as bytes
+            
+        Returns:
+            True if dictionaries were loaded successfully or no loading needed,
+            False if LibFuzzer is not available or loading failed
+        """
         if not self.is_libfuzzer_available():
             return False
             
@@ -285,6 +297,22 @@ class LibFuzzerMutator(BaseMutator):
                      dictionaries: Optional[List[bytes]] = None,
                      rng: Optional[random.Random] = None,
                      layer: Optional[Any] = None) -> Any:
+        """
+        Mutate a field value using LibFuzzer's advanced mutation algorithms.
+        
+        Provides type-aware mutation based on field kind (string, numeric, enum, etc.)
+        with multi-round iterative mutations for deep fuzzing capabilities.
+        
+        Args:
+            field_info: Field metadata containing type, constraints, and current value
+            dictionaries: Optional dictionary entries for enhanced mutations
+            rng: Random number generator (compatibility parameter, not used)
+            layer: Packet layer context (compatibility parameter, not used)
+            
+        Returns:
+            Mutated field value appropriate for the field type, or current value
+            if LibFuzzer is not available
+        """
         # If libfuzzer is not available, return current value to allow manager to try other mutators
         current_value = getattr(field_info, 'current_value', None)
         # Try both 'kind' and 'field_kind' for compatibility
@@ -295,6 +323,7 @@ class LibFuzzerMutator(BaseMutator):
 
         # Helper: mutate some bytes, return bytes
         def mutate_bytes_seed(b: bytes) -> bytes:
+            """Helper function to mutate bytes with error handling."""
             try:
                 return self._mutate_with_libfuzzer_multiround(b, dictionaries)
             except Exception:
@@ -302,6 +331,7 @@ class LibFuzzerMutator(BaseMutator):
 
         # Helper: parse int from bytes/str
         def parse_int(data: bytes | str) -> Optional[int]:
+            """Extract integer value from bytes or string data."""
             try:
                 s = data.decode('utf-8', errors='ignore') if isinstance(data, (bytes, bytearray)) else str(data)
                 m = re.search(r"([+-]?0x[0-9a-fA-F]+|[+-]?\d+)", s)
@@ -315,6 +345,7 @@ class LibFuzzerMutator(BaseMutator):
 
         # Helper: clamp
         def clamp(v: int, mn: Optional[int], mx: Optional[int]) -> int:
+            """Clamp integer value to specified min/max bounds."""
             if mn is not None and v < mn:
                 v = mn
             if mx is not None and v > mx:

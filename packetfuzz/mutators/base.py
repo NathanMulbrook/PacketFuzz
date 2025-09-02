@@ -63,7 +63,7 @@ class BaseMutator(ABC):
         """
         raise NotImplementedError()
 
-    def initialize(self, field_metatadata: FieldMetadata, seed_data: List[Any], rng: Optional[random.Random] = None) -> bool:
+    def initialize(self, field_metadata: FieldMetadata, seed_data: List[Any], rng: Optional[random.Random] = None) -> bool:
         """
         Initialize corpus for this mutator with seed data.
         

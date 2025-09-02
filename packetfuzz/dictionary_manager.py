@@ -57,20 +57,46 @@ class DictionaryManager:
     This class now serves as the data access layer for the business logic layer.
     """
     
-    def __init__(self, user_config_file: Optional[str] = None, fuzzdb_path: Optional[str] = None):
+    def __init__(self, dictionary_path: Optional[str] = None, 
+                 fuzzdb_path: Optional[str] = None,
+                 default_dictionary_package: Optional[str] = None,
+                 max_dictionary_size: int = 1000000):
         """
-        Initialize the dictionary manager.
+        Initialize the DictionaryManager.
         
         Args:
-            user_config_file: Path to user configuration file
-            fuzzdb_path: Path to fuzzdb directory
+            dictionary_path: Optional custom path to dictionary folder
+            fuzzdb_path: Optional path to FuzzDB installation
+            default_dictionary_package: Default package for new dictionaries
+            max_dictionary_size: Maximum size limit for dictionaries
         """
+        self.max_dictionary_size = max_dictionary_size
+        self.default_dictionary_package = default_dictionary_package or "general"
+        
+        # Add path resolution cache for performance
+        self._path_cache = {}
+        
+        # Resolve paths
+        self.dictionary_path = dictionary_path
         self.fuzzdb_path = fuzzdb_path or self._find_fuzzdb_path()
+        
+        logger.info(f"DictionaryManager initialized with dictionary_path='{self.dictionary_path}', "
+                   f"fuzzdb_path='{self.fuzzdb_path}'")
+        
+        # Validate paths
+        if self.dictionary_path and not Path(self.dictionary_path).exists():
+            logger.warning(f"Dictionary path does not exist: {self.dictionary_path}")
+        if self.fuzzdb_path and not Path(self.fuzzdb_path).exists():
+            logger.warning(f"FuzzDB path does not exist: {self.fuzzdb_path}")
+        
+        logger.debug(f"DictionaryManager setup complete")
     
     def __str__(self) -> str:
+        """String representation of DictionaryMapping."""
         return f"DictionaryManager(fuzzdb={bool(self.fuzzdb_path)})"
     
     def __repr__(self) -> str:
+        """Detailed representation of DictionaryMapping."""
         return f"DictionaryManager(fuzzdb_path='{self.fuzzdb_path}')"
     
     def _find_fuzzdb_path(self) -> Optional[str]:
@@ -259,6 +285,7 @@ class DictionaryManager:
             merge_mode = 'merge' if mode == 'dictionary' else 'override'
 
         def load_mapping_file(path):
+            """Load dictionary mapping configuration from a JSON or Python file."""
             # Check if the mapping file exists
             if not os.path.isfile(path):
                 raise FileNotFoundError(f"Mapping file not found: {path}")

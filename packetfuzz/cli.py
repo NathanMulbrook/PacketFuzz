@@ -210,6 +210,15 @@ def apply_cli_overrides(campaign, args):
             campaign.report_formats = ['html', 'json', 'csv', 'sarif', 'markdown', 'yaml']
         else:
             campaign.report_formats = args.report_formats
+    elif os.getenv('PACKETFUZZ_REPORT_FORMATS'):
+        # Apply environment variable only if no CLI argument was provided
+        env_report_formats = os.getenv('PACKETFUZZ_REPORT_FORMATS')
+        if env_report_formats:
+            env_formats = [f.strip() for f in env_report_formats.split(',') if f.strip()]
+            if 'all' in env_formats:
+                campaign.report_formats = ['html', 'json', 'csv', 'sarif', 'markdown', 'yaml']
+            else:
+                campaign.report_formats = env_formats
     
     # Report level
     if hasattr(args, 'report_level') and args.report_level:
@@ -218,7 +227,8 @@ def apply_cli_overrides(campaign, args):
     # Configure separate console and file logging levels
     
     # Helper to get int from environment variable
-    def env_int(var): 
+    def env_int(var):
+        """Get integer value from environment variable or 0 if not set."""
         val = os.getenv(var)
         return int(val) if val else 0
     
@@ -237,6 +247,7 @@ def apply_cli_overrides(campaign, args):
     
     # Convert verbosity to log levels
     def verbosity_to_level(verbosity):
+        """Convert verbosity level (0-3+) to logging level."""
         return logging.DEBUG if verbosity >= 2 else logging.INFO if verbosity >= 1 else logging.WARNING
     
     console_level = verbosity_to_level(console_verbosity)
@@ -387,7 +398,7 @@ def main():
         "--report-formats",
         nargs='+',
         choices=['html', 'json', 'csv', 'sarif', 'markdown', 'yaml', 'all'],
-        default=env_defaults['report_formats'],
+        default=None,
         help="Report output formats (can specify multiple). Use 'all' for all formats. "
              "Can also set PACKETFUZZ_REPORT_FORMATS as comma-separated list (default: json)"
     )

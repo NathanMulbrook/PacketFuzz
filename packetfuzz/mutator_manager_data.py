@@ -69,6 +69,7 @@ class FuzzConfig:
     iterations: Optional[int] = None  # Number of fuzzing iterations
 
     def __str__(self) -> str:
+        """String representation of FuzzConfig."""
         packet_info = ""
         if self.packets is not None:
             if isinstance(self.packets, list):
@@ -79,6 +80,7 @@ class FuzzConfig:
         return f"FuzzConfig(mode={self.mode.value}, max_mutations={self.max_mutations}{packet_info}{iter_info})"
 
     def __repr__(self) -> str:
+        """Detailed representation of FuzzConfig."""
         return (f"FuzzConfig(mode={self.mode}, max_mutations={self.max_mutations}, "
                 f"use_dictionaries={self.use_dictionaries}, mutator_preference={self.mutator_preference}, "
                 f"packets={type(self.packets).__name__ if self.packets else None}, "
@@ -352,6 +354,9 @@ class MutatorManagerData:
         # Initialize data structures
         self.packet_data: List[PacketData] = []
         self.global_field_index: Dict[str, List[Tuple[int, str]]] = {}  # field_key -> [(packet_idx, field_key)]
+        
+        # Mutator tracking per iteration
+        self.iteration_mutator_usage: Dict[int, Dict[str, str]] = {}  # iteration -> {field_key: mutator_name}
         
         # Processing statistics
         self.total_packets = len(self.packet_list)
@@ -1832,6 +1837,44 @@ class MutatorManagerData:
             return list(fuzzed_fields)
         return []
     
+    def record_mutator_usage(self, iteration: int, field_key: str, mutator_name: str) -> None:
+        """
+        Record which mutator was used for a specific field in a specific iteration.
+        
+        Args:
+            iteration: The iteration number (packet index)
+            field_key: The field key (e.g., "HTTPRequest[0].Method")
+            mutator_name: The name of the mutator used (e.g., "libfuzzer", "dictionary_only")
+        """
+        if iteration not in self.iteration_mutator_usage:
+            self.iteration_mutator_usage[iteration] = {}
+        self.iteration_mutator_usage[iteration][field_key] = mutator_name
+    
+    def get_mutators_for_packet(self, packet_index: int) -> Dict[str, str]:
+        """
+        Get mapping of field_key -> mutator_name for a specific packet iteration.
+        
+        Args:
+            packet_index: The packet iteration index
+            
+        Returns:
+            Dictionary mapping field keys to mutator names used in that iteration
+        """
+        return self.iteration_mutator_usage.get(packet_index, {})
+    
+    def get_fuzzed_fields_with_mutators_for_packet(self, packet_index: int) -> List[Tuple[str, str]]:
+        """
+        Get list of (field_key, mutator_name) tuples for a specific packet iteration.
+        
+        Args:
+            packet_index: The packet iteration index
+            
+        Returns:
+            List of tuples containing (field_key, mutator_name) for fuzzed fields
+        """
+        mutator_usage = self.get_mutators_for_packet(packet_index)
+        return [(field_key, mutator_name) for field_key, mutator_name in mutator_usage.items()]
+    
     def get_all_fuzzable_fields(self) -> List[FieldMetadata]:
         """Get all fuzzable fields across all packets."""
         fields = []
@@ -1932,6 +1975,8 @@ class MutatorManagerData:
             field_metadata.mutation_count += 1
             if success:
                 field_metadata.successful_mutations += 1
+                # Record mutator usage for this successful mutation
+                self.record_mutator_usage(packet_index, field_key, mutator_name)
             else:
                 field_metadata.failed_mutations += 1
             field_metadata.last_mutated = datetime.now()

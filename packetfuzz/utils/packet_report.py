@@ -1344,7 +1344,10 @@ class HTMLExporter(ExporterInterface):
     
     def export(self, content: Dict[str, Any], output_path: str) -> str:
         """Export content as HTML report"""
-        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        # Create directory if path includes one
+        output_dir = os.path.dirname(output_path)
+        if output_dir:
+            os.makedirs(output_dir, exist_ok=True)
         
         html_content = self._generate_html(content)
         
@@ -1478,7 +1481,10 @@ class JSONExporter(ExporterInterface):
     
     def export(self, content: Dict[str, Any], output_path: str) -> str:
         """Export content as JSON"""
-        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        # Create directory if path includes one
+        output_dir = os.path.dirname(output_path)
+        if output_dir:
+            os.makedirs(output_dir, exist_ok=True)
         
         # Convert sets to lists for JSON serialization
         serializable_content = self._make_serializable(content)
@@ -1512,7 +1518,10 @@ class CSVExporter(ExporterInterface):
     
     def export(self, content: Dict[str, Any], output_path: str) -> str:
         """Export content as CSV"""
-        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        # Create directory if path includes one
+        output_dir = os.path.dirname(output_path)
+        if output_dir:
+            os.makedirs(output_dir, exist_ok=True)
         
         csv_content = self._generate_csv(content)
         
@@ -1549,7 +1558,10 @@ class SARIFExporter(ExporterInterface):
     
     def export(self, content: Dict[str, Any], output_path: str) -> str:
         """Export content as SARIF"""
-        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        # Create directory if path includes one
+        output_dir = os.path.dirname(output_path)
+        if output_dir:
+            os.makedirs(output_dir, exist_ok=True)
         
         sarif_content = self._generate_sarif(content)
         
@@ -1611,7 +1623,10 @@ class MarkdownExporter(ExporterInterface):
         return "md"
     
     def export(self, content: Dict[str, Any], output_path: str) -> str:
-        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        # Create directory if path includes one
+        output_dir = os.path.dirname(output_path)
+        if output_dir:
+            os.makedirs(output_dir, exist_ok=True)
         
         markdown_content = self._generate_markdown(content)
         with open(output_path, 'w', encoding='utf-8') as f:
@@ -1794,7 +1809,10 @@ class YAMLExporter(ExporterInterface):
         return "yaml"
     
     def export(self, content: Dict[str, Any], output_path: str) -> str:
-        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        # Create directory if path includes one
+        output_dir = os.path.dirname(output_path)
+        if output_dir:
+            os.makedirs(output_dir, exist_ok=True)
         
         yaml_content = self._generate_yaml(content)
         with open(output_path, 'w', encoding='utf-8') as f:
@@ -1853,13 +1871,14 @@ def generate_campaign_report(
         campaign: FuzzingCampaign instance
         campaign_context: CampaignContext with fuzz_history
         level: Report level ("executive", "technical", "forensics")
-        output_format: Export format ("html", "json", "csv", "sarif")
+        output_format: Export format ("html", "json", "csv", "sarif", "markdown", "yaml")
         output_path: Optional output path (auto-generated if not provided)
     
     Returns:
         Path to generated report file
     """
     engine = ReportingEngine()
+    register_custom_exporters(engine)  # Register markdown and yaml exporters
     
     # Get history entries from campaign context
     history_entries = getattr(campaign_context, 'fuzz_history', [])
@@ -1906,6 +1925,10 @@ def generate_campaign_reports(
     # Determine output formats
     if output_formats is None:
         output_formats = getattr(campaign, 'report_formats', ['json'])
+    
+    # Debug logging
+    logger.info(f"Campaign: {getattr(campaign, 'name', 'Unknown')}")
+    logger.info(f"Requested output formats: {output_formats}")
     
     # Ensure we have a valid list
     if not output_formats:
@@ -2212,7 +2235,17 @@ def write_fuzz_history_dump(
                 
                 # Fuzzed fields information
                 if hasattr(entry, 'fuzzed_fields') and entry.fuzzed_fields:
-                    f.write(f"Fuzzed Fields: {', '.join(entry.fuzzed_fields)}\n")
+                    # If we have detailed mutator info, show field -> mutator mapping
+                    if hasattr(entry, 'field_mutators') and entry.field_mutators:
+                        # Create formatted list showing field and its mutator
+                        field_mutator_pairs = []
+                        for field in entry.fuzzed_fields:
+                            mutator = entry.field_mutators.get(field, 'unknown')
+                            field_mutator_pairs.append(f"{field}({mutator})")
+                        f.write(f"Fuzzed Fields: {', '.join(field_mutator_pairs)}\n")
+                    else:
+                        # Fallback to simple field list if no mutator info
+                        f.write(f"Fuzzed Fields: {', '.join(entry.fuzzed_fields)}\n")
                 elif hasattr(entry, 'fuzzed_fields'):  # Empty list case
                     f.write(f"Fuzzed Fields: None\n")
                 

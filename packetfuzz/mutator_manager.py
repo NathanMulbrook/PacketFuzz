@@ -97,6 +97,7 @@ class MutatorManager:
     # Initialization & Configuration
     # =========================
     def __init__(self, config: Optional[FuzzConfig] = None):
+        """Initialize MutatorManager with fuzzing configuration."""
         self.fuzz_config = config or FuzzConfig()
         
         # Track which fields are fuzzed in the current iteration
@@ -370,6 +371,17 @@ class MutatorManager:
         return mutator_selection
     
     def get_mutator_and_initialize(self, mutator_selection: str, field_info: FieldMetadata, dictionary_entries: List[bytes]) -> Optional[Any]:
+        """
+        Get a mutator instance by name and initialize it with field information.
+        
+        Args:
+            mutator_selection: Name of the mutator ("libfuzzer", "scapy", "dictionary_only")
+            field_info: Field metadata for mutator initialization
+            dictionary_entries: Dictionary data for enhanced mutations
+            
+        Returns:
+            Initialized mutator instance or None if not available
+        """
         mutator = None
         if mutator_selection == "dictionary_only" and DictionaryOnlyMutator:
             if self.mutators["dictionary_only"] is None:
@@ -391,6 +403,50 @@ class MutatorManager:
 
         return mutator
 
+    def _apply_field_type_compatibility(self, field_info: FieldMetadata, mutated_value: Any) -> Any:
+        """
+        Apply field type compatibility transformations to mutator output.
+        
+        This method handles cases where specific field types expect different data formats
+        than what mutators naturally produce. For example, Unknown_Headers expects 
+        dictionary format while mutators typically generate strings.
+        
+        Args:
+            field_info: Field metadata containing field name and type information
+            mutated_value: Raw value from mutator (string, int, bytes, etc.)
+            
+        Returns:
+            Compatible value in the format expected by the field type
+        """
+        # Handle HTTP header fields that expect dictionary format
+        field_name = getattr(field_info, 'field_name', 'Unknown')
+        field_type = getattr(field_info, 'field_type', None)
+        
+        if (field_type and '_HTTPHeaderField' in field_type and 
+            field_name == 'Unknown_Headers'):
+            # Unknown_Headers expects dictionary format for multiple custom headers
+            # Convert any input to dictionary format
+            if isinstance(mutated_value, dict):
+                # Already in correct format
+                return mutated_value
+            elif isinstance(mutated_value, (str, bytes)):
+                # Convert string/bytes to dictionary format
+                s = mutated_value.decode('utf-8', errors='ignore') if isinstance(mutated_value, bytes) else str(mutated_value)
+                if ':' in s:
+                    parts = s.split(':', 1)
+                    header_name = parts[0].strip()
+                    header_value = parts[1].strip() if len(parts) > 1 else ''
+                    return {header_name: header_value}
+                else:
+                    # No colon found, create a custom header
+                    return {f"X-Custom-{field_name}": s}
+            else:
+                # For other types (int, etc.), convert to string first then to dict
+                s = str(mutated_value)
+                return {f"X-Custom-{field_name}": s}
+        
+        # For all other fields, return the original value unchanged
+        return mutated_value
 
     def _mutate_with_retries(self, field_info: FieldMetadata, mutator, dictionary_entries: List ) -> List[int]:
         """
@@ -433,7 +489,14 @@ class MutatorManager:
                 #Mutate the field
                 mutated_value = mutator.mutate_field(field_info, dictionaries=dictionary_entries, rng=self.fuzz_config.rng, layer=None)
                 mutator_type = self.get_mutator_type(mutator)
-                success = self.data.validate_and_assign(field_info, value=mutated_value)
+                
+                # Apply field type compatibility layer - convert mutator output to expected format
+                # This handles cases where specific field types (like Unknown_Headers) expect different
+                # data formats than what mutators naturally produce, eliminating validation failures
+                # and retry overhead that previously caused significant performance degradation
+                compatible_value = self._apply_field_type_compatibility(field_info, mutated_value)
+                
+                success = self.data.validate_and_assign(field_info, value=compatible_value)
                 last_err = None  # Clear error on success
             except Exception as e:
                 last_err = str(e)

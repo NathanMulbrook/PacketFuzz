@@ -226,6 +226,7 @@ class DictionaryTestCampaign(FuzzingCampaign):
 
 
 class DummyConftestCampaign(FuzzingCampaign):
+        "Test campaign for configuration validation."""
     name = "dummy_conftest"
     target = "127.0.0.1"
     output_network = False

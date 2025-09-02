@@ -27,6 +27,7 @@ class DictionaryOnlyMutator(BaseMutator):
     """
     
     def __init__(self, seed: Optional[int] = None):
+        """Initialize DictionaryOnlyMutator with optional random seed."""
         super().__init__(seed)
         if seed is not None:
             random.seed(seed)
@@ -103,6 +104,18 @@ class DictionaryOnlyMutator(BaseMutator):
                      dictionaries: Optional[List[bytes]] = None,
                      rng: Optional[random.Random] = None,
                      layer: Optional[Any] = None) -> Any:
+        """
+        Mutate a field using only dictionary entries without additional algorithms.
+        
+        Args:
+            field_info: Field metadata containing type and constraints
+            dictionaries: List of dictionary entries to choose from
+            rng: Random number generator for selection
+            layer: Packet layer context (unused)
+            
+        Returns:
+            Mutated field value selected from dictionaries or fallback defaults
+        """
         kind = getattr(field_info, 'kind', None) or getattr(field_info, 'field_kind', 'unknown')
         field_name = getattr(field_info, 'field_name', 'unknown')
         current_value = getattr(field_info, 'current_value', None)
