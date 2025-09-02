@@ -30,7 +30,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Protocol, Union
+from typing import Any, Callable, Dict, Iterator, List, Optional, Protocol, Union
 
 # Third-party imports
 from scapy.layers.can import CAN
@@ -120,7 +120,7 @@ class CrashInfo:
     timestamp: datetime = field(default_factory=datetime.now)
     crash_id: str = field(init=False)
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """Generate unique crash ID based on timestamp."""
         self.crash_id = f"crash_{self.timestamp.strftime('%Y%m%d_%H%M%S_%f')}"
 
@@ -485,12 +485,12 @@ class FuzzField:
         except Exception:
             return 0
     
-    def __getitem__(self, idx):
+    def __getitem__(self, idx: int) -> int:
         """Get item from the coerced bytes representation."""
         data = self._coerce_to_bytes()
         return data[idx]
     
-    def __iter__(self):
+    def __iter__(self) -> Iterator[int]:
         """Iterate over bytes representation."""
         return iter(self._coerce_to_bytes())
     
@@ -513,7 +513,7 @@ class FuzzField:
         return f"FuzzField(values={self.values})"
 
     # Support concatenation with bytes/str to cooperate with Scapy encoders
-    def __add__(self, other):
+    def __add__(self, other: Union[bytes, bytearray, str]) -> Union[bytes, object]:
         """Add operation for FuzzField."""
         if isinstance(other, (bytes, bytearray)):
             return self._coerce_to_bytes() + bytes(other)
@@ -521,7 +521,7 @@ class FuzzField:
             return self._coerce_to_bytes() + other.encode()
         return NotImplemented
 
-    def __radd__(self, other):
+    def __radd__(self, other: Union[bytes, bytearray, str]) -> Union[bytes, object]:
         """Reverse add operation for FuzzField."""
         if isinstance(other, (bytes, bytearray)):
             return bytes(other) + self._coerce_to_bytes()

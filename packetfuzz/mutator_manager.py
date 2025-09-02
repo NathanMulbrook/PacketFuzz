@@ -129,7 +129,7 @@ class MutatorManager:
 
 
 
-    def __del__(self):
+    def __del__(self) -> None:
         """Automatic cleanup when MutatorManager is destroyed."""
         self.teardown()
 
@@ -165,7 +165,7 @@ class MutatorManager:
                     all_failures[field_key] = self.data.get_field_mutation_failures(field_key)
         return all_failures
 
-    def _field_value_changed(self, original_value, new_value):
+    def _field_value_changed(self, original_value: Any, new_value: Any) -> bool:
         """Check if a field value actually changed from its original value."""
         # Handle None and empty string cases - be more strict about meaningful changes
         if original_value is None:

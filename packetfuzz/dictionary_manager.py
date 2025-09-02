@@ -23,7 +23,7 @@ import logging
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set, Union
 
 # Third-party imports
 from scapy.packet import Packet
@@ -284,7 +284,7 @@ class DictionaryManager:
         if merge_mode is None:
             merge_mode = 'merge' if mode == 'dictionary' else 'override'
 
-        def load_mapping_file(path):
+        def load_mapping_file(path: str) -> Union[Dict[str, Any], List[Any]]:
             """Load dictionary mapping configuration from a JSON or Python file."""
             # Check if the mapping file exists
             if not os.path.isfile(path):

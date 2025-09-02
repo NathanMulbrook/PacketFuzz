@@ -41,7 +41,7 @@ import importlib.util
 import logging
 import os
 from pathlib import Path
-from typing import List, Type
+from typing import Any, List, Type
 
 # ===========================
 # Third-Party Imports
@@ -94,7 +94,7 @@ def load_campaigns_from_file(config_file: Path) -> List[Type[FuzzingCampaign]]:
         return campaigns
 
 
-def check_components():
+def check_components() -> int:
     """
     Check if all required components are available.
     
@@ -151,7 +151,7 @@ def check_components():
         return 1
 
 
-def apply_cli_overrides(campaign, args):
+def apply_cli_overrides(campaign: Any, args: Any) -> None:
     """
     Apply CLI flag and environment variable overrides to a campaign instance.
     
@@ -287,7 +287,7 @@ def apply_cli_overrides(campaign, args):
 # Argument Parsing and CLI Setup
 # ===========================
 
-def main():
+def main() -> int:
     """Main entry point for the packetfuzz CLI."""
     # Environment variable defaults
     env_defaults = {

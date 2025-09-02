@@ -55,7 +55,7 @@ class LibFuzzerMutator(BaseMutator):
         
         self._load_library()
     
-    def _load_library(self):
+    def _load_library(self) -> None:
         """Load the libFuzzer C extension library"""
         try:
             # Look for the compiled library
@@ -81,7 +81,7 @@ class LibFuzzerMutator(BaseMutator):
             return str(path)
         return None
     
-    def _setup_function_signatures(self):
+    def _setup_function_signatures(self) -> None:
         """Setup ctypes function signatures for the C library."""
         if not self._lib:
             return
