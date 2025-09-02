@@ -545,7 +545,7 @@ class MutatorManager:
         """
         # Select mutator using preference system with weighted selection
         mutator = None
-        prefs = self.fuzz_config.mutator_preference or {"libfuzzer": 1.0}
+        prefs = self.fuzz_config.mutator_preference  # Will be resolved via default mappings if None
         
         # Prefs is always dict format after normalization (type assertion for static analysis)
         assert isinstance(prefs, dict), f"mutator_preference should be dict after normalization, got {type(prefs)}"

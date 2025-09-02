@@ -60,13 +60,16 @@ class FuzzConfig:
     # Layer-based scaling configuration (multiplier per layer distance from innermost)
     layer_weight_scaling: Optional[float] = None  # None = use default mapping constant
     enable_layer_weight_scaling: bool = True
-    mutator_preference: Union[List[str], Dict[str, float]] = field(default_factory=lambda: {"libfuzzer": 1.0})
+    mutator_preference: Optional[Union[List[str], Dict[str, float]]] = field(default_factory=lambda: None)
     global_dict_config_path: Optional[str] = None  # Path to global dictionary configuration #TODO make sure this is never none
     rng: Optional[random.Random] = None  # Optional random generator for reproducibility
     
     # Packet and iteration configuration (for complete fuzzing setup)
     packets: Optional[Union[Packet, List[Packet]]] = None  # Packet(s) to fuzz
     iterations: Optional[int] = None  # Number of fuzzing iterations
+    
+    # Campaign-level field mapping overrides (for field inclusion/exclusion)
+    advanced_field_mapping_overrides: Optional[List[Dict[str, Any]]] = None
 
     def __str__(self) -> str:
         """String representation of FuzzConfig."""
@@ -957,8 +960,8 @@ class MutatorManagerData:
         """
         Get Priority 3 configuration: Campaign-level advanced field mapping.
         
-        CORRECTED: Uses DictionaryManager's advanced resolution methods directly on raw mappings,
-        not on processed FieldMetadata. This preserves the proper collection phase logic.
+        FIXED: Campaign overrides now take absolute precedence over default mappings.
+        Checks campaign overrides FIRST, then falls back to defaults only if no override exists.
         """
         from .default_mappings import FIELD_ADVANCED_WEIGHTS, FIELD_ADVANCED_DICTIONARIES
         
@@ -970,7 +973,42 @@ class MutatorManagerData:
         config = {'weight': None, 'dictionaries': [], 'values': []}
         properties = {'length': field_metadata.max_length, 'context': None}
         
-        # Use DictionaryManager's advanced resolution methods directly on raw mappings
+        # CAMPAIGN OVERRIDES FIRST - absolute precedence
+        if (hasattr(self.fuzz_config, 'advanced_field_mapping_overrides') and 
+            self.fuzz_config.advanced_field_mapping_overrides):
+            
+            # Check for direct field match first
+            for override in self.fuzz_config.advanced_field_mapping_overrides:
+                # Direct match: Layer.field
+                if (override.get('layer') == layer_name and 
+                    override.get('field') == field_name):
+                    if 'fuzz_weight' in override:
+                        config['weight'] = override['fuzz_weight']
+                        return config  # Return immediately - campaign override found
+                
+                # Wildcard match: *.field  
+                elif (override.get('field') == field_name and 
+                      'layer' not in override):
+                    if 'fuzz_weight' in override:
+                        config['weight'] = override['fuzz_weight']
+                        return config  # Return immediately - campaign override found
+                
+                # Layer wildcard: Layer.*
+                elif (override.get('layer') == layer_name and 
+                      'field' not in override):
+                    if 'fuzz_weight' in override:
+                        config['weight'] = override['fuzz_weight']
+                        return config  # Return immediately - campaign override found
+                
+                # Enhanced wildcard patterns
+                elif 'pattern' in override and 'pattern_type' in override:
+                    if self._matches_enhanced_pattern(layer_name, field_name, override):
+                        if 'fuzz_weight' in override:
+                            config['weight'] = override['fuzz_weight']
+                            return config  # Return immediately - campaign override found
+        
+        # DEFAULT MAPPINGS (only if no campaign override found)
+        # Use DictionaryManager's advanced resolution methods on default mappings
         if hasattr(dictionary_manager, '_resolve_advanced_weight'):
             adv_weight = dictionary_manager._resolve_advanced_weight(
                 FIELD_ADVANCED_WEIGHTS,
@@ -1301,15 +1339,15 @@ class MutatorManagerData:
             return FIELD_TYPE_MUTATOR_WEIGHTS[field_type].copy()
         
         # Priority 4: Campaign-level default (if available)
-        if hasattr(self.fuzz_config, 'mutator_preference') and isinstance(self.fuzz_config.mutator_preference, dict):
-            return self.fuzz_config.mutator_preference.copy()
-        elif hasattr(self.fuzz_config, 'mutator_preference') and isinstance(self.fuzz_config.mutator_preference, list):
-            # Convert list to equal weights
-            if self.fuzz_config.mutator_preference:
+        if hasattr(self.fuzz_config, 'mutator_preference') and self.fuzz_config.mutator_preference:
+            if isinstance(self.fuzz_config.mutator_preference, dict):
+                return self.fuzz_config.mutator_preference.copy()
+            elif isinstance(self.fuzz_config.mutator_preference, list):
+                # Convert list to equal weights
                 equal_weight = 1.0 / len(self.fuzz_config.mutator_preference)
                 return {mutator: equal_weight for mutator in self.fuzz_config.mutator_preference}
         
-        # Priority 5: Fallback to libfuzzer
+        # Priority 5: Fallback to libfuzzer (only if no other source available)
         return {"libfuzzer": 1.0}
     
     def _apply_layer_weight_scaling(self, base_weight: float, layer: Packet) -> Tuple[float, float]:
@@ -2033,3 +2071,56 @@ class MutatorManagerData:
         
         # Ensure weight stays in valid range
         return max(0.0, min(1.0, weight))
+
+    def _matches_enhanced_pattern(self, layer_name: str, field_name: str, override: Dict[str, Any]) -> bool:
+        """
+        Check if a layer.field matches an enhanced wildcard pattern.
+        
+        Supports pattern types:
+        - layer_field_wildcard: Both layer and field have wildcards (e.g., HTTP*.port*)
+        - layer_wildcard: Only layer has wildcards (e.g., HTTP*.dport)
+        - field_wildcard: Only field has wildcards (e.g., TCP.port*)
+        
+        Args:
+            layer_name: Name of the layer (e.g., "HTTP", "TCP")
+            field_name: Name of the field (e.g., "dport", "version")
+            override: Override entry with pattern information
+            
+        Returns:
+            True if the layer.field matches the pattern
+        """
+        import fnmatch
+        
+        pattern = override.get('pattern', '')
+        pattern_type = override.get('pattern_type', '')
+        
+        if pattern_type == 'layer_field_wildcard':
+            # Pattern like "HTTP*.port*" - both layer and field have wildcards
+            if '.' in pattern:
+                pattern_layer, pattern_field = pattern.split('.', 1)
+                layer_match = fnmatch.fnmatch(layer_name, pattern_layer)
+                field_match = fnmatch.fnmatch(field_name, pattern_field)
+                return layer_match and field_match
+            else:
+                # Fallback to simple field matching
+                return fnmatch.fnmatch(field_name, pattern)
+        
+        elif pattern_type == 'layer_wildcard':
+            # Pattern like "HTTP*" with specific field
+            pattern_layer = pattern.split('.')[0] if '.' in pattern else pattern
+            specific_field = override.get('field', '')
+            layer_match = fnmatch.fnmatch(layer_name, pattern_layer)
+            field_match = (field_name == specific_field)
+            return layer_match and field_match
+        
+        elif pattern_type == 'field_wildcard':
+            # Pattern like "port*" with specific layer
+            specific_layer = override.get('layer', '')
+            pattern_field = pattern.split('.')[1] if '.' in pattern else pattern
+            layer_match = (layer_name == specific_layer)
+            field_match = fnmatch.fnmatch(field_name, pattern_field)
+            return layer_match and field_match
+        
+        # Fallback: try to match the full pattern against layer.field
+        full_field_name = f"{layer_name}.{field_name}"
+        return fnmatch.fnmatch(full_field_name, pattern)

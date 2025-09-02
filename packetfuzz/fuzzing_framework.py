@@ -680,6 +680,8 @@ class FuzzingCampaign:
         - interface_offload_restore: Restore original interface settings after campaign (default True)
         - excluded_layers: List of layer names to exclude from fuzzing (sets fuzz_weight=0.0)
         - layers_to_fuzz: List of layer names to fuzz exclusively (excludes all other layers)
+        - excluded_fields: List of field patterns to exclude from fuzzing (supports *.field, Layer.*, Layer.field)
+        - fields_to_fuzz: List of field patterns to fuzz exclusively (whitelist approach, excludes all others)
     
     Packet-level configuration is now embedded in the packet object itself using:
         packet[Layer].field_fuzz('fieldname').dictionary = ["dict1.txt", "dict2.txt"]
@@ -739,6 +741,12 @@ class FuzzingCampaign:
     excluded_layers: Optional[List[str]] = None
     # Optionally specify only certain layers to fuzz (sets fuzz_weight=0.0 for all other layers)
     layers_to_fuzz: Optional[List[str]] = None
+    
+    # Field-level inclusion/exclusion with pattern matching support
+    # Supports patterns like: "TCP.dport", "*.dport", "HTTP.*", "Raw.load"
+    excluded_fields: Optional[List[str]] = None
+    # Whitelist approach: only fuzz these specific fields (excludes all others)
+    fields_to_fuzz: Optional[List[str]] = None
 
     # Network interface offload management for malformed packet fuzzing
     disable_interface_offload: bool = False                    # Enable/disable interface offload management
@@ -780,18 +788,26 @@ class FuzzingCampaign:
                     setattr(self, attr_name, instance_value)
         
         # Set default for mutator_preference if None and normalize to dict format
-        if getattr(self, 'mutator_preference', None) is None:
-            self.mutator_preference = {"libfuzzer": 1.0}
-        elif isinstance(self.mutator_preference, list):
-            # Convert list to equal-weight dict for consistency
-            if not self.mutator_preference:
-                self.mutator_preference = {"libfuzzer": 1.0}
-            else:
-                equal_weight = 1.0 / len(self.mutator_preference)
-                self.mutator_preference = {mutator: equal_weight for mutator in self.mutator_preference}
+
+        if self.mutator_preference:
+            equal_weight = 1.0 / len(self.mutator_preference)
+            self.mutator_preference = {mutator: equal_weight for mutator in self.mutator_preference}
+        
+        # Validate field inclusion/exclusion: both cannot be set in same campaign
+        if (self.fields_to_fuzz and self.excluded_fields):
+            raise ValueError(
+                "Campaign cannot have both 'fields_to_fuzz' (whitelist) and 'excluded_fields' (blacklist) set. "
+                "Use either whitelist approach (fields_to_fuzz) or blacklist approach (excluded_fields), but not both."
+            )
+        
+        if self.layers_to_fuzz and self.excluded_layers:
+            raise ValueError(
+                "Campaign cannot have both 'layers_to_fuzz' (whitelist) and 'excluded_layers' (blacklist) set. "
+                "Use either whitelist approach (layers_t_fuzz) or blacklist approach (excluded_layers), but not both."
+            )
         
         # Handle 'all' in report_formats
-        if 'all' in getattr(self, 'report_formats', []):
+        if 'all' in self.report_formats:
             self.report_formats = ['html', 'json', 'csv', 'sarif', 'markdown', 'yaml']
         
         # Initialize instance-specific objects
@@ -802,22 +818,23 @@ class FuzzingCampaign:
         self._interface_configured = False
         
         # Handle excluded_layers by adding advanced mapping entries
-        if isinstance(getattr(self, 'excluded_layers', None), list) and self.excluded_layers:
+        if self.excluded_layers:
             exclude_entries = [
                 {"layer": lname, "fuzz_weight": 0.0} for lname in self.excluded_layers
             ]
-            if not hasattr(self, 'advanced_field_mapping_overrides') or self.advanced_field_mapping_overrides is None:
+            if not self.advanced_field_mapping_overrides:
                 self.advanced_field_mapping_overrides = []
             self.advanced_field_mapping_overrides.extend(exclude_entries)
 
         # Handle layers_to_fuzz by setting weight to 0.0 for all layers except those specified
-        if isinstance(getattr(self, 'layers_to_fuzz', None), list) and self.layers_to_fuzz:
+        if self.layers_to_fuzz:
             # Get all known layer names from default mappings to exclude those not in layers_to_fuzz
-            from .default_mappings import FIELD_ADVANCED_WEIGHTS
+            from .default_mappings import FIELD_NAME_WEIGHTS
             all_layer_names = set()
-            for mapping in FIELD_ADVANCED_WEIGHTS:
-                if "layer" in mapping:
-                    all_layer_names.add(mapping["layer"])
+            for field_key in FIELD_NAME_WEIGHTS.keys():
+                if '.' in field_key:
+                    layer_name = field_key.split('.', 1)[0]
+                    all_layer_names.add(layer_name)
             
             # Create exclusion entries for layers not in layers_to_fuzz
             layers_to_exclude = all_layer_names - set(self.layers_to_fuzz)
@@ -825,9 +842,59 @@ class FuzzingCampaign:
                 fuzz_only_entries = [
                     {"layer": lname, "fuzz_weight": 0.0} for lname in layers_to_exclude
                 ]
-                if not hasattr(self, 'advanced_field_mapping_overrides') or self.advanced_field_mapping_overrides is None:
+                if not self.advanced_field_mapping_overrides:
                     self.advanced_field_mapping_overrides = []
                 self.advanced_field_mapping_overrides.extend(fuzz_only_entries)
+
+        # Handle excluded_fields with pattern matching support
+        if self.excluded_fields:
+            from .pattern_utils import parse_field_patterns
+            field_exclude_entries = parse_field_patterns(self.excluded_fields, exclude=True)
+            if not self.advanced_field_mapping_overrides:
+                self.advanced_field_mapping_overrides = []
+            self.advanced_field_mapping_overrides.extend(field_exclude_entries)
+
+        # Handle fields_to_fuzz (whitelist approach) - exclude all fields except those specified
+        if self.fields_to_fuzz:
+            from .pattern_utils import parse_field_patterns, pattern_matches_any
+            # Get all known field patterns from default mappings
+            from .default_mappings import FIELD_NAME_WEIGHTS, FIELD_TYPE_WEIGHTS
+            all_field_patterns = set()
+            
+            # Add all known Layer.field patterns from FIELD_NAME_WEIGHTS
+            for field_key in FIELD_NAME_WEIGHTS.keys():
+                all_field_patterns.add(field_key)
+            
+            # Create exclusion entries for fields not in fields_to_fuzz
+            # FIXED: Avoid creating broad Layer.* exclusions when specific fields in that layer are whitelisted
+            whitelisted_patterns = set(self.fields_to_fuzz)
+            fields_to_exclude = []
+            
+            # Get layers that have specific fields whitelisted
+            whitelisted_layers = set()
+            for pattern in whitelisted_patterns:
+                if '.' in pattern and not pattern.endswith('.*'):
+                    layer_name = pattern.split('.', 1)[0]
+                    if layer_name != '*':  # Ignore *.field patterns
+                        whitelisted_layers.add(layer_name)
+            
+            for pattern in all_field_patterns:
+                if not pattern_matches_any(pattern, whitelisted_patterns):
+                    # FIXED: Skip Layer.* exclusions if specific fields in that layer are whitelisted
+                    if pattern.endswith('.*'):
+                        layer_name = pattern[:-2]
+                        if layer_name in whitelisted_layers:
+                            continue  # Don't exclude Layer.* if specific Layer.field is whitelisted
+                    
+                    fields_to_exclude.append(pattern)
+            
+            if fields_to_exclude:
+                field_whitelist_entries = parse_field_patterns(fields_to_exclude, exclude=True)
+                if not self.advanced_field_mapping_overrides:
+                    self.advanced_field_mapping_overrides = []
+                self.advanced_field_mapping_overrides.extend(field_whitelist_entries)
+
+
 
     def _normalize_socket_type(self) -> Optional[SocketType]:
         """
@@ -894,12 +961,14 @@ class FuzzingCampaign:
             use_dictionaries = True,
             fuzz_weight = 1.0,
             global_dict_config_path = self.global_dict_config_path,
-            mutator_preference = self.mutator_preference or {"libfuzzer": 1.0},  # Should not be None after __init__
+            mutator_preference = self.mutator_preference,  # Will be resolved via default mappings if None
             enable_layer_weight_scaling = self.enable_layer_weight_scaling,
             layer_weight_scaling = self.layer_weight_scaling,
             # Include packet and iteration information in config
             packets = packets,
-            iterations = iterations
+            iterations = iterations,
+            # Pass campaign-level field mapping overrides
+            advanced_field_mapping_overrides = getattr(self, 'advanced_field_mapping_overrides', None)
         )
         
         fuzzer = MutatorManager(config)
@@ -962,7 +1031,7 @@ class FuzzingCampaign:
         """
         if not self.output_pcap:
             # Generate smart default based on campaign name
-            if hasattr(self, 'name') and self.name:
+            if self.name:
                 # Convert campaign name to valid filename
                 safe_name = "".join(c.lower() if c.isalnum() else "_" for c in self.name)
                 safe_name = safe_name.strip("_")
@@ -1177,12 +1246,14 @@ class FuzzingCampaign:
                 use_dictionaries = True,
                 fuzz_weight = 1.0,
                 global_dict_config_path = self.global_dict_config_path,
-                mutator_preference = self.mutator_preference or {"libfuzzer": 1.0},  # Should not be None after __init__
+                mutator_preference = self.mutator_preference,  # Will be resolved via default mappings if None
                 enable_layer_weight_scaling = self.enable_layer_weight_scaling,
                 layer_weight_scaling = self.layer_weight_scaling,
                 # Include packet and iteration information in config
                 packets = self.packet,
-                iterations = self.iterations
+                iterations = self.iterations,
+                # Pass campaign-level field mapping overrides
+                advanced_field_mapping_overrides = getattr(self, 'advanced_field_mapping_overrides', None)
             )
             fuzzer = MutatorManager(config)
             self.context.mutator_data = fuzzer.fuzz_packet()
