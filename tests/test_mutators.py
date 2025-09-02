@@ -231,8 +231,8 @@ class TestScapyMutator(unittest.TestCase):
             self.skipTest(f"ScapyMutator not available: {e}")
 
 
-class DummyMutatorCampaign
-    """Test campaign for mutator functionality validation."""(Campaign):
+class DummyMutatorCampaign(FuzzingCampaign):
+    """Test campaign for mutator functionality validation."""
     name = "dummy_mutator"
     target = "127.0.0.1"
     output_network = False
