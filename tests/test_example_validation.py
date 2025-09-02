@@ -35,11 +35,13 @@ class TestExampleValidation(unittest.TestCase):
     Validate that all campaign config files load via the packetfuzz CLI without errors.
     """
     def setUp(self):
+        """Set up environment for example validation testing."""
         cleanup_test_files()
         self.examples_dir = Path(__file__).parent.parent / "examples"
         self.project_root = Path(__file__).parent.parent
         
     def tearDown(self):
+        """Clean up after example validation testing."""
         cleanup_test_files()
     
     def run_campaign_cli(self, campaign_path, timeout=120, allow_failure=False):

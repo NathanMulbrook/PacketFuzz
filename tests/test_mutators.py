@@ -47,6 +47,7 @@ class TestDictionaryOnlyMutator(unittest.TestCase):
     """Test the dictionary-only mutator"""
     
     def setUp(self):
+        """Set up environment for mutator testing."""
         try:
             from packetfuzz.mutators.dictionary_only_mutator import DictionaryOnlyMutator
             self.mutator = DictionaryOnlyMutator()
@@ -230,11 +231,13 @@ class TestScapyMutator(unittest.TestCase):
             self.skipTest(f"ScapyMutator not available: {e}")
 
 
-class DummyMutatorCampaign(Campaign):
+class DummyMutatorCampaign
+    """Test campaign for mutator functionality validation."""(Campaign):
     name = "dummy_mutator"
     target = "127.0.0.1"
     output_network = False
     def build_packets(self):
+        """Build packets for mutator testing."""
         return [IP(dst=self.target)/UDP(dport=int(53))/Raw(load=b"test")]  # Ensure dport is int
 
 

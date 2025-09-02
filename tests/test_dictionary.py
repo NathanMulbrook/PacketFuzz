@@ -50,7 +50,8 @@ except ImportError:
                 else:
                     return IP(dst="127.0.0.1")
             
-            class DictionaryTestCampaign:
+            class DictionaryTestCampaign
+    """Test campaign for dictionary functionality validation.""":
                 pass
 
 

@@ -39,6 +39,7 @@ try:
 except ImportError:
     # Fallback if conftest not available
     def cleanup_test_files():
+    """Clean up test files after packet pipeline testing."""
         pass
 
 
@@ -209,6 +210,7 @@ class TestPacketPipeline(unittest.TestCase):
         transmitted_data = []
         
         def mock_socket_send(data):
+    """Mock socket send function for testing."""
             transmitted_data.append(data)
             return len(data)
         
@@ -556,7 +558,8 @@ class TestPacketPipeline(unittest.TestCase):
         input_present = {k for k, v in input_counts.items() if v > 0}
         
         # Run a field fuzz campaign (PCAP output only) over full set
-        class SimilarityCampaign(PcapFuzzCampaign):
+        class SimilarityCampaign
+    """Campaign for testing packet similarity analysis."""(PcapFuzzCampaign):
             # Exclude transport and network layers from fuzzing to preserve protocol presence
             excluded_layers = ["IP", "TCP", "UDP"]
             def __init__(self, test_instance):
@@ -658,7 +661,8 @@ class TestPacketPipeline(unittest.TestCase):
     def test_fuzzing_mode_binary_vs_field(self):
         """Test that different fuzzing modes produce different results."""
         
-        class BinaryFuzzCampaign(PcapFuzzCampaign):
+        class BinaryFuzzCampaign
+    """Campaign for binary fuzzing testing."""(PcapFuzzCampaign):
             def __init__(self, test_instance):
                 super().__init__()
                 self.pcap_folder = str(test_instance.test_data_dir)
@@ -670,7 +674,8 @@ class TestPacketPipeline(unittest.TestCase):
                 self.rate_limit = None
                 self.verbose = False
         
-        class FieldFuzzCampaign(PcapFuzzCampaign):
+        class FieldFuzzCampaign
+    """Campaign for field-specific fuzzing testing."""(PcapFuzzCampaign):
             def __init__(self, test_instance):
                 super().__init__()
                 self.pcap_folder = str(test_instance.test_data_dir)

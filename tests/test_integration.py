@@ -34,11 +34,13 @@ from conftest import (
 )
 
 
-class DummyCampaign(FuzzingCampaign):
+class DummyCampaign
+    """Basic campaign for integration testing."""(FuzzingCampaign):
     name = "dummy"
     target = "127.0.0.1"
     output_network = False
     def build_packets(self):
+        """Build packets for integration testing."""
         return [IP(dst=self.target)/TCP(dport=int(80))/Raw(load=b"test")]  # Ensure dport is int
 
 
@@ -78,7 +80,8 @@ class TestEndToEndWorkflows(unittest.TestCase):
     def test_complete_fuzzing_workflow_with_validation(self):
         """Test complete fuzzing workflow with comprehensive output validation"""
         
-        class WorkflowValidationCampaign(FuzzingCampaign):
+        class WorkflowValidationCampaign
+    """Campaign for workflow validation testing."""(FuzzingCampaign):
             name = "Complete Workflow Validation"
             target = "192.168.1.100"
             iterations = 100
@@ -92,6 +95,7 @@ class TestEndToEndWorkflows(unittest.TestCase):
                 self.workflow_stats = defaultdict(int)
             
             def get_packet(self):
+        """Get packet for workflow testing."""
                 return IP(dst="192.168.1.100") / TCP(dport=80, sport=12345) / Raw(b"workflow_test")
             
             def pre_send_callback(self, context, packet):
@@ -170,7 +174,8 @@ class TestEndToEndWorkflows(unittest.TestCase):
         with open(dict_file, 'w') as f:
             f.write('\n'.join(map(str, all_ports)))
         
-        class DictionaryWorkflowCampaign(FuzzingCampaign):
+        class DictionaryWorkflowCampaign
+    """Campaign for dictionary workflow testing."""(FuzzingCampaign):
             name = "Dictionary Workflow Test"
             target = "192.168.1.100"
             iterations = 200  # Large sample for statistical analysis
@@ -466,7 +471,8 @@ class TestErrorHandlingIntegration(unittest.TestCase):
     def test_invalid_configuration_handling(self):
         """Test handling of invalid configurations"""
         # Create campaign with potentially invalid config
-        class InvalidCampaign(FuzzingCampaign):
+        class InvalidCampaign
+    """Invalid campaign for error handling testing."""(FuzzingCampaign):
             name = "Invalid Campaign"
             # Missing required attributes
         
@@ -483,7 +489,8 @@ class TestErrorHandlingIntegration(unittest.TestCase):
     def test_file_not_found_handling(self):
         """Test handling of missing files"""
         # Create campaign with non-existent dictionary config
-        class MissingFileCampaign(FuzzingCampaign):
+        class MissingFileCampaign
+    """Campaign with missing files for error testing."""(FuzzingCampaign):
             name = "Missing File Campaign"
             dictionary_config_file = "nonexistent_config.py"
             
@@ -651,7 +658,8 @@ class TestModularityAndExtensibility(unittest.TestCase):
     def test_campaign_inheritance_extensibility(self):
         """Test campaign inheritance and extensibility"""
         # Create custom campaign by inheritance
-        class CustomTestCampaign(BasicTestCampaign):
+        class CustomTestCampaign
+    """Custom campaign for specific integration tests."""(BasicTestCampaign):
             name = "Custom Extended Campaign"
             custom_attribute = "custom_value"
             
@@ -691,7 +699,8 @@ class TestModularityAndExtensibility(unittest.TestCase):
     def test_configuration_extensibility(self):
         """Test configuration system extensibility"""
         # Should be able to create campaigns with various configurations
-        class FlexibleCampaign(FuzzingCampaign):
+        class FlexibleCampaign
+    """Flexible campaign for adaptable testing scenarios."""(FuzzingCampaign):
             def __init__(self, **kwargs):
                 super().__init__()
                 # Should be able to accept arbitrary configuration

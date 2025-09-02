@@ -21,13 +21,18 @@ from scapy.all import IP, TCP, UDP, Raw
 class CallbackTest(unittest.TestCase):
     """Test custom send callback and callback interface"""
     def setUp(self):
+        """Set up test environment for callback testing."""
         self.temp_dir = tempfile.mkdtemp()
         self.sent_packets = []
         self.callback_calls = []
         self.crash_exceptions = []
+    
     def tearDown(self):
+        """Clean up test environment after callback testing."""
         shutil.rmtree(self.temp_dir, ignore_errors=True)
+    
     def custom_send_callback(self, fuzzed_packet, context: CampaignContext):
+        """Custom callback function to track sent packets during testing."""
         self.callback_calls.append("custom_send")
         # Ensure dport is always an integer
         custom_packet = IP(dst=context.campaign.target)/TCP(dport=int(8080))/Raw(load=b"CustomTCPPayload")
@@ -35,16 +40,19 @@ class CallbackTest(unittest.TestCase):
         context.shared_data['custom_sends'] = context.shared_data.get('custom_sends', 0) + 1
         return CallbackResult.SUCCESS
     def crash_callback(self, fuzzed_packet, context, exception):
+        """Callback function to handle crash scenarios during testing."""
         self.callback_calls.append("crash")
         self.crash_exceptions.append(exception)
         return getattr(CallbackResult, 'CRASH', 'CRASH')
     def test_custom_send_callback_attribute_exists(self):
+        """Test that custom_send_callback attribute exists on campaign objects."""
         campaign = FuzzingCampaign()
         self.assertTrue(hasattr(campaign, 'custom_send_callback'))
         self.assertIsNone(campaign.custom_send_callback)
         campaign.custom_send_callback = self.custom_send_callback
         self.assertEqual(campaign.custom_send_callback, self.custom_send_callback)
     def test_custom_send_callback_function_signature(self):
+        """Test custom send callback function signature validation."""
         received_params = []
         def test_callback(fuzzed_packet, context):
             received_params.append({'fuzzed_packet': fuzzed_packet, 'context': context, 'context_type': type(context).__name__})
@@ -60,6 +68,7 @@ class CallbackTest(unittest.TestCase):
         self.assertIsNotNone(received_params[0]['fuzzed_packet'])
         self.assertIsNotNone(received_params[0]['context'])
     def test_custom_send_callback_return_values(self):
+        """Test that custom send callback returns expected values."""
         def success_callback(fuzzed_packet, context):
             return CallbackResult.SUCCESS
         def no_success_callback(fuzzed_packet, context):
@@ -76,6 +85,7 @@ class CallbackTest(unittest.TestCase):
         result = fail_crash_callback(test_packet, context)
         self.assertEqual(result, CallbackResult.FAIL_CRASH)
     def test_custom_packet_construction_example(self):
+        """Test custom packet construction in callback scenarios."""
         constructed_packets = []
         def multi_protocol_callback(fuzzed_packet, context):
             tcp_packet = IP(dst=context.campaign.target)/TCP(dport=int(80), flags="S", seq=1000, window=8192)/Raw(load=b"TCP_SYN_PROBE")
@@ -102,6 +112,7 @@ class CallbackTest(unittest.TestCase):
         self.assertEqual(udp_packet[UDP].sport, 53000)
         self.assertEqual(udp_packet[Raw].load, b"DNS_QUERY_PROBE")
     def test_context_data_sharing_example(self):
+        """Test context data sharing between callback functions."""
         def stateful_callback(fuzzed_packet, context):
             context.shared_data['packets_created'] = context.shared_data.get('packets_created', 0) + 1
             if 'packet_types' not in context.shared_data:

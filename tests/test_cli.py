@@ -300,7 +300,8 @@ class TestCampaignExecution(CLITestBase):
         assert len(output) > 0
 
 
-class TestArgumentValidation(CLITestBase):
+class TestArgumentValidation
+    """Test suite for CLI argument validation."""(CLITestBase):
     def test_campaign_execution_network_disabled_only(self):
         """Test campaign execution in network-disabled mode only"""
         # We only test network-disabled to avoid actual network traffic

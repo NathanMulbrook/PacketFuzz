@@ -67,6 +67,7 @@ class PcapFuzzCampaign(FuzzingCampaign):
     fuzz_mode: str = "field"                    # "field", "binary", "both", or "none"
     
     def __init__(self):
+        """Initialize PcapCampaign with PCAP-specific configuration."""
         super().__init__()
         # Override default target and packet since we'll get them from PCAP
         self.target = "192.168.1.100"  # Default target, can be overridden
@@ -83,37 +84,45 @@ class PcapFuzzCampaign(FuzzingCampaign):
     # Properties for configuration attributes that sync with processing config
     @property
     def extract_at_layer(self) -> Optional[str]:
+        """Get the layer at which to extract packets."""
         return self._extract_at_layer
     
     @extract_at_layer.setter
     def extract_at_layer(self, value: Optional[str]) -> None:
+        """Set the layer at which to extract packets."""
         self._extract_at_layer = value
         self._processing_config.extract_at_layer = value
     
     @property
     def include_layers(self) -> Optional[List[str]]:
+        """Get the list of layers to include in processing."""
         return self._include_layers
     
     @include_layers.setter
     def include_layers(self, value: Optional[List[str]]) -> None:
+        """Set the list of layers to include in processing."""
         self._include_layers = value
         self._processing_config.include_layers = value
     
     @property
     def exclude_layers(self) -> Optional[List[str]]:
+        """Get the list of layers to exclude from processing."""
         return self._exclude_layers
     
     @exclude_layers.setter
     def exclude_layers(self, value: Optional[List[str]]) -> None:
+        """Set the list of layers to exclude from processing."""
         self._exclude_layers = value
         self._processing_config.exclude_layers = value
     
     @property
     def repackage_template(self) -> Optional[Packet]:
+        """Get the template for repackaging packets."""
         return self._repackage_template
     
     @repackage_template.setter
     def repackage_template(self, value: Optional[Packet]) -> None:
+        """Set the template for repackaging packets."""
         self._repackage_template = value
         self._processing_config.repackage_template = value
 
@@ -121,10 +130,12 @@ class PcapFuzzCampaign(FuzzingCampaign):
     # Legacy: extract_layer -> Current: extract_at_layer
     @property
     def extract_layer(self) -> Optional[str]:  # type: ignore[override]
+        """Legacy property: Get the layer at which to extract packets."""
         return self.extract_at_layer
 
     @extract_layer.setter
     def extract_layer(self, value: Optional[str]) -> None:
+        """Legacy property: Set the layer at which to extract packets."""
         self.extract_at_layer = value
 
     # Legacy: repackage_in (string like "IP/UDP") -> Current: repackage_template (Packet)

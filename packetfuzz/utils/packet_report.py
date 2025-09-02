@@ -162,6 +162,7 @@ class ExporterInterface:
         raise NotImplementedError("Subclasses must implement export()")
     
     def get_file_extension(self) -> str:
+        """Get appropriate file extension for the format type."""
         """Return the file extension for this export format"""
         raise NotImplementedError("Subclasses must implement get_file_extension()")
 
@@ -1339,6 +1340,7 @@ class HTMLExporter(ExporterInterface):
     """Export reports as HTML"""
     
     def get_file_extension(self) -> str:
+        """Get appropriate file extension for the format type."""
         """Return the file extension for HTML files"""
         return "html"
     
@@ -1476,6 +1478,7 @@ class JSONExporter(ExporterInterface):
     """Export reports as JSON"""
     
     def get_file_extension(self) -> str:
+        """Get appropriate file extension for the format type."""
         """Return the file extension for JSON files"""
         return "json"
     
@@ -1513,6 +1516,7 @@ class CSVExporter(ExporterInterface):
     """Export reports as CSV"""
     
     def get_file_extension(self) -> str:
+        """Get appropriate file extension for the format type."""
         """Return the file extension for CSV files"""
         return "csv"
     
@@ -1553,6 +1557,7 @@ class SARIFExporter(ExporterInterface):
     """Export reports as SARIF format for CI/CD integration"""
     
     def get_file_extension(self) -> str:
+        """Get appropriate file extension for the format type."""
         """Return the file extension for SARIF files"""
         return "sarif"
     
@@ -1620,6 +1625,7 @@ class MarkdownExporter(ExporterInterface):
     """Export reports as Markdown for documentation"""
     
     def get_file_extension(self) -> str:
+        """Get appropriate file extension for the format type."""
         return "md"
     
     def export(self, content: Dict[str, Any], output_path: str) -> str:
@@ -1806,6 +1812,7 @@ class YAMLExporter(ExporterInterface):
     """Export reports as YAML for configuration management"""
     
     def get_file_extension(self) -> str:
+        """Get appropriate file extension for the format type."""
         return "yaml"
     
     def export(self, content: Dict[str, Any], output_path: str) -> str:

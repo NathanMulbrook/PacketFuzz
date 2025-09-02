@@ -25,6 +25,7 @@ class FieldFuzzConfig:
     description: str = ""
     
     def __post_init__(self):
+        """Post-initialization setup for packet extensions."""
         """Ensure dictionary and default_values are lists."""
         if isinstance(self.dictionary, str):
             self.dictionary = [self.dictionary]
@@ -55,6 +56,7 @@ class PacketFuzzConfig:
     description: str = ""
     
     def __post_init__(self):
+        """Post-initialization setup for packet extensions."""
         if isinstance(self.dictionary, str):
             self.dictionary = [self.dictionary]
         if isinstance(self.mutators, str):
@@ -131,6 +133,7 @@ class FieldFuzzProxy:
         self._field_name = field_name
     
     def __setattr__(self, name: str, value: Any) -> None:
+        """Set attribute with custom handling for packet extensions."""
         if name.startswith('_'):
             super().__setattr__(name, value)
             return
@@ -148,6 +151,7 @@ class FieldFuzzProxy:
             raise AttributeError(f"FieldFuzzConfig has no attribute '{name}'")
     
     def __getattr__(self, name: str) -> Any:
+        """Get attribute with custom handling for packet extensions."""
         config = _fuzz_config_registry.get_field_config(self._packet, self._field_name)
         if config is None:
             config = FieldFuzzConfig()
@@ -172,6 +176,7 @@ class PacketFuzzProxy:
         self._packet = packet
     
     def __setattr__(self, name: str, value: Any) -> None:
+        """Set attribute with custom handling for packet extensions."""
         if name.startswith('_'):
             super().__setattr__(name, value)
             return
@@ -189,6 +194,7 @@ class PacketFuzzProxy:
             raise AttributeError(f"PacketFuzzConfig has no attribute '{name}'")
     
     def __getattr__(self, name: str) -> Any:
+        """Get attribute with custom handling for packet extensions."""
         config = _fuzz_config_registry.get_packet_config(self._packet)
         if config is None:
             config = PacketFuzzConfig()

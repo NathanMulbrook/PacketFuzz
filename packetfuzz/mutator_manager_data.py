@@ -1982,10 +1982,12 @@ class MutatorManagerData:
             field_metadata.last_mutated = datetime.now()
     
     def __str__(self) -> str:
+        """String representation of MutatorManagerData."""
         return (f"MutatorManagerData({self.total_packets} packets, "
                 f"{self.total_fields} fields, {self.fuzzable_field_count} fuzzable)")
     
     def __repr__(self) -> str:
+        """Detailed representation of MutatorManagerData."""
         return (f"MutatorManagerData(packets={self.total_packets}, "
                 f"fields={self.total_fields}, fuzzable={self.fuzzable_field_count}, "
                 f"iterations={self.iterations}, preprocessed={self.is_preprocessed})")

@@ -213,6 +213,7 @@ class TestFieldKeyGeneration(unittest.TestCase):
     """Test field key generation and collision handling"""
     
     def setUp(self):
+        """Set up environment for mutator manager data testing."""
         packet = create_test_packet("tcp")
         config = FuzzConfig(packets=packet)
         self.data_tracker = MutatorManagerData(config)
@@ -273,6 +274,7 @@ class TestPacketPreprocessing(unittest.TestCase):
         cleanup_test_files()
     
     def tearDown(self):
+        """Clean up after mutator manager data testing."""
         cleanup_test_files()
     
     def test_single_packet_preprocessing(self):

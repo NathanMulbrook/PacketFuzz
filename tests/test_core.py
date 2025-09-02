@@ -245,6 +245,7 @@ class TestFuzzField(unittest.TestCase):
         assert int(fuzz_field) in fuzz_field.values
 
     def test_fuzzfield_as_string(self):
+        """Test FuzzField string representation functionality."""
         fuzz_field = FuzzField(values=["test1", "test2"])
         # Should act like a string in packet construction
         assert str(fuzz_field) in fuzz_field.values
@@ -265,6 +266,7 @@ class TestFuzzField(unittest.TestCase):
         assert not fuzz_field.mutators
 
     def test_fuzzfield_preservation_in_packets(self):
+        """Test that FuzzField values are preserved in packet construction."""
         packet = IP() / TCP(dport=FuzzField(values=[80, 443, 8080]))
         tcp_layer = packet[TCP]
         dport_field = tcp_layer.dport
@@ -438,7 +440,8 @@ class TestCoreFuzzer(unittest.TestCase):
         callback_calls = []
         callback_results = []
         
-        class TrackingCampaign(FuzzingCampaign):
+        class TrackingCampaign
+    """Campaign for tracking fuzzing behavior during tests."""(FuzzingCampaign):
             name = "Callback Tracking Test"
             target = "127.0.0.1"
             iterations = 10
@@ -447,6 +450,7 @@ class TestCoreFuzzer(unittest.TestCase):
             verbose = False
             
             def get_packet(self):
+        """Get test packet for validation."""
                 return IP(dst="127.0.0.1") / TCP(dport=80) / Raw(b"test")
             
             def pre_send_callback(self, context, packet):
@@ -500,7 +504,8 @@ class TestCoreFuzzer(unittest.TestCase):
 
     def test_fuzzer_statistics_accuracy(self):
         """Test that reported statistics match actual PCAP content"""
-        class StatisticsValidationCampaign(FuzzingCampaign):
+        class StatisticsValidationCampaign
+    """Campaign for validating fuzzing statistics."""(FuzzingCampaign):
             name = "Statistics Validation Test"
             target = "127.0.0.1"
             iterations = 25
@@ -641,9 +646,11 @@ class TestConfigurationPersistence(unittest.TestCase):
         assert 14.0 <= response_time <= 16.0  # Allow small floating point variance
 
 
-class DummyCoreCampaign(Campaign):
+class DummyCoreCampaign
+    """Core test campaign for basic functionality validation."""(Campaign):
     name = "dummy_core"
     target = "127.0.0.1"
     output_network = False
     def build_packets(self):
+        """Build packets for core functionality testing."""
         return [IP(dst=self.target)/TCP(dport=int(80))/Raw(load=b"test")]  # Ensure dport is int
