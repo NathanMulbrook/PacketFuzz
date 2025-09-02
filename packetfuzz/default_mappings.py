@@ -1101,6 +1101,129 @@ FIELD_ADVANCED_WEIGHTS = [
 ]
 
 # =============================
+# Mutator Weight Mappings
+# =============================
+"""
+Mutator Weight Mappings for field-specific mutator selection.
+Each field type/name can have different mutator preferences with weights.
+Weights are relative (don't need to sum to 1.0) and determine probability of selection.
+
+Available mutators:
+- "libfuzzer": C-based binary mutations (fast, general purpose)
+- "scapy": Scapy's built-in fuzz() (protocol-aware)
+- "dictionary_only": Pure dictionary values without mutations
+"""
+
+FIELD_TYPE_MUTATOR_WEIGHTS = {
+    # String Fields - Favor dictionary and libfuzzer
+    "StrField": {"dictionary_only": 0.5, "libfuzzer": 0.4, "scapy": 0.1},
+    "XStrField": {"dictionary_only": 0.5, "libfuzzer": 0.4, "scapy": 0.1},
+    "_HTTPHeaderField": {"dictionary_only": 0.7, "libfuzzer": 0.2, "scapy": 0.1},
+    "StrFixedLenField": {"libfuzzer": 0.6, "dictionary_only": 0.3, "scapy": 0.1},
+    "StrLenField": {"libfuzzer": 0.6, "dictionary_only": 0.3, "scapy": 0.1},
+    "StrNullField": {"dictionary_only": 0.4, "libfuzzer": 0.5, "scapy": 0.1},
+    "StrStopField": {"dictionary_only": 0.4, "libfuzzer": 0.5, "scapy": 0.1},
+    
+    # Numeric Fields - Favor libfuzzer for numeric mutations
+    "ByteField": {"libfuzzer": 0.7, "scapy": 0.2, "dictionary_only": 0.1},
+    "ShortField": {"libfuzzer": 0.7, "scapy": 0.2, "dictionary_only": 0.1},
+    "IntField": {"libfuzzer": 0.8, "scapy": 0.2},
+    "LongField": {"libfuzzer": 0.8, "scapy": 0.2},
+    "BitField": {"libfuzzer": 0.6, "scapy": 0.4},
+    
+    # Enum Fields - Favor scapy for protocol awareness, dictionary for known values
+    "ByteEnumField": {"scapy": 0.4, "dictionary_only": 0.4, "libfuzzer": 0.2},
+    "ShortEnumField": {"scapy": 0.4, "dictionary_only": 0.4, "libfuzzer": 0.2},
+    "IntEnumField": {"scapy": 0.4, "dictionary_only": 0.4, "libfuzzer": 0.2},
+    "EnumField": {"scapy": 0.4, "dictionary_only": 0.4, "libfuzzer": 0.2},
+    
+    # Address Fields - Favor dictionary for valid addresses
+    "IPField": {"dictionary_only": 0.6, "libfuzzer": 0.3, "scapy": 0.1},
+    "IP6Field": {"dictionary_only": 0.6, "libfuzzer": 0.3, "scapy": 0.1},
+    "MACField": {"dictionary_only": 0.5, "libfuzzer": 0.4, "scapy": 0.1},
+    
+    # Special Fields
+    "PacketField": {"scapy": 0.6, "libfuzzer": 0.4},
+    "PacketListField": {"scapy": 0.6, "libfuzzer": 0.4},
+    "FieldListField": {"scapy": 0.5, "libfuzzer": 0.5},
+    "ConditionalField": {"scapy": 0.5, "libfuzzer": 0.4, "dictionary_only": 0.1},
+    "FlagsField": {"scapy": 0.5, "libfuzzer": 0.5},
+    "XBitField": {"libfuzzer": 0.7, "scapy": 0.3},
+    
+    # Length Fields - Be careful with these, prefer scapy
+    "FieldLenField": {"scapy": 0.8, "libfuzzer": 0.2},
+    "LenField": {"scapy": 0.8, "libfuzzer": 0.2},
+    "PacketLenField": {"scapy": 0.8, "libfuzzer": 0.2},
+    
+    # Raw Data - Favor libfuzzer for binary mutation
+    "RawVal": {"libfuzzer": 0.8, "scapy": 0.2},
+    "PaddingField": {"libfuzzer": 0.6, "scapy": 0.4},
+}
+
+FIELD_NAME_MUTATOR_WEIGHTS = {
+    # Network layer - Be conservative with critical fields
+    "IP.dst": {"dictionary_only": 0.6, "scapy": 0.3, "libfuzzer": 0.1},
+    "IP.src": {"dictionary_only": 0.6, "scapy": 0.3, "libfuzzer": 0.1},
+    "IP.version": {"scapy": 0.8, "libfuzzer": 0.2},
+    "IP.ihl": {"scapy": 0.9, "libfuzzer": 0.1},
+    "IP.len": {"scapy": 0.9, "libfuzzer": 0.1},
+    
+    # Transport layer ports - Favor dictionary for known ports
+    "TCP.dport": {"dictionary_only": 0.7, "libfuzzer": 0.2, "scapy": 0.1},
+    "TCP.sport": {"dictionary_only": 0.7, "libfuzzer": 0.2, "scapy": 0.1},
+    "UDP.dport": {"dictionary_only": 0.7, "libfuzzer": 0.2, "scapy": 0.1},
+    "UDP.sport": {"dictionary_only": 0.7, "libfuzzer": 0.2, "scapy": 0.1},
+    
+    # TCP flags and control - Favor scapy for protocol correctness
+    "TCP.flags": {"scapy": 0.6, "libfuzzer": 0.3, "dictionary_only": 0.1},
+    "TCP.seq": {"libfuzzer": 0.6, "scapy": 0.4},
+    "TCP.ack": {"libfuzzer": 0.6, "scapy": 0.4},
+    "TCP.window": {"libfuzzer": 0.7, "scapy": 0.3},
+    
+    # HTTP fields - Heavily favor dictionaries
+    "HTTPRequest.Method": {"dictionary_only": 0.8, "libfuzzer": 0.1, "scapy": 0.1},
+    "HTTPRequest.Path": {"dictionary_only": 0.6, "libfuzzer": 0.3, "scapy": 0.1},
+    "HTTPRequest.User_Agent": {"dictionary_only": 0.9, "libfuzzer": 0.1},
+    "HTTPRequest.Host": {"dictionary_only": 0.7, "libfuzzer": 0.2, "scapy": 0.1},
+    "HTTPRequest.Accept": {"dictionary_only": 0.8, "libfuzzer": 0.2},
+    "HTTPRequest.Content_Type": {"dictionary_only": 0.8, "libfuzzer": 0.2},
+    
+    # DNS fields - Mix of dictionary and protocol-aware
+    "DNS.qd": {"scapy": 0.5, "dictionary_only": 0.3, "libfuzzer": 0.2},
+    "DNSQR.qname": {"dictionary_only": 0.6, "libfuzzer": 0.3, "scapy": 0.1},
+    "DNSQR.qtype": {"dictionary_only": 0.5, "scapy": 0.4, "libfuzzer": 0.1},
+}
+
+FIELD_ADVANCED_MUTATOR_WEIGHTS = [
+    # Protocol-specific advanced rules
+    {
+        "condition": {"layer_name": "HTTP"},
+        "mutator_weights": {"dictionary_only": 0.7, "libfuzzer": 0.2, "scapy": 0.1},
+        "description": "HTTP layer fields favor dictionary attacks"
+    },
+    {
+        "condition": {"field_name_contains": "password"},
+        "mutator_weights": {"dictionary_only": 0.8, "libfuzzer": 0.2},
+        "description": "Password fields favor dictionary attacks"
+    },
+    {
+        "condition": {"field_name_contains": "user"},
+        "mutator_weights": {"dictionary_only": 0.7, "libfuzzer": 0.3},
+        "description": "User fields favor dictionary attacks"
+    },
+    {
+        "condition": {"field_type": "StrField", "max_length": 10},
+        "mutator_weights": {"libfuzzer": 0.6, "scapy": 0.4},
+        "description": "Short string fields favor mutation over dictionary"
+    },
+    {
+        "condition": {"field_type": "IntField", "min_value": 0, "max_value": 65535},
+        "mutator_weights": {"libfuzzer": 0.8, "scapy": 0.2},
+        "description": "Port-range integers favor libfuzzer"
+    },
+]
+
+# =============================
 # Layer-based weight scaling
 # =============================
 # Scale field fuzzing weights based on how deep the layer is within the packet.

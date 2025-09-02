@@ -46,7 +46,7 @@ class FuzzMode(Enum):
 @dataclass
 class FuzzConfig:
     """Configuration for fuzzing operations
-    mutator_preference must be a list of strings (e.g., ['libfuzzer']).
+    mutator_preference can be a list of strings or dict of {mutator: weight}.
     
     Extended to include packet and iteration information for complete fuzzing configuration.
     This creates a single source of truth for all fuzzing parameters.
@@ -60,7 +60,7 @@ class FuzzConfig:
     # Layer-based scaling configuration (multiplier per layer distance from innermost)
     layer_weight_scaling: Optional[float] = None  # None = use default mapping constant
     enable_layer_weight_scaling: bool = True
-    mutator_preference: List[str] = field(default_factory=lambda: ["libfuzzer"])
+    mutator_preference: Union[List[str], Dict[str, float]] = field(default_factory=lambda: {"libfuzzer": 1.0})
     global_dict_config_path: Optional[str] = None  # Path to global dictionary configuration #TODO make sure this is never none
     rng: Optional[random.Random] = None  # Optional random generator for reproducibility
     
@@ -133,7 +133,8 @@ class FieldMetadata:
     fuzz_weight: float = 1.0  # Final resolved weight
     dictionary_paths: List[str] = field(default_factory=list)  # Resolved dictionary file paths
     default_values: List[Any] = field(default_factory=list)  # Default values for fuzzing
-    mutator_preferences: List[str] = field(default_factory=list)  # Preferred mutators
+    mutator_preferences: List[str] = field(default_factory=list)  # Preferred mutators (legacy)
+    mutator_weights: Dict[str, float] = field(default_factory=dict)  # Mutator weights for weighted selection
     
     # Weight tracking for transparency and debugging
     base_weight: float = 1.0                     # Original weight before any scaling
@@ -238,7 +239,8 @@ class ConfigurationSources:
     fuzzfield_weight: Optional[float] = None
     fuzzfield_dictionaries: List[str] = field(default_factory=list)
     fuzzfield_values: List[Any] = field(default_factory=list)
-    fuzzfield_mutators: List[str] = field(default_factory=list)
+    fuzzfield_mutators: List[str] = field(default_factory=list)  # Legacy list format
+    fuzzfield_mutator_weights: Dict[str, float] = field(default_factory=dict)  # New dict format
     fuzzfield_scapy_weight: Optional[float] = None
     fuzzfield_dictionary_only_weight: Optional[float] = None
     fuzzfield_use_scapy_fuzz: Optional[bool] = None
@@ -274,7 +276,8 @@ class ResolvedConfiguration:
     scapy_fuzz_weight: Optional[float] = None
     dictionary_only_weight: Optional[float] = None
     use_scapy_fuzz: Optional[bool] = None
-    mutator_preferences: List[str] = field(default_factory=list)
+    mutator_preferences: List[str] = field(default_factory=list)  # Legacy list format
+    mutator_weights: Dict[str, float] = field(default_factory=dict)  # New dict format
     
     # Resolution metadata
     priority_level: int = 5  # 1=highest (FuzzField), 5=lowest (default)
@@ -935,7 +938,8 @@ class MutatorManagerData:
             sources.fuzzfield_weight = fuzzfield_config['fuzz_weight']
             sources.fuzzfield_dictionaries = fuzzfield_config['dictionaries']
             sources.fuzzfield_values = fuzzfield_config['values']
-            sources.fuzzfield_mutators = fuzzfield_config['mutators']
+            sources.fuzzfield_mutators = fuzzfield_config['mutators']  # Legacy list
+            sources.fuzzfield_mutator_weights = fuzzfield_config['mutator_weights']  # New dict
             sources.fuzzfield_scapy_weight = fuzzfield_config['scapy_fuzz_weight']
             sources.fuzzfield_dictionary_only_weight = fuzzfield_config['dictionary_only_weight']
             sources.fuzzfield_use_scapy_fuzz = fuzzfield_config['use_scapy_fuzz']
@@ -1234,6 +1238,75 @@ class MutatorManagerData:
                 cursor = cursor.payload
             return depth_below
     
+    def _resolve_field_mutator_weights(self, sources: ConfigurationSources, layer: Packet) -> Dict[str, float]:
+        """
+        Resolve mutator weights for a field from default mappings.
+        
+        Args:
+            sources: Configuration sources collected for this field
+            layer: The packet layer containing the field
+            
+        Returns:
+            Dict mapping mutator names to weights
+        """
+        # Import the default mappings
+        try:
+            from .default_mappings import (
+                FIELD_TYPE_MUTATOR_WEIGHTS, 
+                FIELD_NAME_MUTATOR_WEIGHTS, 
+                FIELD_ADVANCED_MUTATOR_WEIGHTS
+            )
+        except ImportError:
+            return {}
+        
+        # Extract field information for lookup
+        field_name = getattr(sources, 'manager_source_type', None) or "unknown"
+        field_type = getattr(layer, '__class__', object).__name__
+        layer_name = layer.__class__.__name__
+        
+        # Build field key similar to how it's done elsewhere
+        key = f"{layer_name}.{field_name}"
+        
+        # Priority 1: Advanced mappings (most specific)
+        for rule in FIELD_ADVANCED_MUTATOR_WEIGHTS:
+            condition = rule.get('condition', {})
+            
+            # Check layer name condition
+            if 'layer_name' in condition and condition['layer_name'] != layer_name:
+                continue
+                
+            # Check field name contains condition
+            if 'field_name_contains' in condition:
+                if condition['field_name_contains'].lower() not in field_name.lower():
+                    continue
+                    
+            # Check field type condition
+            if 'field_type' in condition and condition['field_type'] != field_type:
+                continue
+                
+            # If all conditions match, return the mutator weights
+            return rule.get('mutator_weights', {}).copy()
+        
+        # Priority 2: Name-based mapping
+        if key in FIELD_NAME_MUTATOR_WEIGHTS:
+            return FIELD_NAME_MUTATOR_WEIGHTS[key].copy()
+        
+        # Priority 3: Type-based mapping
+        if field_type in FIELD_TYPE_MUTATOR_WEIGHTS:
+            return FIELD_TYPE_MUTATOR_WEIGHTS[field_type].copy()
+        
+        # Priority 4: Campaign-level default (if available)
+        if hasattr(self.fuzz_config, 'mutator_preference') and isinstance(self.fuzz_config.mutator_preference, dict):
+            return self.fuzz_config.mutator_preference.copy()
+        elif hasattr(self.fuzz_config, 'mutator_preference') and isinstance(self.fuzz_config.mutator_preference, list):
+            # Convert list to equal weights
+            if self.fuzz_config.mutator_preference:
+                equal_weight = 1.0 / len(self.fuzz_config.mutator_preference)
+                return {mutator: equal_weight for mutator in self.fuzz_config.mutator_preference}
+        
+        # Priority 5: Fallback to libfuzzer
+        return {"libfuzzer": 1.0}
+    
     def _apply_layer_weight_scaling(self, base_weight: float, layer: Packet) -> Tuple[float, float]:
         """
         Apply layer weight scaling to the base weight.
@@ -1392,6 +1465,14 @@ class MutatorManagerData:
             resolved.use_scapy_fuzz = sources.fuzzfield_use_scapy_fuzz
         if sources.fuzzfield_mutators:
             resolved.mutator_preferences = sources.fuzzfield_mutators.copy()
+        if sources.fuzzfield_mutator_weights:
+            resolved.mutator_weights = sources.fuzzfield_mutator_weights.copy()
+            resolved.resolution_notes.append("Applied FuzzField mutator weights")
+        else:
+            # Resolve mutator weights from default mappings
+            resolved.mutator_weights = self._resolve_field_mutator_weights(sources, layer)
+            if resolved.mutator_weights:
+                resolved.resolution_notes.append("Applied default mutator weights")
         
         # === WEIGHT SCALING PHASE ===
         # Apply layer weight scaling first, then campaign scaling
@@ -1464,6 +1545,8 @@ class MutatorManagerData:
             field_metadata.use_scapy_fuzz = resolved.use_scapy_fuzz
         if resolved.mutator_preferences:
             field_metadata.mutator_preferences = resolved.mutator_preferences
+        if resolved.mutator_weights:
+            field_metadata.mutator_weights = resolved.mutator_weights
         
         # Handle FuzzField materialization (side effect)
         if sources.fuzzfield_object is not None:
@@ -1536,7 +1619,8 @@ class MutatorManagerData:
             'values': field_value.values or [],
             'dictionaries': field_value.dictionaries or [],
             'fuzz_weight': field_value.fuzz_weight,
-            'mutators': field_value.mutators or [],
+            'mutators': list(field_value.mutators.keys()) if isinstance(field_value.mutators, dict) else [],  # Legacy list for compatibility
+            'mutator_weights': field_value.mutators if isinstance(field_value.mutators, dict) else {},  # New dict format
             'scapy_fuzz_weight': field_value.scapy_fuzz_weight,
             'dictionary_only_weight': field_value.dictionary_only_weight,
             'use_scapy_fuzz': field_value.use_scapy_fuzz,

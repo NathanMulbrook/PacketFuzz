@@ -348,16 +348,24 @@ class MutatorManager:
         if field.fuzz_weight == 0.0:
             return "skip"
             
-        # Use the field's mutator preferences, or fall back to default
-        preferences = field.mutator_preferences or ["libfuzzer", "scapy", "dictionary_only"]
-        mutator_selection = random.choice(preferences)
-        if random.random() < field.dictionary_only_weight :
+        # Use fuzz_weight as probability to CONTINUE fuzzing (higher weight = more likely to fuzz)
+        if random.random() >= field.fuzz_weight:
+            return "skip"
+
+        # Select mutator using weighted selection
+        if field.mutator_weights:
+            mutators = list(field.mutator_weights.keys())
+            weights = list(field.mutator_weights.values())
+            mutator_selection = random.choices(mutators, weights=weights, k=1)[0]
+        else:
+            # Fallback to default when no weights configured
+            mutator_selection = "libfuzzer"
+        
+        # Apply legacy weight overrides (deprecated but maintained for compatibility)
+        if random.random() < field.dictionary_only_weight:
             mutator_selection = "dictionary_only"
         if random.random() < field.scapy_fuzz_weight:
             mutator_selection = "scapy"
-        # Use fuzz_weight as probability to CONTINUE fuzzing (higher weight = more likely to fuzz)
-        if random.random() >= field.fuzz_weight:
-            mutator_selection = "skip"
 
         return mutator_selection
     
@@ -472,27 +480,34 @@ class MutatorManager:
         Fuzz the packet(s) at the byte level using the new consolidated API and MutatorManagerData.
         Returns MutatorManagerData with mutated packets in packet_list.
         """
-        # Select mutator using preference system
+        # Select mutator using preference system with weighted selection
         mutator = None
-        prefs = self.fuzz_config.mutator_preference or []
-        candidates = []
-        for m in prefs:
-            mv = getattr(m, 'value', m)
-            if mv == 'libfuzzer' and LibFuzzerMutator:
-                if self.mutators["libfuzzer"] is None:
-                    self.mutators["libfuzzer"] = LibFuzzerMutator()
-                candidates.append(self.mutators["libfuzzer"])
-            elif mv == 'dictionary_only' and DictionaryOnlyMutator:
-                if self.mutators["dictionary_only"] is None:
-                    self.mutators["dictionary_only"] = DictionaryOnlyMutator()
-                candidates.append(self.mutators["dictionary_only"])
-            elif mv == 'scapy' and ScapyMutator:
-                if self.mutators["scapy"] is None:
-                    self.mutators["scapy"] = ScapyMutator()
-                candidates.append(self.mutators["scapy"])
-        if candidates:
-            mutator = random.choice(candidates)
-        else:
+        prefs = self.fuzz_config.mutator_preference or {"libfuzzer": 1.0}
+        
+        # Prefs is always dict format after normalization (type assertion for static analysis)
+        assert isinstance(prefs, dict), f"mutator_preference should be dict after normalization, got {type(prefs)}"
+        
+        # Use weighted selection
+        mutator_names = list(prefs.keys())
+        weights = list(prefs.values())
+        selected_mutator_name = random.choices(mutator_names, weights=weights, k=1)[0]
+        
+        # Initialize and get the selected mutator
+        if selected_mutator_name == 'libfuzzer' and LibFuzzerMutator:
+            if self.mutators["libfuzzer"] is None:
+                self.mutators["libfuzzer"] = LibFuzzerMutator()
+            mutator = self.mutators["libfuzzer"]
+        elif selected_mutator_name == 'dictionary_only' and DictionaryOnlyMutator:
+            if self.mutators["dictionary_only"] is None:
+                self.mutators["dictionary_only"] = DictionaryOnlyMutator()
+            mutator = self.mutators["dictionary_only"]
+        elif selected_mutator_name == 'scapy' and ScapyMutator:
+            if self.mutators["scapy"] is None:
+                self.mutators["scapy"] = ScapyMutator()
+            mutator = self.mutators["scapy"]
+        
+        # Fallback if no mutator was selected
+        if mutator is None:
             if LibFuzzerMutator and self.mutators["libfuzzer"] is None:
                 self.mutators["libfuzzer"] = LibFuzzerMutator()
             if DictionaryOnlyMutator and self.mutators["dictionary_only"] is None:

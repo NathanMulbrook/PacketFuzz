@@ -417,7 +417,11 @@ class FuzzField:
     TCP(dport=FuzzField(values=[22, 80, 443], dictionaries=["ports.txt"]))
 
     - dictionary_override: If True, only use these dictionaries for this field (do not merge with user/default)
-    - mutators: Must be a list of strings or None. If a list, a random mutator will be chosen.
+    - mutators: Can be a list of strings or dict of {mutator_name: weight}. 
+      List format is converted to equal weights automatically.
+      Examples:
+        mutators=["libfuzzer", "scapy"]  # Equal weights (0.5 each)
+        mutators={"libfuzzer": 0.7, "dictionary_only": 0.3}  # Weighted selection
     """
     
     def __init__(self, 
@@ -425,7 +429,7 @@ class FuzzField:
                  dictionaries: Optional[list[str]] = None,
                  fuzz_weight: float = 1.0,
                  description: str = "",
-                 mutators: Optional[list[str]] = None,
+                 mutators: Optional[Union[list[str], dict[str, float]]] = None,
                  scapy_fuzz_weight: float = 0.1,
                  use_scapy_fuzz: bool = False,
                  dictionary_only_weight: float = 0.0,
@@ -434,9 +438,22 @@ class FuzzField:
         self.dictionaries = dictionaries or []
         self.fuzz_weight = fuzz_weight
         self.description = description
-        if mutators is not None and not isinstance(mutators, list):
-            raise TypeError("FuzzField 'mutators' must be a list of strings or None.")
-        self.mutators = mutators if mutators is not None else ["libfuzzer"]
+        
+        # Normalize mutators to dict format immediately
+        if mutators is None:
+            self.mutators = {"libfuzzer": 1.0}
+        elif isinstance(mutators, list):
+            # Convert list to equal-weight dict for backward compatibility
+            if not mutators:
+                self.mutators = {"libfuzzer": 1.0}
+            else:
+                equal_weight = 1.0 / len(mutators)
+                self.mutators = {mutator: equal_weight for mutator in mutators}
+        elif isinstance(mutators, dict):
+            self.mutators = mutators.copy()
+        else:
+            raise TypeError("FuzzField 'mutators' must be a list, dict, or None.")
+        
         self.scapy_fuzz_weight = scapy_fuzz_weight
         self.use_scapy_fuzz = use_scapy_fuzz
         self.dictionary_only_weight = dictionary_only_weight
@@ -697,7 +714,7 @@ class FuzzingCampaign:
     mapping_merge_mode: str = "merge"  # 'merge' or 'override'
     
     # Mutator configuration
-    mutator_preference: Optional[List[str]] = ["libfuzzer"]  # Campaign mutator preference (defaults to ["libfuzzer"])
+    mutator_preference: Optional[Union[List[str], Dict[str, float]]] = None  # Campaign mutator preference (normalized to dict in __init__)
     
     # Layer-weight scaling controls (campaign-level overrides)
     # Lower values reduce fuzzing of outer layers more aggressively:
@@ -751,9 +768,16 @@ class FuzzingCampaign:
                     instance_value = copy.deepcopy(class_value)
                     setattr(self, attr_name, instance_value)
         
-        # Set default for mutator_preference if None
+        # Set default for mutator_preference if None and normalize to dict format
         if getattr(self, 'mutator_preference', None) is None:
-            self.mutator_preference = ["libfuzzer"]
+            self.mutator_preference = {"libfuzzer": 1.0}
+        elif isinstance(self.mutator_preference, list):
+            # Convert list to equal-weight dict for consistency
+            if not self.mutator_preference:
+                self.mutator_preference = {"libfuzzer": 1.0}
+            else:
+                equal_weight = 1.0 / len(self.mutator_preference)
+                self.mutator_preference = {mutator: equal_weight for mutator in self.mutator_preference}
         
         # Handle 'all' in report_formats
         if 'all' in getattr(self, 'report_formats', []):
@@ -859,7 +883,7 @@ class FuzzingCampaign:
             use_dictionaries = True,
             fuzz_weight = 1.0,
             global_dict_config_path = self.global_dict_config_path,
-            mutator_preference = self.mutator_preference or ["libfuzzer"],
+            mutator_preference = self.mutator_preference or {"libfuzzer": 1.0},  # Should not be None after __init__
             enable_layer_weight_scaling = self.enable_layer_weight_scaling,
             layer_weight_scaling = self.layer_weight_scaling,
             # Include packet and iteration information in config
@@ -1142,7 +1166,7 @@ class FuzzingCampaign:
                 use_dictionaries = True,
                 fuzz_weight = 1.0,
                 global_dict_config_path = self.global_dict_config_path,
-                mutator_preference = self.mutator_preference or ["libfuzzer"],
+                mutator_preference = self.mutator_preference or {"libfuzzer": 1.0},  # Should not be None after __init__
                 enable_layer_weight_scaling = self.enable_layer_weight_scaling,
                 layer_weight_scaling = self.layer_weight_scaling,
                 # Include packet and iteration information in config
