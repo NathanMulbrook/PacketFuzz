@@ -23,7 +23,7 @@ import logging
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 
 # Third-party imports
 from scapy.packet import Packet
@@ -62,8 +62,8 @@ class DictionaryManager:
         Initialize the dictionary manager.
         
         Args:
-            user_config_file: Path to user configuration file  
-            fuzzdb_path: Path to FuzzDB directory (auto-detected if None)
+            user_config_file: Path to user configuration file
+            fuzzdb_path: Path to fuzzdb directory
         """
         self.fuzzdb_path = fuzzdb_path or self._find_fuzzdb_path()
     
@@ -320,16 +320,19 @@ class DictionaryManager:
     def get_dictionary_entries(self, dictionary_paths: List[str]) -> List[bytes]:
         """
         Load and combine dictionary entries from multiple files.
-        Logs warnings and errors for missing or failed dictionary loads.
+        
+        This method loads dictionary entries and deduplicates within each call,
+        but allows the same entries to be returned to different mutators.
         
         Args:
             dictionary_paths: List of dictionary file paths
             
         Returns:
-            Combined list of dictionary entries
+            Combined list of dictionary entries (deduplicated within this call)
         """
         if not dictionary_paths:
             return []
+            
         combined_entries = []
         for dict_path in dictionary_paths:
             try:
@@ -339,8 +342,9 @@ class DictionaryManager:
                 logger.warning(f"Dictionary file not found: {dict_path} ({e})")
             except Exception as e:
                 logger.error(f"Error loading dictionary entries from {dict_path}: {e}")
-        # Remove duplicates while preserving order
+        # Remove duplicates within this batch while preserving order
         unique_entries = list(dict.fromkeys(combined_entries))
+        
         return unique_entries
     
     def _load_dictionary_file(self, dict_path: str) -> List[bytes]:

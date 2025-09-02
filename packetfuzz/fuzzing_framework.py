@@ -755,6 +755,10 @@ class FuzzingCampaign:
         if getattr(self, 'mutator_preference', None) is None:
             self.mutator_preference = ["libfuzzer"]
         
+        # Handle 'all' in report_formats
+        if 'all' in getattr(self, 'report_formats', []):
+            self.report_formats = ['html', 'json', 'csv', 'sarif', 'markdown', 'yaml']
+        
         # Initialize instance-specific objects
         self.callback_manager = CallbackManager(self)
         self.context = None

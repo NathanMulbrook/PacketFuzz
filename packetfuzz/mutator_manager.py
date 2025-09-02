@@ -310,6 +310,10 @@ class MutatorManager:
         # Selection is now handled at the batch level, so proceed with fuzzing
         logger.debug(f"Fuzzing field {field_type} ")
 
+        # Clear mutator instances to ensure fresh state for each field type
+        for each in self.mutators:
+            self.mutators[each] = None
+
         fields_to_fuzz = self.data.get_all_fields_of_type(field_type)
 
         # Iterate through all fields of this type
@@ -566,6 +570,7 @@ class MutatorManager:
         self.data.packet_list = mutated_packets
         return self.data
     
+
 
 
 

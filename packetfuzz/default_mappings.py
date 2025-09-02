@@ -35,35 +35,25 @@ MACROS = {
         "fuzzdb/attack/unicode/japanese-emoticon.txt",
         "fuzzdb/attack/unicode/two-byte-chars.txt",
         "fuzzdb/attack/unicode/regionalindicators.txt",
-        "fuzzdb/control-chars/NullByteRepresentations.txt",
-        "fuzzdb/wordlists-misc/wordlist-alphanumeric-case.txt",
+        "fuzzdb/attack/control-chars/NullByteRepresentations.txt",
         "fuzzdb/wordlists-misc/accidental_profanity.txt",
-        "fuzzdb/wordlists-misc/us_cities.txt",
-        "fuzzdb/wordlists-misc/wordlist-dna.txt",
-        "fuzzdb/wordlists-misc/wordlist-dictionary.txt",
-        "fuzzdb/wordlists-misc/wordlist-english.txt",
-        "fuzzdb/wordlists-misc/wordlist-uk.txt",
-        "fuzzdb/wordlists-misc/wordlist-usa.txt"
+        "fuzzdb/attack/control-chars/terminal-escape-codes.txt",
+
     ],
     "numeric": [
         "fuzzdb/wordlists-misc/numeric.txt",
         "fuzzdb/attack/integer-overflow/integer-overflows.txt",
-        "fuzzdb/wordlists-misc/wordlist-numeric.txt"
     ],
     "payload": [
         "fuzzdb/attack/all-attacks/all-attacks-unix.txt",
         "fuzzdb/attack/all-attacks/all-attacks-xplatform.txt",
         "fuzzdb/attack/all-attacks/all-attacks-win.txt",
-        "fuzzdb/attack/control-chars/terminal-escape-codes.txt",
-        "fuzzdb/attack/all-attacks/all-attacks-web.txt",
-        "fuzzdb/attack/all-attacks/all-attacks-windows.txt"
+        "fuzzdb/attack/control-chars/terminal-escape-codes.txt"
     ],
     "address": [
         "fuzzdb/attack/ip/localhost.txt",
         "fuzzdb/wordlists-misc/resolvers.txt",
-        "fuzzdb/wordlists-misc/wordlist-alphanumeric-case.txt",
-        "fuzzdb/attack/ip/ip-addresses.txt",
-        "fuzzdb/attack/ip/ip-addresses-v6.txt"
+        "fuzzdb/wordlists-misc/wordlist-alphanumeric-case.txt"
     ],
     "protocol": [
         "fuzzdb/attack/http-protocol/http-protocol-methods.txt",
@@ -79,16 +69,13 @@ MACROS = {
     ],
     "email": [
         "fuzzdb/attack/email/valid-email-addresses.txt",
-        "fuzzdb/attack/email/invalid-email-addresses.txt",
-        "fuzzdb/wordlists-misc/wordlist-email.txt"
+        "fuzzdb/attack/email/invalid-email-addresses.txt"
     ],
     "auth_user": [
-        "fuzzdb/wordlists-user-passwd/unix-os/db-user-list.txt",
         "fuzzdb/wordlists-user-passwd/names/namelist.txt",
         "fuzzdb/wordlists-user-passwd/db2/db2_default_user.txt",
         "fuzzdb/wordlists-user-passwd/oracle/oracle_logins.txt",
-        "fuzzdb/wordlists-user-passwd/tomcat/tomcat_mgr_default_users.txt",
-        "fuzzdb/wordlists-user-passwd/oracle/oracle_login_user.txt"
+        "fuzzdb/wordlists-user-passwd/tomcat/tomcat_mgr_default_users.txt"
     ],
     "auth_pass": [
         "fuzzdb/wordlists-user-passwd/passwds/john.txt",
@@ -100,15 +87,14 @@ MACROS = {
     ],
     "file_name": [
         "fuzzdb/attack/file-upload/invalid-filenames-linux.txt",
-        "fuzzdb/attack/file-upload/invalid-filenames-microsoft.txt",
-        "fuzzdb/attack/file-upload/invalid-filenames-windows.txt"
+        "fuzzdb/attack/file-upload/invalid-filenames-microsoft.txt"
     ],
     "file_ext": [
         "fuzzdb/attack/file-upload/alt-extensions-php.txt",
         "fuzzdb/attack/file-upload/alt-extensions-asp.txt",
         "fuzzdb/attack/file-upload/alt-extensions-jsp.txt",
         "fuzzdb/attack/file-upload/alt-extensions-coldfusion.txt",
-        "fuzzdb/attack/file-upload/alt-extensions-pl.txt"
+        "fuzzdb/attack/file-upload/alt-extensions-perl.txt"
     ],
     "dns_name": [
         "fuzzdb/discovery/dns/alexaTop1mAXFRcommonSubdomains.txt",
@@ -139,15 +125,11 @@ MACROS = {
     ],
     "sql_injection": [
         "fuzzdb/attack/sql-injection/detect/Generic_SQLI.txt",
-        "fuzzdb/attack/sql-injection/detect/MySQL.txt",
-        "fuzzdb/attack/sql-injection/detect/Oracle.txt",
-        "fuzzdb/attack/sql-injection/detect/PostgreSQL.txt",
-        "fuzzdb/attack/sql-injection/detect/SQLite.txt"
+        "fuzzdb/attack/sql-injection/detect/MySQL.txt"
     ],
     "xss": [
         "fuzzdb/attack/xss/xss-rsnake.txt",
-        "fuzzdb/attack/xss/XSSPolyglot.txt",
-        "fuzzdb/attack/xss/xss-payload-list.txt"
+        "fuzzdb/attack/xss/XSSPolyglot.txt"
     ],
     "unicode": [
         "fuzzdb/attack/unicode/naughty-unicode.txt",
@@ -162,8 +144,7 @@ MACROS = {
     ],
     "traversal": [
         "fuzzdb/attack/path-traversal/path-traversal-windows.txt",
-        "fuzzdb/attack/path-traversal/traversals-8-deep-exotic-encoding.txt",
-        "fuzzdb/attack/path-traversal/path-traversal-unix.txt"
+        "fuzzdb/attack/path-traversal/traversals-8-deep-exotic-encoding.txt"
     ],
     "shell": [
         "fuzzdb/attack/os-cmd-execution/shell-operators.txt",
@@ -359,16 +340,13 @@ FIELD_NAME_DICTIONARIES = {
     "HTTPRequest.Authorization": [
         "@auth_user",
         "@auth_pass",
-        "@string",
-        "fuzzdb/attack/authentication/basic-auth-bruteforce.txt"
+        "@string"
     ],
     "HTTPRequest.Content_Type": [
-        "@string",
-        "fuzzdb/attack/http-protocol/content-types.txt"
+        "@string"
     ],
     "HTTPRequest.Cookie": [
-        "@string",
-        "fuzzdb/attack/web-other/cookie-injection.txt"
+        "@string"
     ],
     "HTTPRequest.Referer": [
         "@string",
@@ -489,7 +467,6 @@ FIELD_NAME_DICTIONARIES = {
     "Auth.username": [
         "@auth_user",
         "@string",
-        "fuzzdb/wordlists-user-passwd/unix-os/db-user-list.txt",
         "fuzzdb/wordlists-user-passwd/names/namelist.txt"
     ],
     "Auth.password": [

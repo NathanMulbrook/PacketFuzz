@@ -30,17 +30,29 @@ DEFAULT_OUTPUT_BUFFER_MULTIPLIER = 2
 
 class LibFuzzerMutator(BaseMutator):
     """
-    libFuzzer-based mutator using the C extension.
+    libFuzzer-based mutator using the C extension with multi-round iterative mutations.
     
     Provides high-performance mutations using libFuzzer's proven algorithms.
+    Implements multi-round mutation strategy where each round uses the output
+    from the previous round as input, similar to how libFuzzer builds upon
+    previous corpus entries to discover deeper bugs.
+    
     Requires the C extension to be compiled and available.
     """
     
     def __init__(self, seed: Optional[int] = None):
+        """
+        Initialize LibFuzzer mutator.
+        
+        Args:
+            seed: Random seed for reproducible mutations
+        """
         super().__init__(seed)
         self._seed = seed
         self._lib = None
         self._dictionaries_loaded = False  # Track if dictionaries are already loaded
+        self._rng = random.Random(seed) if seed is not None else random.Random()
+        
         self._load_library()
     
     def _load_library(self):
@@ -144,22 +156,70 @@ class LibFuzzerMutator(BaseMutator):
             return False
     
     def mutate_bytes(self, data: bytes, dictionaries: Optional[List[bytes]] = None) -> bytes:
-        """Mutate byte data using libFuzzer"""
+        """Mutate byte data using libFuzzer with multi-round iterative mutations"""
         if not self.is_libfuzzer_available():
             raise RuntimeError("LibFuzzer C extension is not available. Please compile and install the extension.")
-        return self._mutate_with_libfuzzer(data, dictionaries)
+        return self._mutate_with_libfuzzer_multiround(data, dictionaries)
+    
+    def _mutate_with_libfuzzer_multiround(self, data: bytes, dictionaries: Optional[List[bytes]] = None,
+                                        max_length: Optional[int] = None) -> bytes:
+        """
+        Multi-round LibFuzzer mutation using random rounds (0-30).
+        
+        IMPORTANT: NO HARDCODED SEEDS OR CORPUS MANAGEMENT!
+        - LibFuzzer handles corpus and crossover internally
+        - We only provide the input and let LibFuzzer do its magic
+        - Multiple rounds allow LibFuzzer to build upon previous mutations
+        - Round count is random (0-30) for variety
+        """
+        # Random round count between 0 and 30
+        round_count = self._rng.randint(0, 30)
+        
+        max_length = max_length or DEFAULT_MAX_OUTPUT_SIZE
+        
+        if round_count == 0:
+            # No multi-round: single mutation with provided seed
+            return self._mutate_with_libfuzzer(data, dictionaries, max_length)
+        
+        # Multi-round mutation - let LibFuzzer handle the complexity
+        current_data = data
+        for round_num in range(round_count):
+            if round_num == 0:
+                # First round: no seed, let LibFuzzer start fresh
+                current_data = self._mutate_with_libfuzzer(b"", dictionaries, max_length)
+            else:
+                # Subsequent rounds: use previous output as input (evolutionary)
+                current_data = self._mutate_with_libfuzzer(current_data, dictionaries, max_length)
+            
+            # Basic length check to prevent runaway growth
+            if len(current_data) > max_length * 2:
+                current_data = current_data[:max_length]
+        
+        return current_data
 
-    def _mutate_with_libfuzzer(self, data: bytes, dictionaries: Optional[List[bytes]] = None) -> bytes:
-        """Perform mutation using the libFuzzer C extension with hybrid dictionary support"""
-        if not data:
-            return data
+    def _mutate_with_libfuzzer(self, data: bytes, dictionaries: Optional[List[bytes]] = None, max_length: Optional[int] = None) -> bytes:
+        """Perform mutation using the libFuzzer C extension with enhanced parameters for longer output"""
+        # Allow empty data for LibFuzzer to generate from scratch
         
-        # Prepare input data
-        input_size = len(data)
-        input_data = (ctypes.c_uint8 * input_size)(*data)
+        # Prepare input data (handle empty case)
+        input_size = len(data) if data else 1  # LibFuzzer needs at least 1 byte input buffer
+        if data:
+            input_data = (ctypes.c_uint8 * input_size)(*data)
+        else:
+            input_data = (ctypes.c_uint8 * 1)(0)  # Single null byte for empty input
         
-        # Prepare output buffer (make it larger to allow for expansions)
-        max_output_size = max(input_size * DEFAULT_OUTPUT_BUFFER_MULTIPLIER, DEFAULT_MAX_OUTPUT_SIZE)
+        # Prepare output buffer with enhanced size based on max_length constraint
+        base_multiplier = DEFAULT_OUTPUT_BUFFER_MULTIPLIER
+        original_data_size = len(data) if data else 1  # Use original data size for calculations
+        if max_length and max_length > original_data_size:
+            # Allow buffer to grow significantly for fields with large max_length
+            base_multiplier = max(base_multiplier, max_length // max(original_data_size, 1))
+        
+        max_output_size = max(
+            original_data_size * base_multiplier, 
+            DEFAULT_MAX_OUTPUT_SIZE,
+            max_length * 2 if max_length else 0  # Give LibFuzzer room to expand beyond max_length (we'll clamp later)
+        )
         output_data = (ctypes.c_uint8 * max_output_size)()
         
         # Check if the enhanced mutation function is available
@@ -236,7 +296,7 @@ class LibFuzzerMutator(BaseMutator):
         # Helper: mutate some bytes, return bytes
         def mutate_bytes_seed(b: bytes) -> bytes:
             try:
-                return self.mutate_bytes(b, dictionaries)
+                return self._mutate_with_libfuzzer_multiround(b, dictionaries)
             except Exception:
                 return b
 
@@ -263,7 +323,7 @@ class LibFuzzerMutator(BaseMutator):
 
         if kind in ('numeric', 'flags', 'enum'):
             seed = ("" if current_value is None else str(current_value)).encode('utf-8', errors='ignore')
-            mutated = mutate_bytes_seed(seed)
+            mutated = self._mutate_with_libfuzzer_multiround(seed, dictionaries)
             val = parse_int(mutated)
             if val is None:
                 # Fallback to seed parsed
@@ -285,24 +345,24 @@ class LibFuzzerMutator(BaseMutator):
             return val
 
         if kind == 'string':
-            # Always use dictionary entries as seeds for better fuzzing diversity
-            # Skip using current field values as seeds - let LibFuzzer work with dictionary content
-            if dictionaries and len(dictionaries) > 0:
-                # Use a random dictionary entry as seed
-                import random
-                random_dict_entry = random.choice(dictionaries)
-                if isinstance(random_dict_entry, bytes):
-                    seed = random_dict_entry
-                else:
-                    seed = str(random_dict_entry).encode('utf-8', errors='ignore')
-            else:
-                # Fallback: use a generic seed to let LibFuzzer generate content
-                seed = b"fuzz"
+            # CRITICAL: ONLY LIBFUZZER OUTPUT CAN BE USED AS SEEDS!
+            # NO current_value, NO dictionary entries, NO hardcoded seeds
+            # The ONLY seed values passed to LibFuzzer should be:
+            # 1. Empty bytes (for first round to start fresh)
+            # 2. Output from previous LibFuzzer rounds (for evolution)
+            # Dictionaries influence LibFuzzer INTERNALLY, not as seed input!
+            
+            field_name = getattr(field_info, 'field_name', 'Unknown')
+            
+            # Always start with empty seed - let LibFuzzer generate everything
+            seed = b""
             
             if hasattr(field_info, 'field_name') and field_info.field_name in ['Method', 'Path', 'Host', 'User_Agent']:
-                logger.info(f"LibFuzzer: Mutating {field_info.field_name} with dictionary seed: {seed}")
+                logger.info(f"LibFuzzer: Mutating {field_info.field_name} with empty seed")
             
-            mutated = mutate_bytes_seed(seed)
+            # Use multi-round mutation - LibFuzzer handles dictionaries internally
+            max_len = getattr(field_info, 'max_length', None)
+            mutated = self._mutate_with_libfuzzer_multiround(seed, dictionaries, max_len)
             
             if hasattr(field_info, 'field_name') and field_info.field_name in ['Method', 'Path', 'Host', 'User_Agent']:
                 logger.info(f"LibFuzzer: Got mutated bytes: {mutated} (length: {len(mutated)})")
@@ -314,9 +374,10 @@ class LibFuzzerMutator(BaseMutator):
                 
             # Apply field-specific length constraints for realistic fuzzing
             max_len = getattr(field_info, 'max_length', None)
+            
             if isinstance(max_len, int) and max_len > 0:
                 if hasattr(field_info, 'field_name') and field_info.field_name in ['Method', 'Path', 'Host', 'User_Agent']:
-                    logger.info(f"LibFuzzer: Clamping {field_info.field_name} from length {len(s)} to max_length {max_len}")
+                    logger.debug(f"LibFuzzer: Clamping {field_info.field_name} from length {len(s)} to max_length {max_len}")
                 s = s[:max_len]
                 
             return s
@@ -327,7 +388,7 @@ class LibFuzzerMutator(BaseMutator):
 
         if kind == 'raw':
             seed = b"" if current_value is None else (current_value if isinstance(current_value, (bytes, bytearray)) else str(current_value).encode('utf-8', errors='ignore'))
-            return mutate_bytes_seed(seed)
+            return self._mutate_with_libfuzzer_multiround(seed, dictionaries)
 
         # Unknown kinds: no change
         return current_value

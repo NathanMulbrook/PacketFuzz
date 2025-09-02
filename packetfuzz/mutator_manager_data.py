@@ -151,6 +151,7 @@ class FieldMetadata:
     # Field constraints (extracted from Scapy field descriptors)
     min_value: Optional[int] = None
     max_value: Optional[int] = None
+    min_length: Optional[int] = None
     max_length: Optional[int] = None
     enum_values: Optional[Dict[str, Any]] = None
     is_signed: bool = False
@@ -729,6 +730,7 @@ class MutatorManagerData:
             constraints = {
                 'min_value': None,
                 'max_value': None,
+                'min_length': None,
                 'max_length': None,
                 'enum_values': None,
                 'is_signed': False
@@ -746,15 +748,26 @@ class MutatorManagerData:
             if layer_name in ['HTTPRequest', 'HTTPResponse']:
                 if field_name == 'Method':
                     constraints['max_length'] = 32  # HTTP methods: GET, POST, etc.
+                    constraints['min_length'] = 3   # Minimum realistic method length
                 elif field_name in ['Path']:
                     constraints['max_length'] = 8192  # URLs can be long
+                    constraints['min_length'] = 1    # At least "/"
                 elif field_name in ['Host']:
                     constraints['max_length'] = 253  # DNS hostname limit
+                    constraints['min_length'] = 3    # Minimum realistic hostname
                 elif field_name in ['User_Agent']:
                     constraints['max_length'] = 2048  # User agents can be long
+                    constraints['min_length'] = 20   # Encourage realistic UA strings
+                elif field_name in ['Authorization', 'Cookie', 'Set_Cookie']:
+                    constraints['max_length'] = 4096  # Auth/cookie data can be very long
+                    constraints['min_length'] = 10   # Encourage substantial content
+                elif field_name in ['Content_Type', 'Accept', 'Accept_Encoding', 'Accept_Language']:
+                    constraints['max_length'] = 512  # Content negotiation headers
+                    constraints['min_length'] = 8    # Encourage realistic MIME types
                 # For other HTTP fields, if size is unreasonably small, use a reasonable default
                 elif constraints.get('max_length') and constraints['max_length'] < 128:
                     constraints['max_length'] = 1024  # General reasonable default
+                    constraints['min_length'] = 4     # Encourage non-trivial content
                     
             # Add field-specific constraints using MutatorManager logic
             from scapy.fields import (BitField, ByteField, ShortField, IntField, 
