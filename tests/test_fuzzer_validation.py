@@ -190,8 +190,8 @@ class TestFuzzerMutationQuality(FuzzerValidationTestCase):
     def test_basic_mutation_effectiveness(self):
         """Test that fuzzer produces meaningful mutations across different fields"""
         
-        class MutationTestCampaign
-    """Campaign for testing mutation functionality."""(FuzzingCampaign):
+        class MutationTestCampaign(FuzzingCampaign):
+            """Campaign for testing mutation functionality."""
             name = "Mutation Quality Test"
             target = "192.168.1.100"
             iterations = 100  # Sufficient sample size
@@ -262,8 +262,8 @@ class TestFuzzerMutationQuality(FuzzerValidationTestCase):
         with open(dict_file, 'w') as f:
             f.write('\n'.join(dict_values))
         
-        class DictionaryTestCampaign
-    """Campaign for testing dictionary-based fuzzing."""(FuzzingCampaign):
+        class DictionaryTestCampaign(FuzzingCampaign):
+            """Campaign for testing dictionary-based fuzzing."""
             name = "Dictionary Integration Test"
             target = "192.168.1.100"
             iterations = 200  # Larger sample for dictionary analysis
@@ -332,8 +332,8 @@ class TestFuzzerMutationQuality(FuzzerValidationTestCase):
     def test_configuration_application_validation(self):
         """Test that embedded configurations are actually applied during fuzzing"""
         
-        class ConfigurationTestCampaign
-    """Campaign for testing fuzzing configuration."""(FuzzingCampaign):
+        class ConfigurationTestCampaign(FuzzingCampaign):
+    """Campaign for testing fuzzing configuration."""
             name = "Configuration Application Test"
             target = "192.168.1.100"
             iterations = 150
@@ -416,8 +416,8 @@ class TestFuzzerReliabilityAndPerformance(FuzzerValidationTestCase):
     def test_large_scale_fuzzing_reliability(self):
         """Test fuzzer reliability with large packet counts"""
         
-        class LargeScaleTestCampaign
-    """Campaign for large-scale fuzzing validation."""(FuzzingCampaign):
+        class LargeScaleTestCampaign(FuzzingCampaign):
+    """Campaign for large-scale fuzzing validation."""
             name = "Large Scale Reliability Test"
             target = "192.168.1.100"
             iterations = 500  # Large scale test
@@ -474,8 +474,8 @@ class TestFuzzerReliabilityAndPerformance(FuzzerValidationTestCase):
         
         error_scenarios = []
         
-        class ErrorResilienceTestCampaign
-    """Campaign for testing error handling resilience."""(FuzzingCampaign):
+        class ErrorResilienceTestCampaign(FuzzingCampaign):
+    """Campaign for testing error handling resilience."""
             name = "Error Resilience Test"
             target = "192.168.1.100"
             iterations = 50

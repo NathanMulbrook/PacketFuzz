@@ -50,8 +50,8 @@ except ImportError:
                 else:
                     return IP(dst="127.0.0.1")
             
-            class DictionaryTestCampaign
-    """Test campaign for dictionary functionality validation.""":
+            class DictionaryTestCampaign:
+                """Test campaign for dictionary functionality validation."""
                 pass
 
 
@@ -65,14 +65,18 @@ class TestBasicDictionaryManager(unittest.TestCase):
     
     def test_manager_with_config_file(self):
         """Test DictionaryManager with explicit config file"""
-        # Try with examples config if it exists
+        # The DictionaryManager constructor doesn't take user_config_file
+        # Configuration is now handled at the MutatorManager level
+        # Just test basic manager creation with dictionary path
         config_path = "examples/config/user_dictionary_config.py"
         if os.path.exists(config_path):
-            manager = DictionaryManager(user_config_file=config_path)
+            # Test manager creation with dictionary_path instead
+            manager = DictionaryManager(dictionary_path="examples/dictionaries")
             assert manager is not None
         else:
-            # Skip if config doesn't exist
-            self.skipTest(f"Config file {config_path} not found")
+            # Create manager without config file
+            manager = DictionaryManager()
+            assert manager is not None
     
     def test_get_packet_dictionaries(self):
         """Test getting packet-level dictionaries"""
@@ -150,7 +154,8 @@ class TestDictionaryConfiguration(unittest.TestCase):
         """Test DictionaryManager with global config"""
         config_path = "examples/config/user_dictionary_config.py"
         if os.path.exists(config_path):
-            manager = DictionaryManager(user_config_file=config_path)
+            # Test with dictionary_path instead of user_config_file
+            manager = DictionaryManager(dictionary_path="examples/dictionaries")
             assert manager is not None
         else:
             # Create minimal manager if config doesn't exist

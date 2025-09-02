@@ -256,13 +256,13 @@ class TestFieldKeyGeneration(unittest.TestCase):
         
         # Test constraints for TCP sport field (ShortField)
         sport_field = tcp_packet.get_field("sport")
-        constraints = self.data_tracker._extract_field_constraints(tcp_packet, sport_field)
+        constraints = self.data_tracker._extract_field_constraints(tcp_packet, sport_field, "TCP", "sport")
         # Just verify constraints is a dict, don't assume specific values
         self.assertIsInstance(constraints, dict)
         
         # Test constraints for IP ttl field (ByteField)
         ttl_field = ip_packet.get_field("ttl")
-        constraints = self.data_tracker._extract_field_constraints(ip_packet, ttl_field)
+        constraints = self.data_tracker._extract_field_constraints(ip_packet, ttl_field, "IP", "ttl")
         # Just verify constraints is a dict, don't assume specific values
         self.assertIsInstance(constraints, dict)
 

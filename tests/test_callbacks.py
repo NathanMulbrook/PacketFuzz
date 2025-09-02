@@ -20,6 +20,7 @@ from scapy.all import IP, TCP, UDP, Raw
 
 class CallbackTest(unittest.TestCase):
     """Test custom send callback and callback interface"""
+    
     def setUp(self):
         """Set up test environment for callback testing."""
         self.temp_dir = tempfile.mkdtemp()

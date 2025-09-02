@@ -57,8 +57,8 @@ class TestPCAPFunctionality(unittest.TestCase):
     def test_pcap_file_creation(self):
         """Test that PCAP files are created when configured"""
         
-        class TestPCAPCreationCampaign
-    """Campaign for testing PCAP file creation."""(FuzzingCampaign):
+        class TestPCAPCreationCampaign(FuzzingCampaign):
+            """Campaign for testing PCAP file creation."""
             name = "PCAP Creation Test"
             target = "192.168.1.1"
             iterations = 5
@@ -98,8 +98,8 @@ class TestPCAPFunctionality(unittest.TestCase):
     def test_pcap_only_mode(self):
         """Test PCAP-only mode (no network transmission)"""
         
-        class TestPCAPOnlyCampaign
-    """Campaign for PCAP-only functionality testing."""(FuzzingCampaign):
+        class TestPCAPOnlyCampaign(FuzzingCampaign):
+            """Campaign for PCAP-only functionality testing."""
             name = "PCAP Only Test"
             target = "192.168.1.1"
             iterations = 10
@@ -136,8 +136,8 @@ class TestPCAPFunctionality(unittest.TestCase):
     
     def test_output_pcap_fallback(self):
         """Test that output_pcap fallback works when directory does not exist"""
-        class TestPCAPFallbackCampaign
-    """Campaign for PCAP fallback behavior testing."""(FuzzingCampaign):
+        class TestPCAPFallbackCampaign(FuzzingCampaign):
+            """Campaign for PCAP fallback behavior testing."""
             name = "PCAP Fallback Test"
             target = "127.0.0.1"
             iterations = 3
@@ -224,8 +224,8 @@ class TestPCAPFunctionality(unittest.TestCase):
     
     def test_pcap_file_overwrite(self):
         """Test that PCAP files are properly overwritten"""
-        class TestOverwriteCampaign
-    """Campaign for testing PCAP file overwrite behavior."""(FuzzingCampaign):
+        class TestOverwriteCampaign(FuzzingCampaign):
+    """Campaign for testing PCAP file overwrite behavior."""
             name = "Overwrite Test"
             target = "192.168.1.1"
             iterations = 5
@@ -261,8 +261,8 @@ class TestPCAPFunctionality(unittest.TestCase):
     
     def test_pcap_error_handling(self):
         """Test PCAP error handling with invalid paths"""
-        class TestErrorCampaign
-    """Campaign for PCAP error handling testing."""(FuzzingCampaign):
+        class TestErrorCampaign(FuzzingCampaign):
+    """Campaign for PCAP error handling testing."""
             name = "Error Test"
             target = "192.168.1.1"
             iterations = 2
@@ -287,8 +287,8 @@ class TestPCAPFunctionality(unittest.TestCase):
     
     def test_pcap_interrupt_handling(self):
         """Test that PCAP files are written even if campaign is interrupted"""
-        class TestInterruptCampaign
-    """Campaign for testing interrupt handling in PCAP."""(FuzzingCampaign):
+        class TestInterruptCampaign(FuzzingCampaign):
+    """Campaign for testing interrupt handling in PCAP."""
             name = "Interrupt Test"
             target = "192.168.1.1"
             iterations = 1000  # Large number to simulate interruption
@@ -357,8 +357,8 @@ class TestPCAPFunctionality(unittest.TestCase):
 
     def test_pcap_contains_actual_mutations(self):
         """Verify PCAP output contains actual field mutations, not just copies"""
-        class MutationValidationCampaign
-    """Campaign for validating mutations in PCAP context."""(FuzzingCampaign):
+        class MutationValidationCampaign(FuzzingCampaign):
+    """Campaign for validating mutations in PCAP context."""
             name = "Mutation Validation Test"
             target = "192.168.1.1"
             iterations = 50
@@ -412,8 +412,8 @@ class TestPCAPFunctionality(unittest.TestCase):
         with open(dict_file, 'w') as f:
             f.write("8080\n8443\n9000\n3306\n5432\n")
         
-        class DictionaryTestCampaign
-    """Campaign for dictionary testing with PCAP."""(FuzzingCampaign):
+        class DictionaryTestCampaign(FuzzingCampaign):
+    """Campaign for dictionary testing with PCAP."""
             name = "Dictionary Validation Test"
             target = "192.168.1.1"
             iterations = 100  # More iterations to catch dictionary usage

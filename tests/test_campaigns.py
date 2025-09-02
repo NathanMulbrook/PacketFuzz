@@ -5,7 +5,7 @@ Campaign Framework Tests
 Tests for all campaign-related functionality including:
 - Base FuzzingCampaign class
 - Campaign configuration management  
-- Campaign attribute inheritance
+- Campaign inheritance patterns
 - Specialized campaign classes
 """
 
@@ -86,8 +86,8 @@ class TestBaseFuzzingCampaign(unittest.TestCase):
     def test_campaign_configuration_inheritance(self):
         """Test that campaigns can inherit and override configurations"""
         
-        class CustomCampaign
-    """Custom campaign for testing campaign behavior."""(BasicTestCampaign):
+        class CustomCampaign(BasicTestCampaign):
+            """Custom campaign for testing campaign behavior."""
             name = "Custom Campaign"
             target = "10.0.0.1"
             rate_limit = 20.0
@@ -182,14 +182,14 @@ class TestCampaignInheritance(unittest.TestCase):
     def test_base_campaign_inheritance(self):
         """Test inheriting from base campaign"""
         
-        class CustomBaseCampaign
-    """Base campaign for inheritance testing."""(FuzzingCampaign):
+        class CustomBaseCampaign(FuzzingCampaign):
+            """Base campaign for inheritance testing."""
             # Override defaults for all campaigns
             rate_limit = 50.0
             interface = "eth1"
         
-        class SpecificCampaign
-    """Specific campaign implementation for testing."""(CustomBaseCampaign):
+        class SpecificCampaign(CustomBaseCampaign):
+            """Specific campaign implementation for testing."""
             name = "Specific Campaign"
             target = "10.1.1.1"
         
@@ -208,18 +208,18 @@ class TestCampaignInheritance(unittest.TestCase):
     def test_multiple_inheritance_levels(self):
         """Test multiple levels of inheritance"""
         
-        class Level1Campaign
-    """Level 1 campaign for hierarchy testing."""(FuzzingCampaign):
+        class Level1Campaign(FuzzingCampaign):
+            """Level 1 campaign for hierarchy testing."""
             level1_attr = "level1"
             shared_attr = "from_level1"
         
-        class Level2Campaign
-    """Level 2 campaign for hierarchy testing."""(Level1Campaign):
+        class Level2Campaign(Level1Campaign):
+            """Level 2 campaign for hierarchy testing."""
             level2_attr = "level2"
             shared_attr = "from_level2"
         
-        class Level3Campaign
-    """Level 3 campaign for hierarchy testing."""(Level2Campaign):
+        class Level3Campaign(Level2Campaign):
+            """Level 3 campaign for hierarchy testing."""
             level3_attr = "level3"
         
         campaign = Level3Campaign()
@@ -235,13 +235,13 @@ class TestCampaignInheritance(unittest.TestCase):
     def test_attribute_override(self):
         """Test attribute override in inheritance"""
         
-        class ParentCampaign
-    """Parent campaign for inheritance testing."""(BasicTestCampaign):
+        class ParentCampaign(BasicTestCampaign):
+            """Parent campaign for inheritance testing."""
             name = "Parent Campaign"
             iterations = 50
         
-        class ChildCampaign
-    """Child campaign for inheritance testing."""(ParentCampaign):
+        class ChildCampaign(ParentCampaign):
+            """Child campaign for inheritance testing."""
             name = "Child Campaign"
             # iterations should be inherited (50)
         
@@ -458,8 +458,8 @@ class TestCampaignConfiguration:
                     raise
 
 
-class DummyTestCampaign
-    """Test campaign for campaign functionality validation."""(FuzzingCampaign):
+class DummyTestCampaign(FuzzingCampaign):
+    """Test campaign for campaign functionality validation."""
     name = "dummy_test"
     target = "127.0.0.1"
     output_network = False
