@@ -1222,19 +1222,7 @@ class FuzzingCampaign:
         """
         Handle server mode: accept connection and send packet to client.
         
-        Server mode workflow:
-        ```python
-        # 1. Wait for client connection
-        client_result = fs.accept_connection(timeout=5.0)
-        if client_result:
-            client_socket, client_addr = client_result
-            
-            # 2. Send fuzzed packet to client
-            send_result = client_socket.send_packet(pkt_bytes, context)
-            
-            # 3. Clean up connection
-            client_socket.close()
-        ```
+
         
         Returns:
             tuple: (send_success: bool, response: None)
@@ -1499,6 +1487,7 @@ class FuzzingCampaign:
         This implementation includes PCAP output, target resolution, 
         rate limiting, callback execution, and proper network/file output handling.
         """
+        # Initialize counters and state
         packets_sent = 0
         packets_written_to_pcap = 0
         serialize_failure_count = 0
@@ -1506,9 +1495,9 @@ class FuzzingCampaign:
         pcap_writer = None
         mutator_data = getattr(self.context, 'mutator_data', None)
         fuzzed_packets = mutator_data.packet_list if mutator_data and getattr(mutator_data, 'packet_list', None) is not None else []
-        
+
         try:
-            # Configure network interface offload settings if enabled
+            # Configure network interface
             network_enabled = bool(self.output_network)
             if self.disable_interface_offload and network_enabled:
                 features_to_disable = self.interface_offload_features or DEFAULT_OFFLOAD_FEATURES
@@ -1529,7 +1518,7 @@ class FuzzingCampaign:
                 else:
                     raise RuntimeError(f"Failed to configure interface {self.interface}")
             
-            # Initialize PCAP writer if PCAP output is enabled
+            # Setup PCAP writer
             pcap_path = self.get_pcap_path()
             if pcap_path:
                 logger.debug(f"Using PCAP file: {pcap_path}")
@@ -1553,7 +1542,7 @@ class FuzzingCampaign:
                     except Exception as e2:
                         logger.error(f"[PCAP] Fallback writer initialization failed: {e2}")
 
-            # Socket Setup - Create and configure socket ONCE before the loop
+            # Create and configure socket
             fs = None
             s = None
             if network_enabled:
@@ -1574,8 +1563,7 @@ class FuzzingCampaign:
                         raise ValueError("Cannot auto-detect socket type from packet and not specified — please specify socket_type")
                 
                 # Normalize socket_type for consistent usage
-                socket_type = self.socket_type
-                if socket_type is None:
+                if self.socket_type is None:
                     raise ValueError(f"Invalid socket_type: {self.socket_type}")
 
                 # Create and open socket once
@@ -1592,7 +1580,7 @@ class FuzzingCampaign:
                                     fs.start_listening()
                                     logger.info(f"[SERVER] Started listening in server mode on {self.bind_address}:{self.port}")
                                 except NotImplementedError:
-                                    logger.error(f"[SERVER] Socket type {socket_type} does not support server mode")
+                                    logger.error(f"[SERVER] Socket type {self.socket_type} does not support server mode")
                                     fs = None
                                 except Exception as e:
                                     logger.error(f"[SERVER] Failed to start listening: {e}")
@@ -1702,9 +1690,8 @@ class FuzzingCampaign:
 
                 # Capture response if not already captured and conditions are met
                 if not response and network_enabled and self.capture_responses and send_success and fs and prepared_pkt:
-                    socket_type = self.socket_type
-                    if socket_type:
-                        response = self._receive_response(prepared_pkt, fs, socket_type)
+                    if self.socket_type:
+                        response = self._receive_response(prepared_pkt, fs, self.socket_type)
 
                 # Update history with results
                 if self.context.fuzz_history:
