@@ -95,7 +95,7 @@ class TestEndToEndWorkflows(unittest.TestCase):
                 self.workflow_stats = defaultdict(int)
             
             def get_packet(self):
-        """Get packet for workflow testing."""
+                """Get packet for workflow testing."""
                 return IP(dst="192.168.1.100") / TCP(dport=80, sport=12345) / Raw(b"workflow_test")
             
             def pre_send_callback(self, context, packet):
@@ -175,7 +175,7 @@ class TestEndToEndWorkflows(unittest.TestCase):
             f.write('\n'.join(map(str, all_ports)))
         
         class DictionaryWorkflowCampaign(FuzzingCampaign):
-    """Campaign for dictionary workflow testing."""
+            """Campaign for dictionary workflow testing."""
             name = "Dictionary Workflow Test"
             target = "192.168.1.100"
             iterations = 200  # Large sample for statistical analysis
@@ -472,7 +472,7 @@ class TestErrorHandlingIntegration(unittest.TestCase):
         """Test handling of invalid configurations"""
         # Create campaign with potentially invalid config
         class InvalidCampaign(FuzzingCampaign):
-    """Invalid campaign for error handling testing."""
+            """Invalid campaign for error handling testing."""
             name = "Invalid Campaign"
             # Missing required attributes
         
@@ -490,7 +490,7 @@ class TestErrorHandlingIntegration(unittest.TestCase):
         """Test handling of missing files"""
         # Create campaign with non-existent dictionary config
         class MissingFileCampaign(FuzzingCampaign):
-    """Campaign with missing files for error testing."""
+            """Campaign with missing files for error testing."""
             name = "Missing File Campaign"
             dictionary_config_file = "nonexistent_config.py"
             
@@ -659,7 +659,7 @@ class TestModularityAndExtensibility(unittest.TestCase):
         """Test campaign inheritance and extensibility"""
         # Create custom campaign by inheritance
         class CustomTestCampaign(BasicTestCampaign):
-    """Custom campaign for specific integration tests."""
+            """Custom campaign for specific integration tests."""
             name = "Custom Extended Campaign"
             custom_attribute = "custom_value"
             
@@ -700,7 +700,7 @@ class TestModularityAndExtensibility(unittest.TestCase):
         """Test configuration system extensibility"""
         # Should be able to create campaigns with various configurations
         class FlexibleCampaign(FuzzingCampaign):
-    """Flexible campaign for adaptable testing scenarios."""
+            """Flexible campaign for adaptable testing scenarios."""
             def __init__(self, **kwargs):
                 super().__init__()
                 # Should be able to accept arbitrary configuration

@@ -668,6 +668,11 @@ class MutatorManagerData:
         """
         from packetfuzz.utils.field_utils import get_field_type_chain
         
+        # Special case: IP address fields should be treated as strings, not numeric
+        layer_name = layer.__class__.__name__
+        if layer_name == "IP" and field_name in ("src", "dst"):
+            return "string"
+        
         # Get detailed type chain
         type_chain = get_field_type_chain(layer, field_name)
         
@@ -1442,6 +1447,12 @@ class MutatorManagerData:
         resolved.campaign_scaling_factor = campaign_scaling_factor
         
         # Calculate final scaling factor and update final weight
+        # Handle None values gracefully to avoid NoneType multiplication errors
+        if layer_scaling_factor is None:
+            layer_scaling_factor = 1.0
+        if campaign_scaling_factor is None:
+            campaign_scaling_factor = 1.0
+            
         resolved.final_scaling_factor = layer_scaling_factor * campaign_scaling_factor
         resolved.final_weight = campaign_scaled_weight
         
@@ -1559,6 +1570,28 @@ class MutatorManagerData:
             'is_fuzzfield': True,
             'field_value': field_value
         }
+
+    def _build_global_field_index(self) -> None:
+        """
+        Build global field index for cross-packet analysis and mutation targeting.
+        
+        This method creates a comprehensive mapping of field keys to packet locations,
+        enabling efficient field lookups and cross-packet field analysis.
+        """
+        try:
+            logger.debug("Building global field index for cross-packet analysis")
+            self.global_field_index.clear()
+            
+            for packet_data in self.packet_data:
+                self._build_field_index(packet_data)
+                
+            logger.debug(f"Built global field index with {len(self.global_field_index)} unique field keys")
+            
+        except Exception as e:
+            error_msg = f"Failed to build global field index: {e}"
+            self.preprocessing_errors.append(error_msg)
+            logger.error(error_msg)
+            raise
 
     def _build_field_index(self, packet_data: 'PacketData') -> None:
         """

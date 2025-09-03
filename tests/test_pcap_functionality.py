@@ -147,7 +147,7 @@ class TestPCAPFunctionality(unittest.TestCase):
             output_pcap: str | None = None
             pcap_only = True
             def get_packet(self):
-        """Get packet for PCAP functionality testing."""
+                """Get packet for PCAP functionality testing."""
                 return IP(dst="127.0.0.1") / ICMP()
         campaign = TestPCAPFallbackCampaign()
         fallback_file = os.path.join(self.temp_dir, "fallback_test.pcap")
@@ -225,7 +225,7 @@ class TestPCAPFunctionality(unittest.TestCase):
     def test_pcap_file_overwrite(self):
         """Test that PCAP files are properly overwritten"""
         class TestOverwriteCampaign(FuzzingCampaign):
-    """Campaign for testing PCAP file overwrite behavior."""
+            """Campaign for testing PCAP file overwrite behavior."""
             name = "Overwrite Test"
             target = "192.168.1.1"
             iterations = 5
@@ -262,7 +262,7 @@ class TestPCAPFunctionality(unittest.TestCase):
     def test_pcap_error_handling(self):
         """Test PCAP error handling with invalid paths"""
         class TestErrorCampaign(FuzzingCampaign):
-    """Campaign for PCAP error handling testing."""
+            """Campaign for PCAP error handling testing."""
             name = "Error Test"
             target = "192.168.1.1"
             iterations = 2
@@ -288,7 +288,7 @@ class TestPCAPFunctionality(unittest.TestCase):
     def test_pcap_interrupt_handling(self):
         """Test that PCAP files are written even if campaign is interrupted"""
         class TestInterruptCampaign(FuzzingCampaign):
-    """Campaign for testing interrupt handling in PCAP."""
+            """Campaign for testing interrupt handling in PCAP."""
             name = "Interrupt Test"
             target = "192.168.1.1"
             iterations = 1000  # Large number to simulate interruption
@@ -358,7 +358,7 @@ class TestPCAPFunctionality(unittest.TestCase):
     def test_pcap_contains_actual_mutations(self):
         """Verify PCAP output contains actual field mutations, not just copies"""
         class MutationValidationCampaign(FuzzingCampaign):
-    """Campaign for validating mutations in PCAP context."""
+            """Campaign for validating mutations in PCAP context."""
             name = "Mutation Validation Test"
             target = "192.168.1.1"
             iterations = 50
@@ -413,7 +413,7 @@ class TestPCAPFunctionality(unittest.TestCase):
             f.write("8080\n8443\n9000\n3306\n5432\n")
         
         class DictionaryTestCampaign(FuzzingCampaign):
-    """Campaign for dictionary testing with PCAP."""
+            """Campaign for dictionary testing with PCAP."""
             name = "Dictionary Validation Test"
             target = "192.168.1.1"
             iterations = 100  # More iterations to catch dictionary usage

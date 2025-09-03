@@ -196,11 +196,16 @@ def extract_field_properties(packet, field_name: str) -> dict:
     # Length computation functions
     if hasattr(field_desc, 'length_from') and field_desc.length_from is not None:
         properties['length_from'] = field_desc.length_from
-        # Try to compute actual length if possible
+        # Try to compute actual length if possible - ensure packet has required fields
         if packet and callable(field_desc.length_from):
-            computed_length = field_desc.length_from(packet)
-            if isinstance(computed_length, int):
-                properties['length'] = computed_length
+            # For IP packets, ensure ihl field is set before computing lengths
+            if hasattr(packet, 'ihl') and packet.ihl is None:
+                # Skip length computation if required fields are None
+                pass
+            else:
+                computed_length = field_desc.length_from(packet)
+                if isinstance(computed_length, int):
+                    properties['length'] = computed_length
     
     # Length control (this field controls another field's length)
     if hasattr(field_desc, 'length_of') and field_desc.length_of is not None:

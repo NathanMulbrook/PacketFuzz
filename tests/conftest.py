@@ -121,6 +121,8 @@ class BasicTestCampaign(FuzzingCampaign):
     
     def __init__(self):
         super().__init__()
+        # Add socket config to satisfy validation requirements
+        self.socket_config = RawIPConfig(target=self.target)
         self.packet = IP(dst="192.168.1.1") / TCP(dport=80)
 
 

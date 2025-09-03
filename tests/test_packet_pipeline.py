@@ -210,7 +210,7 @@ class TestPacketPipeline(unittest.TestCase):
         transmitted_data = []
         
         def mock_socket_send(data):
-    """Mock socket send function for testing."""
+            """Mock socket send function for testing."""
             transmitted_data.append(data)
             return len(data)
         
@@ -269,7 +269,7 @@ class TestPacketPipeline(unittest.TestCase):
         """Test that output PCAP contains valid, fuzzed packets."""
         
         class PcapOutputTestCampaign(PcapFuzzCampaign):
-    """Test campaign focused on PCAP output validation."""
+            """Test campaign focused on PCAP output validation."""
             
             def __init__(self, test_instance):
                 super().__init__()
@@ -357,7 +357,7 @@ class TestPacketPipeline(unittest.TestCase):
         """Test statistical properties of mutations in PCAP output"""
         
         class StatisticalTestCampaign(PcapFuzzCampaign):
-    """Campaign for statistical mutation analysis"""
+            """Campaign for statistical mutation analysis"""
             
             def __init__(self, test_instance):
                 super().__init__()
@@ -428,7 +428,7 @@ class TestPacketPipeline(unittest.TestCase):
         """Test fuzzer error handling with malformed packets"""
 
         class ErrorTestCampaign(PcapFuzzCampaign):
-    """Campaign that tests error handling"""
+            """Campaign that tests error handling"""
 
             def __init__(self, test_instance):
                 super().__init__()
@@ -559,7 +559,7 @@ class TestPacketPipeline(unittest.TestCase):
         
         # Run a field fuzz campaign (PCAP output only) over full set
         class SimilarityCampaign(PcapFuzzCampaign):
-    """Campaign for testing packet similarity analysis."""
+            """Campaign for testing packet similarity analysis."""
             # Exclude transport and network layers from fuzzing to preserve protocol presence
             excluded_layers = ["IP", "TCP", "UDP"]
             def __init__(self, test_instance):
@@ -617,7 +617,7 @@ class TestPacketPipeline(unittest.TestCase):
         """Test that layer extraction maintains packet structure integrity."""
         
         class LayerExtractionCampaign(PcapFuzzCampaign):
-    """Test campaign for layer extraction validation."""
+            """Test campaign for layer extraction validation."""
             
             def __init__(self, test_instance):
                 super().__init__()
@@ -662,7 +662,7 @@ class TestPacketPipeline(unittest.TestCase):
         """Test that different fuzzing modes produce different results."""
         
         class BinaryFuzzCampaign(PcapFuzzCampaign):
-    """Campaign for binary fuzzing testing."""
+            """Campaign for binary fuzzing testing."""
             def __init__(self, test_instance):
                 super().__init__()
                 self.pcap_folder = str(test_instance.test_data_dir)
@@ -675,7 +675,7 @@ class TestPacketPipeline(unittest.TestCase):
                 self.verbose = False
         
         class FieldFuzzCampaign(PcapFuzzCampaign):
-    """Campaign for field-specific fuzzing testing."""
+            """Campaign for field-specific fuzzing testing."""
             def __init__(self, test_instance):
                 super().__init__()
                 self.pcap_folder = str(test_instance.test_data_dir)
@@ -717,7 +717,7 @@ class TestPacketPipeline(unittest.TestCase):
         """Test that the pipeline handles errors gracefully."""
         
         class ErrorTestCampaign(PcapFuzzCampaign):
-    """Campaign that intentionally triggers some error conditions."""
+            """Campaign that intentionally triggers some error conditions."""
             
             def __init__(self, test_instance):
                 super().__init__()

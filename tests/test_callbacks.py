@@ -153,9 +153,10 @@ class CallbackTest(unittest.TestCase):
         mock_response = IP(src="192.168.1.1", dst="192.168.1.2")/TCP(sport=80)/Raw(load=b"HTTP/1.1 200 OK\r\n\r\n")
         
         # Create history entry and add to context
+        sent_time = datetime.now()
         history_entry = FuzzHistoryEntry(
-            packet=test_packet,
-            timestamp_sent=datetime.now(),
+            packet_bytes=bytes(test_packet),
+            timestamp_sent=sent_time,
             iteration=0
         )
         context.fuzz_history.append(history_entry)
@@ -166,7 +167,7 @@ class CallbackTest(unittest.TestCase):
         
         # Verify the history entry
         self.assertEqual(len(context.fuzz_history), 1)
-        self.assertEqual(context.fuzz_history[0].packet, test_packet)
+        self.assertEqual(context.fuzz_history[0].packet_bytes, bytes(test_packet))
         self.assertEqual(context.fuzz_history[0].response, mock_response)
         self.assertIsNotNone(context.fuzz_history[0].timestamp_sent)
         self.assertIsNotNone(context.fuzz_history[0].timestamp_received)
@@ -177,7 +178,7 @@ class CallbackTest(unittest.TestCase):
         context.max_history_size = 3
         for i in range(1, 5):
             history_entry = FuzzHistoryEntry(
-                packet=test_packet,
+                packet_bytes=bytes(test_packet),
                 timestamp_sent=datetime.now(),
                 iteration=i
             )

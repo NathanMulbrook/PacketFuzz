@@ -449,11 +449,17 @@ class TestCoreFuzzer(unittest.TestCase):
             output_network = False
             output_pcap = None
             verbose = False
-            
+    
+            def __init__(self):
+                super().__init__()
+                # Add minimal socket config to satisfy validation
+                from packetfuzz.sockets.raw_ip_socket import RawIPConfig
+                self.socket_config = RawIPConfig(target=self.target)
+    
             def get_packet(self):
                 """Get test packet for validation."""
                 return IP(dst="127.0.0.1") / TCP(dport=80) / Raw(b"test")
-            
+    
             def pre_send_callback(self, context, packet):
                 callback_calls.append(('pre_send', context.iteration, len(bytes(packet))))
                 return CallbackResult.SUCCESS
@@ -514,9 +520,15 @@ class TestCoreFuzzer(unittest.TestCase):
             output_pcap = None
             verbose = False
             
+            def __init__(self):
+                super().__init__()
+                # Add minimal socket config to satisfy validation
+                from packetfuzz.sockets.raw_ip_socket import RawIPConfig
+                self.socket_config = RawIPConfig(target=self.target)
+
             def get_packet(self):
                 return IP(dst="127.0.0.1") / TCP(dport=80) / Raw(b"statistics_test")
-        
+
         test_pcap = os.path.join(self.temp_dir, "stats_test.pcap")
         campaign = StatisticsValidationCampaign()
         campaign.output_pcap = test_pcap
@@ -622,14 +634,15 @@ class TestConfigurationPersistence(unittest.TestCase):
         test_packet = create_test_packet("tcp")
         
         # Create a history entry with the test packet
+        sent_time = datetime.now()
         history_entry = FuzzHistoryEntry(
-            packet=test_packet,
-            timestamp_sent=datetime.now(),
+            packet_bytes=bytes(test_packet),
+            timestamp_sent=sent_time,
             iteration=42
         )
         
         # Verify initial state
-        assert history_entry.packet == test_packet
+        assert history_entry.packet_bytes == bytes(test_packet)
         assert history_entry.iteration == 42
         assert history_entry.crashed is False
         assert history_entry.response is None
@@ -638,7 +651,7 @@ class TestConfigurationPersistence(unittest.TestCase):
         assert history_entry.get_response_time() is None
         
         # Update with response information
-        history_entry.timestamp_received = history_entry.timestamp_sent + timedelta(milliseconds=15)
+        history_entry.timestamp_received = sent_time + timedelta(milliseconds=15)
         history_entry.response = "Mock Response"
         
         # Verify response time calculation

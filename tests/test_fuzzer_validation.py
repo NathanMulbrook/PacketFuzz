@@ -199,7 +199,7 @@ class TestFuzzerMutationQuality(FuzzerValidationTestCase):
             verbose = False
             
             def get_packet(self):
-        """Get test packet for fuzzer validation."""
+                """Get test packet for fuzzer validation."""
                 return IP(dst="192.168.1.100", src="10.0.0.1", ttl=64) / \
                        TCP(dport=80, sport=12345, seq=1000) / \
                        Raw(b"test_payload_data")
@@ -333,7 +333,7 @@ class TestFuzzerMutationQuality(FuzzerValidationTestCase):
         """Test that embedded configurations are actually applied during fuzzing"""
         
         class ConfigurationTestCampaign(FuzzingCampaign):
-    """Campaign for testing fuzzing configuration."""
+            """Campaign for testing fuzzing configuration."""
             name = "Configuration Application Test"
             target = "192.168.1.100"
             iterations = 150
@@ -417,7 +417,7 @@ class TestFuzzerReliabilityAndPerformance(FuzzerValidationTestCase):
         """Test fuzzer reliability with large packet counts"""
         
         class LargeScaleTestCampaign(FuzzingCampaign):
-    """Campaign for large-scale fuzzing validation."""
+            """Campaign for large-scale fuzzing validation."""
             name = "Large Scale Reliability Test"
             target = "192.168.1.100"
             iterations = 500  # Large scale test
@@ -475,7 +475,7 @@ class TestFuzzerReliabilityAndPerformance(FuzzerValidationTestCase):
         error_scenarios = []
         
         class ErrorResilienceTestCampaign(FuzzingCampaign):
-    """Campaign for testing error handling resilience."""
+            """Campaign for testing error handling resilience."""
             name = "Error Resilience Test"
             target = "192.168.1.100"
             iterations = 50

@@ -976,8 +976,9 @@ class FuzzingCampaign:
         # Check if we have a packet
         if packet is None:
             errors.append("Campaign packet is None (set the 'packet' attribute)")
-        if self.socket_config is None:
-            errors.append("Campaign socket_config is None - must provide socket configuration")
+        # Only require socket_config if network output is enabled
+        if self.output_network and self.socket_config is None:
+            errors.append("Campaign socket_config is None - must provide socket configuration when output_network=True")
         # Validate socket_type if specified
         if self.socket_type is not None:
             # Validate socket_type is SocketType enum

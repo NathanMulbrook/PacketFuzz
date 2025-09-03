@@ -150,14 +150,9 @@ def get_smart_layer_names(packets=None, include_fuzzing_categories=True) -> Set[
         except ImportError as e:
             logger.warning(f"Could not import default_mappings: {e}")
     
-    # Method 3: Fallback to common layers (only if we have very few)
+    # If we have very few layers, this indicates a real configuration problem
     if len(all_layer_names) < 10:
-        common_layers = {
-            'Ether', 'IP', 'IPv6', 'TCP', 'UDP', 'ICMP', 'ARP', 'DNS', 'DHCP',
-            'Raw', 'Padding', 'HTTPRequest', 'HTTPResponse', 'HTTP'
-        }
-        all_layer_names.update(common_layers)
-        logger.debug("Added common fallback layers")
+        logger.error(f"Only {len(all_layer_names)} layers detected. This may indicate a configuration issue.")
     
     logger.debug(f"Total layer names: {len(all_layer_names)}")
     return all_layer_names

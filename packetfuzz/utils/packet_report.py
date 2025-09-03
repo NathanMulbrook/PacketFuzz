@@ -344,14 +344,9 @@ class MutatorAnalyzer:
             }
             
         except Exception as e:
-            logger.warning(f"Failed to extract mutator metrics - this could indicate mutator manager issues: {e}")
-            # TODO: Consider propagating specific mutator failures to help with debugging mutator manager issues
-            return {
-                'mutator_usage': {},
-                'total_mutations_applied': 0,
-                'most_used_mutators': [],
-                'detailed_field_metadata': {}
-            }
+            logger.error(f"Failed to extract mutator metrics - this indicates mutator manager issues: {e}")
+            # Let the error propagate to expose the real issue instead of masking it
+            raise
 
 
 # ============================================================================
@@ -396,14 +391,24 @@ class ReportingEngine:
         """Get list of available report levels"""
         return [level.value for level in self.generators.keys()]
     
-    def generate_report(self, level: ReportLevel, output_format: str, output_path: str = None) -> str:
+    def generate_report(self, level: ReportLevel, output_format: str, output_path: Optional[str] = None, 
+                       campaign=None, campaign_context=None, history_entries=None) -> str:
         """
         Generate a report at the specified level and format.
         output_format: Export format (html, json, csv, etc.)
         output_path: Optional custom output path
+        campaign: Campaign object (optional)
+        campaign_context: Campaign context (optional)
+        history_entries: History entries (optional)
         Returns:
             Path to the generated report file
         """
+        # Use provided history_entries or empty list
+        if history_entries is None:
+            history_entries = []
+        if campaign_context is None:
+            campaign_context = campaign
+            
         # Validate inputs
         if level not in self.generators:
             raise ValueError(f"Unsupported report level: {level}. Available: {self.get_available_levels()}")
@@ -1872,12 +1877,12 @@ def generate_campaign_report(
     report_level = level_map.get(level, ReportLevel.TECHNICAL)
     
     return engine.generate_report(
-        campaign=campaign,
-        campaign_context=campaign_context,
-        history_entries=history_entries,
         level=report_level,
         output_format=output_format,
-        output_path=output_path
+        output_path=output_path or "",
+        campaign=campaign,
+        campaign_context=campaign_context,
+        history_entries=history_entries
     )
 
 

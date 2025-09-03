@@ -14,22 +14,8 @@ Test Categories:
 5. Reporting End-to-End
 """
 
-        # 3. Check for field analysis (constraints may vary based on implementation)
-        fields_with_constraints = sum(
-            1 for packet in data_manager.packet_data
-            for field in packet.fields
-            if hasattr(field, 'min_value') and hasattr(field, 'max_value') and
-               any([getattr(field, 'min_value', None) is not None, 
-                    getattr(field, 'max_value', None) is not None,
-                    getattr(field, 'min_length', None) is not None, 
-                    getattr(field, 'max_length', None) is not None])
-        )
-        
-        # Note: Constraint analysis may vary based on field implementation
-        if fields_with_constraints == 0:
-            print(f"   Note: No explicit constraints found in {total_fields} fields")
-        
-        # 4. Field types should be diverseort os
+import os
+import sys
 import unittest
 import tempfile
 import subprocess
