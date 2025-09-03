@@ -10,11 +10,19 @@ from __future__ import annotations
 import logging
 import socket
 from typing import Optional, TYPE_CHECKING
+from dataclasses import dataclass
 
 from .socket_interface import FuzzSocket
+from .config import BaseSocketConfig
 
 if TYPE_CHECKING:
     from ..fuzzing_framework import CampaignContext
+
+
+@dataclass
+class RawIPConfig(BaseSocketConfig):
+    """Optional config for raw IP socket targeting (when needed)."""
+    target: str = '127.0.0.1'
 
 
 class RawIPSocket(FuzzSocket):
@@ -52,8 +60,12 @@ class RawIPSocket(FuzzSocket):
             return None
             
         try:
-            # Send to target from campaign
-            target = getattr(self.campaign, 'target', '127.0.0.1')
+            # Send to target from config or default
+            cfg = getattr(self.campaign, 'socket_config', None)
+            if isinstance(cfg, RawIPConfig):
+                target = cfg.target
+            else:
+                target = '127.0.0.1'
             return self._sock.sendto(packet_bytes, (target, 0))
         except Exception as e:
             logging.getLogger(__name__).error(f"[RawIPSocket] send failed: {e}")

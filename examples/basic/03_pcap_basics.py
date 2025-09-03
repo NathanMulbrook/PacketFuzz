@@ -12,13 +12,14 @@ from scapy.utils import wrpcap
   
 
 from packetfuzz.pcapfuzz import PcapFuzzCampaign
+from packetfuzz.sockets.raw_ip_socket import RawIPConfig
 
 class BasicRegressionCampaign(PcapFuzzCampaign):
     """Basic regression testing - replay packets without fuzzing."""
     name = "Basic Regression Test"
     pcap_folder = "regression_samples/"
     fuzz_mode = "none"  # No fuzzing - pure regression testing
-    target = "192.168.1.100"
+    socket_config = RawIPConfig(target="192.168.1.100")
     output_network = False
     output_pcap = "regression_replay.pcap"
     iterations = 1
@@ -31,7 +32,7 @@ class BasicPayloadExtractionCampaign(PcapFuzzCampaign):
     extract_layer = "UDP"  # Extract UDP payload
     repackage_in = "IP/UDP"  # Repackage in new headers
     fuzz_mode = "field"  # Use dictionary-based fuzzing
-    target = "192.168.1.100"
+    socket_config = RawIPConfig(target="192.168.1.100")
     iterations = 1
     output_network = False
     output_pcap = "udp_payload_fuzz.pcap"

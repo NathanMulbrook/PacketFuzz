@@ -4,22 +4,32 @@ from __future__ import annotations
 import logging
 import socket
 from typing import Optional, TYPE_CHECKING
+from dataclasses import dataclass
 
 from .socket_interface import FuzzSocket
+from .config import BaseSocketConfig
 
 if TYPE_CHECKING:
     from ..fuzzing_framework import CampaignContext
 
 
+@dataclass
+class RawEthernetConfig(BaseSocketConfig):
+    """Configuration for raw ethernet socket."""
+    interface: str = 'eth0'
+
+
 class RawEthernetSocket(FuzzSocket):
     """
     AF_PACKET/SOCK_RAW sender for Layer 2 frames.
-    Binds to campaign.interface and uses send() on raw bytes.
+    Binds to interface from config and uses send() on raw bytes.
     """
 
     def open(self) -> "RawEthernetSocket":
         s = socket.socket(socket.AF_PACKET, socket.SOCK_RAW)
-        s.bind((self.campaign.interface, 0))
+        cfg = getattr(self.campaign, 'socket_config', None)
+        interface = cfg.interface if isinstance(cfg, RawEthernetConfig) else 'eth0'
+        s.bind((interface, 0))
         self._sock = s
         return self
 

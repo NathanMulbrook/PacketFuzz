@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Listening UDP Socket Implementation
+UDP Server Socket Implementation
 
 Creates a UDP server socket that binds to a port and receives datagrams.
 Useful for server-side UDP fuzzing scenarios.
@@ -10,16 +10,25 @@ from __future__ import annotations
 import logging
 import socket
 from typing import Optional, TYPE_CHECKING
+from dataclasses import dataclass
 
 from .socket_interface import FuzzSocket
+from .config import BaseSocketConfig
 
 if TYPE_CHECKING:
     from ..fuzzing_framework import CampaignContext
 
 
-class ListeningUDPSocket(FuzzSocket):
+@dataclass
+class ServerUDPConfig(BaseSocketConfig):
+    """Configuration for a UDP server socket."""
+    bind_address: str = '0.0.0.0'
+    port: int = 5353
+
+
+class ServerUDPSocket(FuzzSocket):
     """
-    Listening UDP socket implementation for server-mode fuzzing.
+    UDP server socket implementation for server-mode fuzzing.
     
     Features:
     - Binds to specified port
@@ -34,8 +43,10 @@ class ListeningUDPSocket(FuzzSocket):
         super().__init__(campaign)
         self._listening = False
         self._last_client_addr = None
+        cfg = getattr(self.campaign, 'socket_config', None)
+        self.socket_cfg = cfg if isinstance(cfg, ServerUDPConfig) else ServerUDPConfig()
 
-    def open(self) -> "ListeningUDPSocket":
+    def open(self) -> "ServerUDPSocket":
         """Create and bind UDP listening socket."""
         try:
             # Create UDP socket
@@ -44,12 +55,8 @@ class ListeningUDPSocket(FuzzSocket):
             # Allow socket reuse
             s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             
-            # Get bind address and port from campaign
-            bind_address = getattr(self.campaign, 'bind_address', '0.0.0.0')
-            port = getattr(self.campaign, 'port', 5353)  # Default to mDNS port
-            
             # Bind to address
-            s.bind((bind_address, port))
+            s.bind((self.socket_cfg.bind_address, self.socket_cfg.port))
             
             self._sock = s
             return self
@@ -65,9 +72,7 @@ class ListeningUDPSocket(FuzzSocket):
         
         try:
             self._listening = True
-            bind_address = getattr(self.campaign, 'bind_address', '0.0.0.0')
-            port = getattr(self.campaign, 'port', 5353)
-            logging.getLogger(__name__).info(f"[ListeningUDPSocket] Listening on {bind_address}:{port}")
+            logging.getLogger(__name__).info(f"[ServerUDPSocket] Listening on {self.socket_cfg.bind_address}:{self.socket_cfg.port}")
         except Exception as e:
             raise OSError(f"Failed to start listening: {e}")
 
@@ -89,10 +94,10 @@ class ListeningUDPSocket(FuzzSocket):
             return client_socket, client_addr
             
         except socket.timeout:
-            logging.getLogger(__name__).debug("[ListeningUDPSocket] accept timeout")
+            logging.getLogger(__name__).debug("[ServerUDPSocket] accept timeout")
             return None
         except Exception as e:
-            logging.getLogger(__name__).error(f"[ListeningUDPSocket] accept failed: {e}")
+            logging.getLogger(__name__).error(f"[ServerUDPSocket] accept failed: {e}")
             return None
         finally:
             if timeout is not None:
@@ -101,13 +106,13 @@ class ListeningUDPSocket(FuzzSocket):
     def send_packet(self, packet_bytes: bytes, context: "CampaignContext") -> Optional[int]:
         """Send response to the last client that contacted us."""
         if not self._sock or not self._last_client_addr:
-            logging.getLogger(__name__).warning("[ListeningUDPSocket] No client address available for response")
+            logging.getLogger(__name__).warning("[ServerUDPSocket] No client address available for response")
             return None
         
         try:
             return self._sock.sendto(packet_bytes, self._last_client_addr)
         except Exception as e:
-            logging.getLogger(__name__).error(f"[ListeningUDPSocket] send failed: {e}")
+            logging.getLogger(__name__).error(f"[ServerUDPSocket] send failed: {e}")
             return None
 
 
@@ -125,10 +130,10 @@ class ListeningUDPSocket(FuzzSocket):
             self._last_client_addr = addr  # Update last client
             return data if data else None
         except socket.timeout:
-            logging.getLogger(__name__).debug("[ListeningUDPSocket] receive timeout")
+            logging.getLogger(__name__).debug("[ServerUDPSocket] receive timeout")
             return None
         except Exception as e:
-            logging.getLogger(__name__).error(f"[ListeningUDPSocket] receive failed: {e}")
+            logging.getLogger(__name__).error(f"[ServerUDPSocket] receive failed: {e}")
             return None
         finally:
             if timeout is not None:
@@ -140,7 +145,7 @@ class ListeningUDPSocket(FuzzSocket):
             self._listening = False
             super().close()
         except Exception as e:
-            logging.getLogger(__name__).warning(f"[ListeningUDPSocket] close error: {e}")
+            logging.getLogger(__name__).warning(f"[ServerUDPSocket] close error: {e}")
 
 
 class ClientUDPSocket(FuzzSocket):

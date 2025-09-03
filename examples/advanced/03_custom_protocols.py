@@ -15,6 +15,7 @@ from scapy.layers.l2 import Ether
   
 
 from packetfuzz.fuzzing_framework import FuzzingCampaign, FuzzField, CallbackResult
+from packetfuzz.sockets.raw_ip_socket import RawIPConfig
 
 # Custom Protocol Definition: Simple Message Protocol (SMP)
 class SimpleMessageProtocol(Packet):
@@ -58,7 +59,7 @@ bind_layers(TCP, CustomRPCHeader, dport=54321)
 class SimpleProtocolFuzzCampaign(FuzzingCampaign):
     """Fuzz custom Simple Message Protocol."""
     name = "Simple Message Protocol Fuzzing"
-    target = "192.168.1.100"
+    socket_config = RawIPConfig(target="192.168.1.100")
     iterations = 25
     output_network = False
     output_pcap = "simple_protocol_fuzz.pcap"
@@ -111,7 +112,7 @@ class SimpleProtocolFuzzCampaign(FuzzingCampaign):
 class RPCProtocolFuzzCampaign(FuzzingCampaign):
     """Fuzz custom RPC protocol."""
     name = "Custom RPC Protocol Fuzzing"
-    target = "192.168.1.100"
+    socket_config = RawIPConfig(target="192.168.1.100")
     iterations = 30
     output_network = False
     output_pcap = "rpc_protocol_fuzz.pcap"
@@ -184,7 +185,7 @@ class RPCProtocolFuzzCampaign(FuzzingCampaign):
 class ProtocolStateMachineCampaign(FuzzingCampaign):
     """Demonstrate stateful protocol fuzzing."""
     name = "Protocol State Machine Fuzzing"
-    target = "192.168.1.100"
+    socket_config = RawIPConfig(target="192.168.1.100")
     iterations = 20
     output_network = False
     output_pcap = "state_machine_fuzz.pcap"

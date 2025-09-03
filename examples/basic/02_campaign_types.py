@@ -11,13 +11,13 @@ from scapy.layers.dns import DNS, DNSQR
 from scapy.packet import Raw
 from scapy.layers.http import HTTP, HTTPRequest
   
-
 from packetfuzz.fuzzing_framework import FuzzingCampaign, FuzzField
+from packetfuzz.sockets.raw_ip_socket import RawIPConfig
 
 class BasicHTTPCampaign(FuzzingCampaign):
     """Basic HTTP fuzzing campaign."""
     name = "Basic HTTP Fuzzing"
-    target = "192.168.1.100"
+    socket_config = RawIPConfig(target="192.168.1.100")
     iterations = 1
     output_network = False
     output_pcap = "basic_http.pcap"
@@ -33,7 +33,7 @@ class BasicHTTPCampaign(FuzzingCampaign):
 class BasicDNSCampaign(FuzzingCampaign):
     """Basic DNS fuzzing campaign."""
     name = "Basic DNS Fuzzing"
-    target = "10.10.10.10"
+    socket_config = RawIPConfig(target="10.10.10.10")
     iterations = 1
     output_network = False
     output_pcap = "basic_dns.pcap"
@@ -49,7 +49,7 @@ class BasicDNSCampaign(FuzzingCampaign):
 class BasicTCPCampaign(FuzzingCampaign):
     """Basic TCP port scanning campaign."""
     name = "Basic TCP Port Scan"
-    target = "192.168.1.100"
+    socket_config = RawIPConfig(target="192.168.1.100")
     iterations = 1
     output_network = False
     output_pcap = "basic_tcp.pcap"
@@ -63,7 +63,7 @@ class BasicTCPCampaign(FuzzingCampaign):
 class MalformedPacketCampaign(FuzzingCampaign):
     """Malformed packet campaign with interface offload management."""
     name = "Malformed Packet Test"
-    target = "192.168.1.100"
+    socket_config = RawIPConfig(target="192.168.1.100")
     iterations = 1
     output_network = False  # Keep disabled for safety in examples
     output_pcap = "malformed_packets.pcap"

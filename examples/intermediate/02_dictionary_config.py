@@ -14,6 +14,7 @@ from scapy.packet import Raw
   
 
 from packetfuzz.fuzzing_framework import FuzzingCampaign, FuzzField
+from packetfuzz.sockets.raw_ip_socket import RawIPConfig
 
 HTTPBasePacket = (IP() /
                   TCP(dport=FuzzField(values=[80, 443, 8080])) /
@@ -21,7 +22,7 @@ HTTPBasePacket = (IP() /
 class WebFuzzWithDictionaryCampaign(FuzzingCampaign):
     """Web fuzzing using custom dictionary configuration."""
     name = "Web Fuzzing with Custom Dictionaries"
-    target = "192.168.1.100"
+    socket_config = RawIPConfig(target="192.168.1.100")
     iterations = 1
     output_pcap = "intermediate_dict_web.pcap"
     verbose = False
@@ -44,7 +45,7 @@ class WebFuzzWithDictionaryCampaign(FuzzingCampaign):
 class SQLInjectionCampaign(FuzzingCampaign):
     """SQL injection testing with targeted dictionaries."""
     name = "SQL Injection Testing"
-    target = "192.168.1.200"
+    socket_config = RawIPConfig(target="192.168.1.200")
     iterations = 1
     output_pcap = "intermediate_dict_sqli.pcap"
     verbose = False
@@ -68,7 +69,7 @@ class SQLInjectionCampaign(FuzzingCampaign):
 class MixedDictionaryCampaign(FuzzingCampaign):
     """Campaign mixing inline values with dictionary sources."""
     name = "Mixed Dictionary Sources"
-    target = "192.168.1.100"
+    socket_config = RawIPConfig(target="192.168.1.100")
     iterations = 1
     output_pcap = "intermediate_dict_mixed.pcap"
     verbose = False

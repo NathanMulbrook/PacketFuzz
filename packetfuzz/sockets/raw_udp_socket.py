@@ -10,11 +10,20 @@ from __future__ import annotations
 import logging
 import socket
 from typing import Optional, TYPE_CHECKING
+from dataclasses import dataclass
 
 from .socket_interface import FuzzSocket
+from .config import BaseSocketConfig
 
 if TYPE_CHECKING:
     from ..fuzzing_framework import CampaignContext
+
+
+@dataclass
+class RawUDPConfig(BaseSocketConfig):
+    """Optional config for raw UDP socket targeting (when needed)."""
+    target: str = '127.0.0.1'
+    port: int = 53
 
 
 class RawUDPSocket(FuzzSocket):
@@ -52,8 +61,12 @@ class RawUDPSocket(FuzzSocket):
             return None
             
         try:
-            # Send to target from campaign
-            target = getattr(self.campaign, 'target', '127.0.0.1')
+            # Send to target from config or campaign
+            cfg = getattr(self.campaign, 'socket_config', None)
+            if isinstance(cfg, RawUDPConfig):
+                target = cfg.target
+            else:
+                target = getattr(self.campaign, 'target', '127.0.0.1')
             return self._sock.sendto(packet_bytes, (target, 0))
         except Exception as e:
             logging.getLogger(__name__).error(f"[RawUDPSocket] send failed: {e}")

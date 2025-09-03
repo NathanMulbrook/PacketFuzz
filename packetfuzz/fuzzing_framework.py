@@ -358,12 +358,13 @@ class CallbackManager:
             crash_id = crash_info.crash_id
 
             # Log crash metadata
+            target_info = getattr(self.campaign.socket_config, 'target', 'N/A') if self.campaign.socket_config else 'N/A'
             metadata = {
                 "crash_id": crash_id,
                 "timestamp": crash_info.timestamp.isoformat(),
                 "crash_source": crash_info.crash_source,
                 "campaign_name": self.campaign.name or "unnamed",
-                "target": str(self.campaign.target),
+                "target": str(target_info),
                 "exception": str(crash_info.exception) if crash_info.exception else None,
                 "stats": context.stats.copy()
             }
@@ -688,7 +689,6 @@ class FuzzingCampaign:
     capture_responses = False
     global_dict_config_path: Optional[str] = None  # Path to global dictionary config file
     packet: Optional[Packet] = None
-    target: Optional[Any] = None
     name: Optional[str] = None
     
     # Server mode configuration
@@ -749,6 +749,9 @@ class FuzzingCampaign:
 
     # --- Socket logic additions ---
     socket_type: Optional[SocketType] = None    # Socket type for network operations - see SocketType enum for options
+    # Optional per-socket configuration object; when present, campaign.socket_type
+    # will be inferred from its class using the internal registry below.
+    socket_config: Optional[object] = None
     # Behavior when mutated packet fails to serialize to bytes
     # Options:
     #  - 'fail' : raise RuntimeError (strict, default)
@@ -777,6 +780,40 @@ class FuzzingCampaign:
                     instance_value = copy.deepcopy(class_value)
                     setattr(self, attr_name, instance_value)
         
+        # Infer socket_type from socket_config when provided
+        try:
+            cfg = getattr(self, 'socket_config', None)
+            if cfg is not None:
+                # Lazy imports to avoid circular deps
+                from .sockets.server_udp_socket import ServerUDPConfig
+                from .sockets.server_tcp_socket import ServerTCPConfig
+                from .sockets.managed_udp_socket import ManagedUDPConfig
+                from .sockets.managed_tcp_socket import ManagedTCPConfig
+                from .sockets.canbus_socket import CANBusConfig
+                from .sockets.raw_udp_socket import RawUDPConfig
+                from .sockets.raw_ip_socket import RawIPConfig
+                from .sockets.raw_tcp_socket import RawTCPConfig
+                from .sockets.raw_ethernet_socket import RawEthernetConfig
+
+                config_to_enum = {
+                    ServerUDPConfig: SocketType.SERVER_UDP,
+                    ServerTCPConfig: SocketType.SERVER_TCP,
+                    ManagedUDPConfig: SocketType.MANAGED_UDP,
+                    ManagedTCPConfig: SocketType.MANAGED_TCP,
+                    CANBusConfig: SocketType.CANBUS,
+                    RawUDPConfig: SocketType.RAW_UDP,
+                    RawIPConfig: SocketType.RAW_IP,
+                    RawTCPConfig: SocketType.RAW_TCP,
+                    RawEthernetConfig: SocketType.RAW_ETHERNET,
+                }
+
+                for cfg_type, enum_val in config_to_enum.items():
+                    if isinstance(cfg, cfg_type):
+                        self.socket_type = enum_val
+                        break
+        except Exception as e:
+            logger.debug(f"Socket config inference skipped due to: {e}")
+
         # Set default for mutator_preference if None and normalize to dict format
 
         if self.mutator_preference:
@@ -939,8 +976,8 @@ class FuzzingCampaign:
         # Check if we have a packet
         if packet is None:
             errors.append("Campaign packet is None (set the 'packet' attribute)")
-        if self.target is None:
-            errors.append("Campaign target is None")
+        if self.socket_config is None:
+            errors.append("Campaign socket_config is None - must provide socket configuration")
         # Validate socket_type if specified
         if self.socket_type is not None:
             # Validate socket_type is SocketType enum
@@ -1133,7 +1170,7 @@ class FuzzingCampaign:
             timestamp_sent=datetime.now(),
             iteration=iteration,
             campaign_name=self.name,
-            target_host=getattr(self, 'target', None),
+            target_host=getattr(self.socket_config, 'target', None) if self.socket_config else None,
             protocol=self._extract_protocol(packet),
             target_port=self._extract_target_port(packet),
         )
@@ -1168,9 +1205,13 @@ class FuzzingCampaign:
         """
         # Apply campaign target addressing to the original packet for network sending
         if (self.socket_type in (SocketType.RAW_IP, SocketType.RAW_UDP, SocketType.RAW_TCP)) and packet.haslayer(IP):
-            packet[IP].dst = self.target
+            target = getattr(self.socket_config, 'target', None) if self.socket_config else None
+            if target:
+                packet[IP].dst = target
         elif self.socket_type == SocketType.RAW_ETHERNET and packet.haslayer(Ether):
-            packet[Ether].dst = self.target
+            target = getattr(self.socket_config, 'target', None) if self.socket_config else None
+            if target:
+                packet[Ether].dst = target
         
         # Create a separate copy optimized for PCAP logging
         pcap_pkt = packet.copy()
@@ -1324,7 +1365,8 @@ class FuzzingCampaign:
 
             # Display campaign information
             logger.info(f"Starting campaign: {self.name or 'Unnamed Campaign'}")
-            logger.info(f"   Target: {self.target}")
+            target_info = getattr(self.socket_config, 'target', 'N/A') if self.socket_config else 'N/A'
+            logger.info(f"   Target: {target_info}")
             logger.info(f"   Iterations: {self.iterations}")
             logger.info(f"   Layer: {self.socket_type}")
             logger.info(f"   Rate limit: {self.rate_limit} packets/sec")
@@ -1454,12 +1496,20 @@ class FuzzingCampaign:
                 # Fallback to Scapy for sockets that don't support receive
                 if socket_type == SocketType.RAW_ETHERNET:
                     # Layer 2: Use sniff() with a filter for Ethernet frames
-                    response = sniff(
-                        iface=self.interface,
-                        timeout=self.response_timeout,
-                        count=1,
-                        lfilter=lambda x: x.haslayer(Ether) and x[Ether].src == self.target
-                    )
+                    target_addr = getattr(self.socket_config, 'target', None) if self.socket_config else None
+                    if target_addr:
+                        response = sniff(
+                            iface=self.interface,
+                            timeout=self.response_timeout,
+                            count=1,
+                            lfilter=lambda x: x.haslayer(Ether) and x[Ether].src == target_addr
+                        )
+                    else:
+                        response = sniff(
+                            iface=self.interface,
+                            timeout=self.response_timeout,
+                            count=1
+                        )
                 else:
                     # Layer 3: Use sr1() for IP packets with timeout
                     response = sr1(
@@ -1768,7 +1818,8 @@ class FuzzingCampaign:
 
     def __repr__(self) -> str:
         """Detailed representation of FuzzField."""
+        target_info = getattr(self.socket_config, 'target', 'N/A') if self.socket_config else 'N/A'
         return (f"{self.__class__.__name__}(name={self.name}, "
-                f"target={self.target}, "
+                f"target={target_info}, "
                 f"iterations={self.iterations}, "
                 f"layer={self.socket_type})")

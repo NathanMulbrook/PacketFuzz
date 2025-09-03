@@ -9,6 +9,7 @@ to control the probability of different mutators being used for fuzzing.
 from scapy.layers.inet import IP, TCP
 from scapy.layers.http import HTTP, HTTPRequest
 from packetfuzz.fuzzing_framework import FuzzingCampaign, FuzzField
+from packetfuzz.sockets.raw_ip_socket import RawIPConfig
 
 class HTTPWeightedMutatorCampaign(FuzzingCampaign):
     """
@@ -20,7 +21,7 @@ class HTTPWeightedMutatorCampaign(FuzzingCampaign):
     - Mixing dict and list formats for compatibility
     """
     name = "HTTP Weighted Mutator Example"
-    target = "127.0.0.1"
+    socket_config = RawIPConfig(target="127.0.0.1")
     iterations = 10
     output_network = False
     verbose = True
@@ -72,7 +73,7 @@ class TCPPortScanCampaign(FuzzingCampaign):
     default_mappings.py based on field types and names.
     """
     name = "TCP Port Scan with Default Weights"
-    target = "127.0.0.1" 
+    socket_config = RawIPConfig(target="127.0.0.1")
     iterations = 5
     output_network = False
     

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-Managed UDP Socket ImplementatioCreates and manages standard UDP sockets for datagram transmission.
+Managed UDP Socket Implementation.
+Creates and manages standard UDP sockets for datagram transmission.
 Uses standard socket operations for connectionless data transmission.
 """
 from __future__ import annotations
@@ -8,11 +9,20 @@ from __future__ import annotations
 import logging
 import socket
 from typing import Optional, TYPE_CHECKING
+from dataclasses import dataclass
 
 from .socket_interface import FuzzSocket
+from .config import BaseSocketConfig
 
 if TYPE_CHECKING:
     from ..fuzzing_framework import CampaignContext
+
+
+@dataclass
+class ManagedUDPConfig(BaseSocketConfig):
+    """Configuration for a managed UDP client socket."""
+    target: str = '127.0.0.1'
+    port: int = 53
 
 
 class ManagedUDPSocket(FuzzSocket):
@@ -27,6 +37,14 @@ class ManagedUDPSocket(FuzzSocket):
     
     Use case: Application-level protocol fuzzing over UDP
     """
+
+    def __init__(self, campaign) -> None:
+        super().__init__(campaign)
+        # Prefer explicit socket_config when provided
+        cfg = getattr(self.campaign, 'socket_config', None)
+        self.socket_cfg: Optional[ManagedUDPConfig] = (
+            cfg if isinstance(cfg, ManagedUDPConfig) else None
+        )
 
     def open(self) -> "ManagedUDPSocket":
         """Create UDP socket."""
@@ -46,9 +64,13 @@ class ManagedUDPSocket(FuzzSocket):
             return None
             
         try:
-            # Get target and port from campaign
-            target = getattr(self.campaign, 'target', '127.0.0.1')
-            port = getattr(self.campaign, 'port', 53)  # Default to DNS port
+            # Resolve target/port from config if available, else fall back to campaign
+            if self.socket_cfg:
+                target = self.socket_cfg.target
+                port = self.socket_cfg.port
+            else:
+                target = getattr(self.campaign, 'target', '127.0.0.1')
+                port = getattr(self.campaign, 'port', 53)  # Default to DNS port
             
             return self._sock.sendto(packet_bytes, (target, port))
         except Exception as e:

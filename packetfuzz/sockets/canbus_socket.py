@@ -10,11 +10,19 @@ from __future__ import annotations
 import logging
 import socket
 from typing import Optional, TYPE_CHECKING
+from dataclasses import dataclass
 
 from .socket_interface import FuzzSocket
+from .config import BaseSocketConfig
 
 if TYPE_CHECKING:
     from ..fuzzing_framework import CampaignContext
+
+
+@dataclass
+class CANBusConfig(BaseSocketConfig):
+    """Configuration for a CAN bus socket."""
+    interface: str = 'vcan0'
 
 
 class CANBusSocket(FuzzSocket):
@@ -42,8 +50,9 @@ class CANBusSocket(FuzzSocket):
             # Create CAN socket
             s = socket.socket(socket.AF_CAN, socket.CAN_RAW)
             
-            # Get interface from campaign (default to vcan0 for virtual CAN)
-            interface = getattr(self.campaign, 'interface', 'vcan0')
+            # Get interface from explicit config when provided
+            cfg = getattr(self.campaign, 'socket_config', None)
+            interface = cfg.interface if isinstance(cfg, CANBusConfig) else getattr(self.campaign, 'interface', 'vcan0')
             
             # Bind to CAN interface
             s.bind((interface,))

@@ -18,6 +18,8 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from packetfuzz.fuzzing_framework import FuzzingCampaign
+from packetfuzz.sockets.raw_ip_socket import RawIPConfig
+from packetfuzz.sockets.managed_udp_socket import ManagedUDPConfig
 from scapy.all import IP, TCP, UDP, DNS, DNSQR, Ether, ARP, Raw
 
 

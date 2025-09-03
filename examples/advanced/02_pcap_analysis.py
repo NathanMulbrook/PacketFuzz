@@ -15,6 +15,7 @@ from scapy.utils import wrpcap
 
 from packetfuzz.pcapfuzz import PcapFuzzCampaign
 from packetfuzz.fuzzing_framework import CallbackResult
+from packetfuzz.sockets.raw_ip_socket import RawIPConfig
 
 class AdvancedHTTPExtractionCampaign(PcapFuzzCampaign):
     """Extract HTTP payloads with intelligent fuzzing and analysis."""
@@ -23,7 +24,7 @@ class AdvancedHTTPExtractionCampaign(PcapFuzzCampaign):
     extract_layer = "TCP"
     repackage_in = "IP/TCP"
     fuzz_mode = "both"  # Field + binary fuzzing
-    target = "192.168.1.100"
+    socket_config = RawIPConfig(target="192.168.1.100")
     iterations = 1
     rate_limit = None
     output_pcap = "advanced_http_extraction.pcap"
@@ -108,7 +109,7 @@ class AdvancedBinaryAnalysisCampaign(PcapFuzzCampaign):
     extract_layer = "UDP"
     repackage_in = "IP/UDP"
     fuzz_mode = "binary"
-    target = "192.168.1.200"
+    socket_config = RawIPConfig(target="192.168.1.200")
     iterations = 1
     output_pcap = "advanced_binary_analysis.pcap"
     verbose = False
@@ -154,7 +155,7 @@ class AdvancedLayerFuzzCampaign(PcapFuzzCampaign):
     pcap_folder = "regression_samples/"
     extract_layer = "IP"
     fuzz_mode = "field"
-    target = "192.168.1.50"
+    socket_config = RawIPConfig(target="192.168.1.50")
     iterations = 1
     output_pcap = "advanced_layer_fuzz.pcap"
     verbose = False

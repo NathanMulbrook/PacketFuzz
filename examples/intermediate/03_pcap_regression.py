@@ -13,13 +13,14 @@ from scapy.utils import wrpcap
   
 
 from packetfuzz.pcapfuzz import PcapFuzzCampaign
+from packetfuzz.sockets.raw_ip_socket import RawIPConfig
 
 class RegressionTestCampaign(PcapFuzzCampaign):
     """Pure regression testing - replay without fuzzing."""
     name = "Regression Replay"
     pcap_folder = "regression_samples/"
     fuzz_mode = "none"  # No fuzzing
-    target = "192.168.1.100"
+    socket_config = RawIPConfig(target="192.168.1.100")
     iterations = 2  # Reduced for faster test execution
     output_pcap = "intermediate_regression_replay.pcap"
     verbose = True
@@ -31,7 +32,7 @@ class HTTPPayloadExtractionCampaign(PcapFuzzCampaign):
     extract_layer = "TCP"  # Extract TCP payload
     repackage_in = "IP/TCP"  # New headers
     fuzz_mode = "field"  # Dictionary-based fuzzing
-    target = "192.168.1.100"
+    socket_config = RawIPConfig(target="192.168.1.100")
     iterations = 2  # Reduced for faster test execution
     output_pcap = "intermediate_http_extraction.pcap"
     verbose = True
@@ -43,7 +44,7 @@ class DNSQueryFuzzCampaign(PcapFuzzCampaign):
     extract_layer = "UDP"  # Extract UDP payload
     repackage_in = "IP/UDP"  # New headers
     fuzz_mode = "field"  # Field-aware fuzzing
-    target = "10.10.10.10"
+    socket_config = RawIPConfig(target="10.10.10.10")
     iterations = 2  # Reduced for faster test execution
     output_pcap = "intermediate_dns_extraction.pcap"
     verbose = True
@@ -55,7 +56,7 @@ class BinaryProtocolCampaign(PcapFuzzCampaign):
     extract_layer = "UDP"
     repackage_in = "IP/UDP"
     fuzz_mode = "binary"  # Binary mutations
-    target = "192.168.1.200"
+    socket_config = RawIPConfig(target="192.168.1.200")
     iterations = 2  # Reduced for faster test execution
     output_pcap = "intermediate_binary_fuzz.pcap"
     verbose = True

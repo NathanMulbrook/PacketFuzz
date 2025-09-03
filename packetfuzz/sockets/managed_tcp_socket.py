@@ -10,11 +10,20 @@ from __future__ import annotations
 import logging
 import socket
 from typing import Optional, TYPE_CHECKING
+from dataclasses import dataclass
 
 from .socket_interface import FuzzSocket
+from .config import BaseSocketConfig
 
 if TYPE_CHECKING:
     from ..fuzzing_framework import CampaignContext
+
+
+@dataclass
+class ManagedTCPConfig(BaseSocketConfig):
+    """Configuration for a managed TCP client socket."""
+    target: str = '127.0.0.1'
+    port: int = 80
 
 
 class ManagedTCPSocket(FuzzSocket):
@@ -30,6 +39,11 @@ class ManagedTCPSocket(FuzzSocket):
     Use case: Application-level protocol fuzzing over TCP
     """
 
+    def __init__(self, campaign) -> None:
+        super().__init__(campaign)
+        cfg = getattr(self.campaign, 'socket_config', None)
+        self.socket_cfg: Optional[ManagedTCPConfig] = cfg if isinstance(cfg, ManagedTCPConfig) else None
+
     def open(self) -> "ManagedTCPSocket":
         """Create and establish TCP connection."""
         try:
@@ -37,8 +51,12 @@ class ManagedTCPSocket(FuzzSocket):
             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             
             # Get target and port using standardized config access
-            target = self.config.get_target('127.0.0.1')
-            port = self.config.get_port(80)
+            if self.socket_cfg:
+                target = self.socket_cfg.target
+                port = self.socket_cfg.port
+            else:
+                target = self.config.get_target('127.0.0.1')
+                port = self.config.get_port(80)
             
             # Connect to target
             s.connect((target, port))

@@ -1,9 +1,73 @@
 #!/usr/bin/env python3
 """
-Basic Example 2: FuzzField Basics - Different Value Types
+Basic FuzzField examples showing how to define fields with specific values.
 
-Shows how to use FuzzField with different data types and basic configuration options.
+This example demonstrates the fundamental usage of FuzzField for targeted
+field-level fuzzing with predefined value sets.
 """
+
+from scapy.layers.inet import IP, TCP, UDP
+from scapy.layers.dns import DNS, DNSQR
+from scapy.packet import Raw
+
+from packetfuzz.fuzzing_framework import FuzzingCampaign, FuzzField
+from packetfuzz.sockets.raw_ip_socket import RawIPConfig
+
+class BasicFuzzFieldCampaign(FuzzingCampaign):
+    """Simple FuzzField demonstration."""
+    name = "Basic FuzzField Demo"
+    socket_config = RawIPConfig(target="192.168.1.100")
+    iterations = 3
+    output_network = False
+    output_pcap = "basic_fuzzfield.pcap"
+    verbose = True
+    
+    packet = (
+        IP() /
+        TCP(
+            dport=FuzzField(
+                values=[80, 443, 8080],
+                description="Common web ports"
+            )
+        ) /
+        Raw(
+            load=FuzzField(
+                values=[b"Hello", b"World", b"Test"],
+                description="Simple payloads"
+            )
+        )
+    )
+
+class DNSFuzzFieldCampaign(FuzzingCampaign):
+    """DNS query fuzzing with FuzzField."""
+    name = "DNS FuzzField Demo"
+    socket_config = RawIPConfig(target="8.8.8.8")
+    iterations = 2
+    output_network = False
+    output_pcap = "dns_fuzzfield.pcap"
+    verbose = True
+    
+    packet = (
+        IP() /
+        UDP(dport=53) /
+        DNS(
+            qd=DNSQR(
+                qname=FuzzField(
+                    values=["example.com", "test.org"],
+                    description="Test domains"
+                )
+            )
+        )
+    )
+
+if __name__ == "__main__":
+    print("Running basic FuzzField examples...")
+    
+    print("\n=== Basic FuzzField Campaign ===")
+    BasicFuzzFieldCampaign().execute()
+    
+    print("\n=== DNS FuzzField Campaign ===")
+    DNSFuzzFieldCampaign().execute()
 
 import sys
 import os
@@ -14,11 +78,12 @@ from scapy.layers.http import HTTP, HTTPRequest
   
 
 from packetfuzz.fuzzing_framework import FuzzingCampaign, FuzzField
+from packetfuzz.sockets.raw_ip_socket import RawIPConfig
 
 class IntegerFuzzCampaign(FuzzingCampaign):
     """Demonstrates integer field fuzzing."""
     name = "Integer Fuzzing"
-    target = "192.168.1.100"
+    socket_config = RawIPConfig(target="192.168.1.100")
     iterations = 5
     output_pcap = "basic_integer_fuzz.pcap"
     
@@ -30,7 +95,7 @@ class IntegerFuzzCampaign(FuzzingCampaign):
 class StringFuzzCampaign(FuzzingCampaign):
     """Demonstrates string field fuzzing."""
     name = "String Fuzzing"
-    target = "10.10.10.10"
+    socket_config = RawIPConfig(target="10.10.10.10")
     iterations = 5
     output_pcap = "basic_string_fuzz.pcap"
     
@@ -43,7 +108,7 @@ class StringFuzzCampaign(FuzzingCampaign):
 class BytesFuzzCampaign(FuzzingCampaign):
     """Demonstrates bytes/payload fuzzing."""
     name = "Bytes Fuzzing"
-    target = "192.168.1.100"
+    socket_config = RawIPConfig(target="192.168.1.100")
     iterations = 5
     output_pcap = "basic_bytes_fuzz.pcap"
     

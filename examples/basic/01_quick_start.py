@@ -15,15 +15,15 @@ from scapy.layers.inet import IP, TCP
 
 # Local imports
 from packetfuzz.fuzzing_framework import FuzzField, FuzzingCampaign
-from packetfuzz.socket_types import SocketType  
+from packetfuzz.sockets.managed_udp_socket import ManagedUDPConfig
+from packetfuzz.sockets.raw_ip_socket import RawIPConfig
 
 class QuickStartCampaign(FuzzingCampaign):
     """Minimal fuzzing campaign - just the essentials."""
     name = "Quick Start"
-    target = "192.168.1.100"
+    socket_config = ManagedUDPConfig(target="192.168.1.100", port=53)
     iterations = 100
     verbose = False  # Disable verbose mode to show the difference
-    socket_type = SocketType.MANAGED_UDP  # Real TCP connections with automatic handshake
     packet = (
               HTTP() / 
               HTTPRequest(Path=b"/", Method=b"GET"))
@@ -32,10 +32,9 @@ class QuickStartCampaign(FuzzingCampaign):
 class QuickStartCampaignMultilayer(FuzzingCampaign):
     """Minimal fuzzing campaign - just the essentials."""
     name = "Quick Start Multilayer"
-    target = "192.168.1.100"
+    socket_config = RawIPConfig(target="192.168.1.100")
     iterations = 100
     verbose = False  # Disable verbose mode to show the difference
-    socket_type = SocketType.RAW_IP  # Real TCP connections with automatic handshake
     packet = (IP() /
                 TCP() /
               HTTP() / 

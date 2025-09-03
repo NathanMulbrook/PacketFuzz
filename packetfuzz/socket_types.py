@@ -9,6 +9,18 @@ IDE support, type safety, and auto-completion for socket type options.
 from enum import Enum
 from typing import Optional
 
+class SocketConfigType(str, Enum):
+    """Enumeration of supported socket configuration types for discovery/docs."""
+    UDP_SERVER = "udp_server_config"
+    TCP_SERVER = "tcp_server_config"
+    MANAGED_UDP = "managed_udp_config"
+    MANAGED_TCP = "managed_tcp_config"
+    CANBUS = "canbus_config"
+    RAW_UDP = "raw_udp_config"
+    RAW_IP = "raw_ip_config"
+    RAW_TCP = "raw_tcp_config"
+    RAW_ETHERNET = "raw_ethernet_config"
+
 
 class SocketType(str, Enum):
     """
@@ -104,8 +116,8 @@ class SocketType(str, Enum):
     Use case: Automotive protocol testing, ECU fuzzing
     """
     
-    LISTENING_TCP = "listening_tcp"
-    """Listening TCP socket - binds to port and accepts incoming connections
+    SERVER_TCP = "server_tcp"
+    """TCP server socket - binds to port and accepts incoming connections
     
     Requirements:
     - Port must be available for binding
@@ -115,8 +127,8 @@ class SocketType(str, Enum):
     Use case: Server-side fuzzing, protocol testing as server
     """
     
-    LISTENING_UDP = "listening_udp"
-    """Listening UDP socket - binds to port and receives datagrams
+    SERVER_UDP = "server_udp"
+    """UDP server socket - binds to port and receives datagrams
     
     Requirements:
     - Port must be available for binding
@@ -160,8 +172,8 @@ class SocketType(str, Enum):
             SocketType.MANAGED_TCP: [],
             SocketType.MANAGED_UDP: [],
             SocketType.CANBUS: ["CAN"],
-            SocketType.LISTENING_TCP: [],
-            SocketType.LISTENING_UDP: []
+            SocketType.SERVER_TCP: [],
+            SocketType.SERVER_UDP: []
         }
         return header_requirements.get(self, [])
 
@@ -175,8 +187,8 @@ class SocketType(str, Enum):
             SocketType.MANAGED_TCP: "Managed TCP connection - handles handshake",
             SocketType.MANAGED_UDP: "Managed UDP connection - standard sockets",
             SocketType.CANBUS: "CAN bus - automotive protocols",
-            SocketType.LISTENING_TCP: "Listening TCP server - accepts incoming connections",
-            SocketType.LISTENING_UDP: "Listening UDP server - receives datagrams"
+            SocketType.SERVER_TCP: "TCP server - accepts incoming connections",
+            SocketType.SERVER_UDP: "UDP server - receives datagrams"
         }
         return descriptions.get(self, f"Unknown socket type: {self.value}")
 
@@ -194,8 +206,8 @@ class SocketType(str, Enum):
     def get_listening_socket_types(cls) -> list['SocketType']:
         """Get socket types that support listening for incoming connections."""
         return [
-            cls.LISTENING_TCP,
-            cls.LISTENING_UDP
+            cls.SERVER_TCP,
+            cls.SERVER_UDP
         ]
 
     def is_listening_type(self) -> bool:

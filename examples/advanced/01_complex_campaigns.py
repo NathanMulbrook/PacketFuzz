@@ -17,11 +17,12 @@ from scapy.layers.http import HTTP, HTTPRequest
   
 
 from packetfuzz.fuzzing_framework import FuzzingCampaign, FuzzField, CallbackResult, CampaignContext
+from packetfuzz.sockets.raw_ip_socket import RawIPConfig
 
 class AdvancedHTTPCampaign(FuzzingCampaign):
     """Multi-stage HTTP fuzzing with comprehensive monitoring."""
     name = "Advanced HTTP Fuzzing"
-    target = "192.168.1.100"
+    socket_config = RawIPConfig(target="192.168.1.100")
     # Keep example semantics but make validation fast and non-blocking
     iterations = 1
     rate_limit = None  # No artificial sleep in test/validation runs
@@ -127,7 +128,7 @@ class AdvancedHTTPCampaign(FuzzingCampaign):
 class AdvancedDNSCampaign(FuzzingCampaign):
     """DNS fuzzing with response analysis and subdomain enumeration."""
     name = "Advanced DNS Fuzzing"
-    target = "10.10.10.10"
+    socket_config = RawIPConfig(target="10.10.10.10")
     iterations = 1
     output_pcap = "advanced_dns_complex.pcap"
     capture_responses = False
@@ -190,7 +191,7 @@ class AdvancedDNSCampaign(FuzzingCampaign):
 class AdvancedMultiProtocolCampaign(FuzzingCampaign):
     """Multi-protocol campaign with protocol switching."""
     name = "Multi-Protocol Advanced"
-    target = "192.168.1.100"
+    socket_config = RawIPConfig(target="192.168.1.100")
     iterations = 1
     output_pcap = "advanced_multiprotocol.pcap"
     verbose = False

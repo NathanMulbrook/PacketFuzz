@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Listening TCP Socket Implementation
+TCP Server Socket Implementation
 
 Creates a TCP server socket that listens for incoming connections.
 Useful for server-side fuzzing scenarios.
@@ -10,16 +10,25 @@ from __future__ import annotations
 import logging
 import socket
 from typing import Optional, TYPE_CHECKING
+from dataclasses import dataclass
 
 from .socket_interface import FuzzSocket
+from .config import BaseSocketConfig
 
 if TYPE_CHECKING:
     from ..fuzzing_framework import CampaignContext
 
 
-class ListeningTCPSocket(FuzzSocket):
+@dataclass
+class ServerTCPConfig(BaseSocketConfig):
+    """Configuration for a TCP server socket."""
+    bind_address: str = '0.0.0.0'
+    port: int = 8080
+
+
+class ServerTCPSocket(FuzzSocket):
     """
-    Listening TCP socket implementation for server-mode fuzzing.
+    TCP server socket implementation for server-mode fuzzing.
     
     Features:
     - Binds to specified port
@@ -33,8 +42,10 @@ class ListeningTCPSocket(FuzzSocket):
     def __init__(self, campaign) -> None:
         super().__init__(campaign)
         self._listening = False
+        cfg = getattr(self.campaign, 'socket_config', None)
+        self.socket_cfg = cfg if isinstance(cfg, ServerTCPConfig) else ServerTCPConfig()
 
-    def open(self) -> "ListeningTCPSocket":
+    def open(self) -> "ServerTCPSocket":
         """Create and bind TCP listening socket."""
         try:
             # Create TCP socket
@@ -43,9 +54,9 @@ class ListeningTCPSocket(FuzzSocket):
             # Allow socket reuse
             s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             
-            # Get bind address and port from campaign
-            bind_address = getattr(self.campaign, 'bind_address', '0.0.0.0')
-            port = getattr(self.campaign, 'port', 8080)
+            # Bind to address from config
+            bind_address = self.socket_cfg.bind_address
+            port = self.socket_cfg.port
             
             # Bind to address
             s.bind((bind_address, port))
@@ -65,9 +76,7 @@ class ListeningTCPSocket(FuzzSocket):
         try:
             self._sock.listen(backlog)
             self._listening = True
-            bind_address = getattr(self.campaign, 'bind_address', '0.0.0.0')
-            port = getattr(self.campaign, 'port', 8080)
-            logging.getLogger(__name__).info(f"[ListeningTCPSocket] Listening on {bind_address}:{port}")
+            logging.getLogger(__name__).info(f"[ServerTCPSocket] Listening on {self.socket_cfg.bind_address}:{self.socket_cfg.port}")
         except Exception as e:
             raise OSError(f"Failed to start listening: {e}")
 
@@ -87,10 +96,10 @@ class ListeningTCPSocket(FuzzSocket):
             return client_socket, client_addr
             
         except socket.timeout:
-            logging.getLogger(__name__).debug("[ListeningTCPSocket] accept timeout")
+            logging.getLogger(__name__).debug("[ServerTCPSocket] accept timeout")
             return None
         except Exception as e:
-            logging.getLogger(__name__).error(f"[ListeningTCPSocket] accept failed: {e}")
+            logging.getLogger(__name__).error(f"[ServerTCPSocket] accept failed: {e}")
             return None
         finally:
             if timeout is not None:
@@ -98,7 +107,7 @@ class ListeningTCPSocket(FuzzSocket):
 
     def send_packet(self, packet_bytes: bytes, context: "CampaignContext") -> Optional[int]:
         """Listening sockets don't send directly - use accepted client connections."""
-        logging.getLogger(__name__).warning("[ListeningTCPSocket] Cannot send on listening socket - use accepted client connection")
+        logging.getLogger(__name__).warning("[ServerTCPSocket] Cannot send on listening socket - use accepted client connection")
         return None
 
     
@@ -109,7 +118,7 @@ class ListeningTCPSocket(FuzzSocket):
             self._listening = False
             super().close()
         except Exception as e:
-            logging.getLogger(__name__).warning(f"[ListeningTCPSocket] close error: {e}")
+            logging.getLogger(__name__).warning(f"[ServerTCPSocket] close error: {e}")
 
 
 class ClientTCPSocket(FuzzSocket):

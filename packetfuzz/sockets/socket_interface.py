@@ -31,12 +31,33 @@ class SocketConfig:
         self.campaign = campaign
     
     def get_target(self, default: str = '127.0.0.1') -> str:
-        """Get target address with fallback default."""
-        return getattr(self.campaign, 'target', default)
+        """Get target address from socket_config when present, else default."""
+        cfg = getattr(self.campaign, 'socket_config', None)
+        # Delay imports to avoid cycles
+        try:
+            from .managed_udp_socket import ManagedUDPConfig
+            from .managed_tcp_socket import ManagedTCPConfig
+            from .raw_udp_socket import RawUDPConfig
+            from .raw_ip_socket import RawIPConfig
+            from .raw_tcp_socket import RawTCPConfig
+        except Exception:
+            ManagedUDPConfig = ManagedTCPConfig = RawUDPConfig = RawIPConfig = RawTCPConfig = ()
+        if isinstance(cfg, (ManagedUDPConfig, ManagedTCPConfig, RawUDPConfig, RawIPConfig, RawTCPConfig)):
+            return getattr(cfg, 'target', default)
+        return default
     
     def get_port(self, default: int = 80) -> int:
-        """Get port with fallback default."""
-        return getattr(self.campaign, 'port', default)
+        """Get port from socket_config when present, else default."""
+        cfg = getattr(self.campaign, 'socket_config', None)
+        try:
+            from .managed_udp_socket import ManagedUDPConfig
+            from .managed_tcp_socket import ManagedTCPConfig
+            from .raw_udp_socket import RawUDPConfig
+        except Exception:
+            ManagedUDPConfig = ManagedTCPConfig = RawUDPConfig = ()
+        if isinstance(cfg, (ManagedUDPConfig, ManagedTCPConfig, RawUDPConfig)):
+            return getattr(cfg, 'port', default)
+        return default
     
     def get_interface(self, default: str = 'eth0') -> str:
         """Get network interface with fallback default."""
@@ -82,7 +103,7 @@ class FuzzSocket(ABC):
 
     def __init__(self, campaign: 'FuzzingCampaign') -> None:
         self.campaign = campaign
-        self.socket_type: Optional[SocketType] = getattr(campaign, "_normalize_socket_type", None) and campaign._normalize_socket_type() or None
+        self.socket_type: Optional[SocketType] = getattr(campaign, 'socket_type', None)
         self._sock: Optional[socket.socket] = None
         # Helper objects for standardized operations
         self.config = SocketConfig(campaign)
@@ -128,7 +149,6 @@ class FuzzSocket(ABC):
     def get_socket_info(self) -> dict:
         return {
             "socket_type": self.socket_type.value if self.socket_type else "unknown",
-            "target": getattr(self.campaign, "target", None),
             "interface": getattr(self.campaign, "interface", None),
             "is_open": self.is_open,
         }
@@ -150,7 +170,7 @@ class FuzzSocket(ABC):
 
     def __str__(self) -> str:
         st = self.socket_type.value if self.socket_type else "unknown"
-        return f"{self.__class__.__name__}({st} -> {getattr(self.campaign, 'target', None)})"
+        return f"{self.__class__.__name__}({st})"
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(socket_type={self.socket_type}, is_open={self.is_open})"
@@ -173,7 +193,7 @@ def create(campaign: 'FuzzingCampaign') -> FuzzSocket:
             raise TypeError("socket_provider/socket_factory must return a FuzzSocket")
         return fs
 
-    st = campaign._normalize_socket_type()
+    st = campaign.socket_type
     if st is None:
         raise ValueError(f"Invalid socket_type: {getattr(campaign, 'socket_type', None)}")
 
@@ -186,8 +206,8 @@ def create(campaign: 'FuzzingCampaign') -> FuzzSocket:
         SocketType.MANAGED_TCP: ('managed_tcp_socket', 'ManagedTCPSocket'),
         SocketType.MANAGED_UDP: ('managed_udp_socket', 'ManagedUDPSocket'),
         SocketType.CANBUS: ('canbus_socket', 'CANBusSocket'),
-        SocketType.LISTENING_TCP: ('listening_tcp_socket', 'ListeningTCPSocket'),
-        SocketType.LISTENING_UDP: ('listening_udp_socket', 'ListeningUDPSocket'),
+        SocketType.SERVER_TCP: ('server_tcp_socket', 'ServerTCPSocket'),
+        SocketType.SERVER_UDP: ('server_udp_socket', 'ServerUDPSocket'),
     }
     
     if st not in socket_registry:
@@ -218,12 +238,12 @@ def create(campaign: 'FuzzingCampaign') -> FuzzSocket:
         elif module_name == 'canbus_socket':
             from .canbus_socket import CANBusSocket
             return CANBusSocket(campaign)
-        elif module_name == 'listening_tcp_socket':
-            from .listening_tcp_socket import ListeningTCPSocket
-            return ListeningTCPSocket(campaign)
-        elif module_name == 'listening_udp_socket':
-            from .listening_udp_socket import ListeningUDPSocket
-            return ListeningUDPSocket(campaign)
+        elif module_name == 'server_tcp_socket':
+            from .server_tcp_socket import ServerTCPSocket
+            return ServerTCPSocket(campaign)
+        elif module_name == 'server_udp_socket':
+            from .server_udp_socket import ServerUDPSocket
+            return ServerUDPSocket(campaign)
         else:
             raise NotImplementedError(f"Socket implementation not found: {module_name}")
     except ImportError as e:

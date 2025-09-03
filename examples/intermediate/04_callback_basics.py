@@ -17,6 +17,7 @@ from scapy.layers.http import HTTP, HTTPRequest
   
 
 from packetfuzz.fuzzing_framework import FuzzingCampaign, FuzzField, CallbackResult
+from packetfuzz.sockets.raw_ip_socket import RawIPConfig
 
 def tcp_pre_send_callback(context, packet):
     """Modify TCP packets before sending."""
@@ -69,7 +70,7 @@ def dns_malform_callback(context, packet):
 class TCPCallbackCampaign(FuzzingCampaign):
     """TCP fuzzing with pre-send callbacks."""
     name = "TCP Callback Fuzzing"
-    target = "192.168.1.100"
+    socket_config = RawIPConfig(target="192.168.1.100")
     iterations = 1
     output_pcap = "intermediate_tcp_callback.pcap"
     output_network = False
@@ -81,7 +82,7 @@ class TCPCallbackCampaign(FuzzingCampaign):
 class HTTPInjectionCampaign(FuzzingCampaign):
     """HTTP fuzzing with payload injection callbacks."""
     name = "HTTP Injection Callback"
-    target = "192.168.1.100"
+    socket_config = RawIPConfig(target="192.168.1.100")
     iterations = 1
     output_pcap = "intermediate_http_injection.pcap"
     output_network = False
@@ -137,7 +138,7 @@ def response_capture_callback(context, packet, response):
 class ResponseTrackingCampaign(FuzzingCampaign):
     """Campaign demonstrating response capture and history tracking."""
     name = "Response Tracking Callback"
-    target = "192.168.1.100"
+    socket_config = RawIPConfig(target="192.168.1.100")
     iterations = 1
     output_pcap = "intermediate_response_tracking.pcap"
     
@@ -152,7 +153,7 @@ class ResponseTrackingCampaign(FuzzingCampaign):
 class DNSMalformCampaign2(FuzzingCampaign):
     """DNS fuzzing with DNS protocol-aware callback."""
     name = "DNS Malformation Callback"
-    target = "192.168.1.100"
+    socket_config = RawIPConfig(target="192.168.1.100")
     iterations = 1
     output_pcap = "intermediate_dns_malform.pcap"
     
@@ -166,7 +167,7 @@ class DNSMalformCampaign2(FuzzingCampaign):
 class DNSMalformCampaign(FuzzingCampaign):
     """DNS fuzzing with malformed name callbacks."""
     name = "DNS Malform Callback 2"
-    target = "10.10.10.10"
+    socket_config = RawIPConfig(target="10.10.10.10")
     iterations = 1
     output_pcap = "intermediate_dns_malform.pcap"
     
@@ -193,7 +194,7 @@ def response_analysis_callback(context, packet, response=None):
 class ResponseAnalysisCampaign(FuzzingCampaign):
     """Campaign with response analysis callbacks."""
     name = "Response Analysis"
-    target = "192.168.1.100"
+    socket_config = RawIPConfig(target="192.168.1.100")
     iterations = 1
     output_pcap = "intermediate_response_analysis.pcap"
     capture_responses = False
@@ -227,7 +228,7 @@ def packet_preprocessing_callback(context, packet):
 class PreprocessingCampaign(FuzzingCampaign):
     """Campaign with packet preprocessing."""
     name = "Preprocessing Callback"
-    target = "192.168.1.100"
+    socket_config = RawIPConfig(target="192.168.1.100")
     iterations = 1
     output_network = False
     verbose = False
