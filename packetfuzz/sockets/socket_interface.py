@@ -29,10 +29,12 @@ class SocketConfig:
     
     def __init__(self, campaign: 'FuzzingCampaign') -> None:
         self.campaign = campaign
+        # Import socket config types once during initialization
+        self.config_types = self._load_socket_config_types()
     
-    def get_target(self, default: str = '127.0.0.1') -> str:
-        """Get target address from socket_config when present, else default."""
-        cfg = getattr(self.campaign, 'socket_config', None)
+    def _load_socket_config_types(self):
+        """Load socket config types once to avoid repeated imports."""
+        config_types = {}
         # Delay imports to avoid cycles
         try:
             from .managed_udp_socket import ManagedUDPConfig
@@ -40,22 +42,26 @@ class SocketConfig:
             from .raw_udp_socket import RawUDPConfig
             from .raw_ip_socket import RawIPConfig
             from .raw_tcp_socket import RawTCPConfig
+            
+            config_types["target_configs"] = (ManagedUDPConfig, ManagedTCPConfig, RawUDPConfig, RawIPConfig, RawTCPConfig)
+            config_types["port_configs"] = (ManagedUDPConfig, ManagedTCPConfig, RawUDPConfig)
         except Exception:
-            ManagedUDPConfig = ManagedTCPConfig = RawUDPConfig = RawIPConfig = RawTCPConfig = ()
-        if isinstance(cfg, (ManagedUDPConfig, ManagedTCPConfig, RawUDPConfig, RawIPConfig, RawTCPConfig)):
+            config_types["target_configs"] = ()
+            config_types["port_configs"] = ()
+            
+        return config_types
+    
+    def get_target(self, default: str = '127.0.0.1') -> str:
+        """Get target address from socket_config when present, else default."""
+        cfg = getattr(self.campaign, 'socket_config', None)
+        if isinstance(cfg, self.config_types.get("target_configs", ())):
             return getattr(cfg, 'target', default)
         return default
     
     def get_port(self, default: int = 80) -> int:
         """Get port from socket_config when present, else default."""
         cfg = getattr(self.campaign, 'socket_config', None)
-        try:
-            from .managed_udp_socket import ManagedUDPConfig
-            from .managed_tcp_socket import ManagedTCPConfig
-            from .raw_udp_socket import RawUDPConfig
-        except Exception:
-            ManagedUDPConfig = ManagedTCPConfig = RawUDPConfig = ()
-        if isinstance(cfg, (ManagedUDPConfig, ManagedTCPConfig, RawUDPConfig)):
+        if isinstance(cfg, self.config_types.get("port_configs", ())):
             return getattr(cfg, 'port', default)
         return default
     
@@ -223,60 +229,18 @@ def create(campaign: 'FuzzingCampaign') -> FuzzSocket:
     
     module_name, class_name = socket_registry[st]
     
-    # Dynamic import to avoid circular dependencies
+    # Dynamic import using importlib for cleaner implementation
     try:
-        if module_name == 'raw_ethernet_socket':
-            from .raw_ethernet_socket import RawEthernetSocket
-            return RawEthernetSocket(campaign)
-        elif module_name == 'raw_ip_socket':
-            from .raw_ip_socket import RawIPSocket
-            return RawIPSocket(campaign)
-        elif module_name == 'raw_tcp_socket':
-            from .raw_tcp_socket import RawTCPSocket
-            return RawTCPSocket(campaign)
-        elif module_name == 'raw_udp_socket':
-            from .raw_udp_socket import RawUDPSocket
-            return RawUDPSocket(campaign)
-        elif module_name == 'managed_tcp_socket':
-            from .managed_tcp_socket import ManagedTCPSocket
-            return ManagedTCPSocket(campaign)
-        elif module_name == 'managed_udp_socket':
-            from .managed_udp_socket import ManagedUDPSocket
-            return ManagedUDPSocket(campaign)
-        elif module_name == 'canbus_socket':
-            from .canbus_socket import CANBusSocket
-            return CANBusSocket(campaign)
-        elif module_name == 'server_tcp_socket':
-            from .server_tcp_socket import ServerTCPSocket
-            return ServerTCPSocket(campaign)
-        elif module_name == 'server_udp_socket':
-            from .server_udp_socket import ServerUDPSocket
-            return ServerUDPSocket(campaign)
-        elif module_name == 'ftp_client_socket':
-            from .ftp_client_socket import FTPClientSocket
-            return FTPClientSocket(campaign)
-        elif module_name == 'ftp_server_socket':
-            from .ftp_server_socket import FTPServerSocket
-            return FTPServerSocket(campaign)
-        elif module_name == 'tftp_client_socket':
-            from .tftp_client_socket import TFTPClientSocket
-            return TFTPClientSocket(campaign)
-        elif module_name == 'tftp_server_socket':
-            from .tftp_server_socket import TFTPServerSocket
-            return TFTPServerSocket(campaign)
-        elif module_name == 'telnet_client_socket':
-            from .telnet_client_socket import TelnetClientSocket
-            return TelnetClientSocket(campaign)
-        elif module_name == 'telnet_server_socket':
-            from .telnet_server_socket import TelnetServerSocket
-            return TelnetServerSocket(campaign)
-        elif module_name == 'modbus_client_socket':
-            from .modbus_client_socket import ModbusClientSocket
-            return ModbusClientSocket(campaign)
-        elif module_name == 'modbus_server_socket':
-            from .modbus_server_socket import ModbusServerSocket
-            return ModbusServerSocket(campaign)
-        else:
-            raise NotImplementedError(f"Socket implementation not found: {module_name}")
+        # Import the module dynamically
+        import importlib
+        socket_module = importlib.import_module(f".{module_name}", package="packetfuzz.sockets")
+        
+        # Get the socket class from the module
+        socket_class = getattr(socket_module, class_name)
+        
+        # Create and return the socket instance
+        return socket_class(campaign)
     except ImportError as e:
         raise ImportError(f"Failed to import socket implementation for {st}: {e}")
+    except AttributeError as e:
+        raise ImportError(f"Socket class {class_name} not found in module {module_name}: {e}")

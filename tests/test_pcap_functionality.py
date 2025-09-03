@@ -522,19 +522,6 @@ class TestPCAPFunctionality(unittest.TestCase):
             print("WARNING: Could not complete layer weight scaling analysis")
 
 
-# Backward compatibility for unittest
-class TestPCAPFunctionalityUnit(TestPCAPFunctionality):
-    """Unittest-compatible version of PCAP tests"""
-    
-    def setUp(self):
-        """unittest setUp method"""
-        super().setUp()
-    
-    def tearDown(self):
-        """unittest tearDown method"""
-        super().tearDown()
-    
-    # All test methods are inherited from TestPCAPFunctionality
-
+# NOTE: TestPCAPFunctionalityUnit was removed as it was redundant with TestPCAPFunctionality
 
 
