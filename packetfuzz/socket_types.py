@@ -103,6 +103,28 @@ class SocketType(str, Enum):
     
     Use case: Automotive protocol testing, ECU fuzzing
     """
+    
+    LISTENING_TCP = "listening_tcp"
+    """Listening TCP socket - binds to port and accepts incoming connections
+    
+    Requirements:
+    - Port must be available for binding
+    - Server mode operation
+    - Can accept multiple connections
+    
+    Use case: Server-side fuzzing, protocol testing as server
+    """
+    
+    LISTENING_UDP = "listening_udp"
+    """Listening UDP socket - binds to port and receives datagrams
+    
+    Requirements:
+    - Port must be available for binding
+    - Server mode operation
+    - Connectionless datagram reception
+    
+    Use case: Server-side UDP fuzzing, protocol testing as server
+    """
 
     @classmethod
     def get_valid_types(cls) -> list[str]:
@@ -137,7 +159,9 @@ class SocketType(str, Enum):
             SocketType.RAW_UDP: ["UDP"],
             SocketType.MANAGED_TCP: [],
             SocketType.MANAGED_UDP: [],
-            SocketType.CANBUS: ["CAN"]
+            SocketType.CANBUS: ["CAN"],
+            SocketType.LISTENING_TCP: [],
+            SocketType.LISTENING_UDP: []
         }
         return header_requirements.get(self, [])
 
@@ -150,9 +174,33 @@ class SocketType(str, Enum):
             SocketType.RAW_UDP: "Raw UDP (Layer 4) - requires UDP headers",
             SocketType.MANAGED_TCP: "Managed TCP connection - handles handshake",
             SocketType.MANAGED_UDP: "Managed UDP connection - standard sockets",
-            SocketType.CANBUS: "CAN bus - automotive protocols"
+            SocketType.CANBUS: "CAN bus - automotive protocols",
+            SocketType.LISTENING_TCP: "Listening TCP server - accepts incoming connections",
+            SocketType.LISTENING_UDP: "Listening UDP server - receives datagrams"
         }
         return descriptions.get(self, f"Unknown socket type: {self.value}")
+
+    @classmethod
+    def get_raw_socket_types(cls) -> list['SocketType']:
+        """Get socket types that require raw socket access."""
+        return [
+            cls.RAW_ETHERNET,
+            cls.RAW_IP,
+            cls.RAW_TCP,
+            cls.RAW_UDP
+        ]
+
+    @classmethod
+    def get_listening_socket_types(cls) -> list['SocketType']:
+        """Get socket types that support listening for incoming connections."""
+        return [
+            cls.LISTENING_TCP,
+            cls.LISTENING_UDP
+        ]
+
+    def is_listening_type(self) -> bool:
+        """Check if this socket type supports listening for incoming connections."""
+        return self in self.get_listening_socket_types()
 
 
 # Backward compatibility

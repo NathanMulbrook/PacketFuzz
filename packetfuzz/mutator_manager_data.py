@@ -1556,12 +1556,23 @@ class MutatorManagerData:
             return {'is_fuzzfield': False}
         
         return {
-            except Exception as e:
-                raise
+            'is_fuzzfield': True,
+            'field_value': field_value
+        }
+
+    def _build_field_index(self, packet_data: 'PacketData') -> None:
+        """
+        Builds an index of all packet fields for efficient field lookups.
+        """
+        try:
+            for field_key in packet_data.fields:
+                if field_key not in self.global_field_index:
                     self.global_field_index[field_key] = []
                 self.global_field_index[field_key].append(
                     (packet_data.packet_index, field_key)
                 )
+        except Exception as e:
+            raise
     
     # =========================
     # Public Query Interface
