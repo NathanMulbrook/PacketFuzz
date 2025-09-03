@@ -199,14 +199,13 @@ class PcapFuzzCampaign(FuzzingCampaign):
         Execute the PCAP-based fuzzing campaign using the base class fuzzing loop for each processed/fuzzed packet.
         Iterations controls total number of packets sent. If iterations==0, process all packets once. If >0, loop over all packets until total sent == iterations.
         """
-        try:
-            # Ensure campaign context is initialized
-            self.context = self.context or CampaignContext(self)
-            
-            pcap_folder = Path(self.pcap_folder)
-            if not pcap_folder.exists():
-                logger.warning(f"PCAP folder not found: {self.pcap_folder}")
-                return False
+        # Ensure campaign context is initialized
+        self.context = self.context or CampaignContext(self)
+        
+        pcap_folder = Path(self.pcap_folder)
+        if not pcap_folder.exists():
+            logger.warning(f"PCAP folder not found: {self.pcap_folder}")
+            return False
             # Gather all processed packets from all pcaps (no fuzzing here)
             all_processed_packets = []
             for fname in sorted(pcap_folder.iterdir()):
@@ -241,9 +240,6 @@ class PcapFuzzCampaign(FuzzingCampaign):
             
             # Use the base class's fuzzing loop for execution with all packets
             return super()._run_fuzzing_loop()
-        except Exception as e:
-            logger.error(f"PCAP campaign execution failed: {e}")
-            return False
     
 
 

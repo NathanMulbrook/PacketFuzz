@@ -505,49 +505,43 @@ def main() -> int:
     # Execute campaigns
     success_count = 0
     for campaign_class in campaigns:
-        try:
-            campaign = campaign_class()
-            apply_cli_overrides(campaign, args)
-            # Level 0: Basic progress via print (always shown)
+        campaign = campaign_class()
+        apply_cli_overrides(campaign, args)
+        # Level 0: Basic progress via print (always shown)
+        if args.verbose == 0:
+            print(f"Processing campaign: {campaign_class.__name__}")
+        else:
+            logger.info(f"Processing campaign: {campaign_class.__name__}")
+            
+        network_mode = "ENABLED" if getattr(campaign, 'output_network', True) else "DISABLED"
+        pcap_file = getattr(campaign, 'output_pcap', None) or getattr(campaign, 'pcap_filename', 'None')
+        dict_config = getattr(campaign, 'dictionary_config_file', None) or 'Default mappings'
+        
+        # Verbosity level 1: Show campaign configuration details
+        if args.verbose >= 1:
+            logger.info(f"  Network transmission: {network_mode}")
+            logger.info(f"  PCAP output: {pcap_file}")
+            logger.info(f"  Dictionary config: {dict_config}")
+        
+        # Verbosity level 2+: Show additional campaign details
+        if args.verbose >= 2:
+            logger.debug(f"  Campaign class: {campaign_class}")
+            logger.debug(f"  Packets to fuzz: {getattr(campaign, 'packets_to_fuzz', 'Unknown')}")
+            logger.debug(f"  Mutator: {getattr(campaign, 'mutator_manager', 'Default')}")
+            logger.debug(f"  Verbose mode: {getattr(campaign, 'verbose', False)}")
+        
+        # Always execute campaign, but if --disable-network is set, output_network will be False
+        if campaign.execute():
             if args.verbose == 0:
-                print(f"Processing campaign: {campaign_class.__name__}")
+                print(f"Campaign {campaign_class.__name__} completed successfully")
             else:
-                logger.info(f"Processing campaign: {campaign_class.__name__}")
-                
-            network_mode = "ENABLED" if getattr(campaign, 'output_network', True) else "DISABLED"
-            pcap_file = getattr(campaign, 'output_pcap', None) or getattr(campaign, 'pcap_filename', 'None')
-            dict_config = getattr(campaign, 'dictionary_config_file', None) or 'Default mappings'
-            
-            # Verbosity level 1: Show campaign configuration details
-            if args.verbose >= 1:
-                logger.info(f"  Network transmission: {network_mode}")
-                logger.info(f"  PCAP output: {pcap_file}")
-                logger.info(f"  Dictionary config: {dict_config}")
-            
-            # Verbosity level 2+: Show additional campaign details
-            if args.verbose >= 2:
-                logger.debug(f"  Campaign class: {campaign_class}")
-                logger.debug(f"  Packets to fuzz: {getattr(campaign, 'packets_to_fuzz', 'Unknown')}")
-                logger.debug(f"  Mutator: {getattr(campaign, 'mutator_manager', 'Default')}")
-                logger.debug(f"  Verbose mode: {getattr(campaign, 'verbose', False)}")
-            
-            # Always execute campaign, but if --disable-network is set, output_network will be False
-            if campaign.execute():
-                if args.verbose == 0:
-                    print(f"Campaign {campaign_class.__name__} completed successfully")
-                else:
-                    logger.info(f"Campaign {campaign_class.__name__} completed successfully")
-                success_count += 1
-            else:
-                if args.verbose == 0:
-                    print(f"Campaign {campaign_class.__name__} failed")
-                else:
-                    logger.error(f"Campaign {campaign_class.__name__} failed")
-        except Exception as e:
+                logger.info(f"Campaign {campaign_class.__name__} completed successfully")
+            success_count += 1
+        else:
             if args.verbose == 0:
-                print(f"Campaign {campaign_class.__name__} error: {e}")
+                print(f"Campaign {campaign_class.__name__} failed")
             else:
-                logger.error(f"Campaign {campaign_class.__name__} error: {e}")
+                logger.error(f"Campaign {campaign_class.__name__} failed")
     
     # Summary
     total_campaigns = len(campaigns)

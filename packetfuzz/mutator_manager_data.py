@@ -1075,12 +1075,9 @@ class MutatorManagerData:
         
         # Priority 2: Embedded packet configuration
         if hasattr(layer, 'get_field_fuzz_config'):
-            try:
-                embedded_config = layer.get_field_fuzz_config(field_name)
-                if embedded_config and embedded_config.fuzz_weight is not None:
-                    return embedded_config.fuzz_weight
-            except Exception:
-                pass
+            embedded_config = layer.get_field_fuzz_config(field_name)
+            if embedded_config and embedded_config.fuzz_weight is not None:
+                return embedded_config.fuzz_weight
         
         # Priority 3: Advanced mapping (campaign/user overrides)
         if dictionary_manager and hasattr(dictionary_manager, '_resolve_advanced_weight'):
@@ -1148,12 +1145,9 @@ class MutatorManagerData:
         
         # Priority 2: Embedded packet configuration
         if hasattr(layer, 'get_field_fuzz_config'):
-            try:
-                embedded_config = layer.get_field_fuzz_config(field_name)
-                if embedded_config and embedded_config.dictionary:
-                    dictionary_paths.extend(embedded_config.dictionary)
-            except Exception:
-                pass
+            embedded_config = layer.get_field_fuzz_config(field_name)
+            if embedded_config and embedded_config.dictionary:
+                dictionary_paths.extend(embedded_config.dictionary)
         
         # Priority 3: Advanced mapping (campaign/user overrides)
         if dictionary_manager and hasattr(dictionary_manager, '_resolve_advanced_dictionary'):
@@ -1636,12 +1630,9 @@ class MutatorManagerData:
                 s = v.strip()
             if s is None or s == "":
                 return None
-            try:
-                if s.lower().startswith(("0x", "+0x", "-0x")):
-                    return int(s, 16)
-                return int(s, 10)
-            except Exception:
-                return None
+            if s.lower().startswith(("0x", "+0x", "-0x")):
+                return int(s, 16)
+            return int(s, 10)
         def _clamp(v: int, mn: Optional[int], mx: Optional[int]) -> int:
             if mn is not None and v < mn:
                 v = mn

@@ -198,12 +198,9 @@ def extract_field_properties(packet, field_name: str) -> dict:
         properties['length_from'] = field_desc.length_from
         # Try to compute actual length if possible
         if packet and callable(field_desc.length_from):
-            try:
-                computed_length = field_desc.length_from(packet)
-                if isinstance(computed_length, int):
-                    properties['length'] = computed_length
-            except Exception:
-                pass  # Couldn't compute length, that's OK
+            computed_length = field_desc.length_from(packet)
+            if isinstance(computed_length, int):
+                properties['length'] = computed_length
     
     # Length control (this field controls another field's length)
     if hasattr(field_desc, 'length_of') and field_desc.length_of is not None:

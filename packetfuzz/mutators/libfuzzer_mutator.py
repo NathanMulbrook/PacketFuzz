@@ -324,24 +324,18 @@ class LibFuzzerMutator(BaseMutator):
         # Helper: mutate some bytes, return bytes
         def mutate_bytes_seed(b: bytes) -> bytes:
             """Helper function to mutate bytes with error handling."""
-            try:
-                return self._mutate_with_libfuzzer_multiround(b, dictionaries)
-            except Exception:
-                return b
+            return self._mutate_with_libfuzzer_multiround(b, dictionaries)
 
         # Helper: parse int from bytes/str
         def parse_int(data: bytes | str) -> Optional[int]:
             """Extract integer value from bytes or string data."""
-            try:
-                s = data.decode('utf-8', errors='ignore') if isinstance(data, (bytes, bytearray)) else str(data)
-                m = re.search(r"([+-]?0x[0-9a-fA-F]+|[+-]?\d+)", s)
-                if not m:
-                    return None
-                token = m.group(1)
-                base = 16 if token.lower().startswith('0x') else 10
-                return int(token, base)
-            except Exception:
+            s = data.decode('utf-8', errors='ignore') if isinstance(data, (bytes, bytearray)) else str(data)
+            m = re.search(r"([+-]?0x[0-9a-fA-F]+|[+-]?\d+)", s)
+            if not m:
                 return None
+            token = m.group(1)
+            base = 16 if token.lower().startswith('0x') else 10
+            return int(token, base)
 
         # Helper: clamp
         def clamp(v: int, mn: Optional[int], mx: Optional[int]) -> int:
@@ -369,10 +363,7 @@ class LibFuzzerMutator(BaseMutator):
                 allowed_ints = list(enum_map.keys())
                 if allowed_ints:
                     if val not in allowed_ints:
-                        try:
-                            val = allowed_ints[val % len(allowed_ints)]
-                        except Exception:
-                            pass
+                        val = allowed_ints[val % len(allowed_ints)]
             return val
 
         if kind == 'string':
@@ -398,10 +389,7 @@ class LibFuzzerMutator(BaseMutator):
             if hasattr(field_info, 'field_name') and field_info.field_name in ['Method', 'Path', 'Host', 'User_Agent']:
                 logger.info(f"LibFuzzer: Got mutated bytes: {mutated} (length: {len(mutated)})")
             
-            try:
-                s = mutated.decode('utf-8', errors='ignore')
-            except Exception:
-                s = mutated.decode('latin-1', errors='ignore')
+            s = mutated.decode('utf-8', errors='ignore')
                 
             # Apply field-specific length constraints for realistic fuzzing
             max_len = getattr(field_info, 'max_length', None)
@@ -472,54 +460,45 @@ class LibFuzzerMutator(BaseMutator):
         kind = getattr(field_info, 'kind', None) or getattr(field_info, 'field_kind', 'unknown')
         
         if kind in ('numeric', 'flags', 'enum'):
-            try:
-                # Try to parse as integer
-                s = data.decode('utf-8', errors='ignore')
-                m = re.search(r"([+-]?0x[0-9a-fA-F]+|[+-]?\d+)", s)
-                if m:
-                    token = m.group(1)
-                    base = 16 if token.lower().startswith('0x') else 10
-                    val = int(token, base)
-                    
-                    # Apply constraints
-                    min_val = getattr(field_info, 'min_value', None)
-                    max_val = getattr(field_info, 'max_value', None)
-                    if min_val is not None and val < min_val:
-                        val = min_val
-                    if max_val is not None and val > max_val:
-                        val = max_val
-                    
-                    # Handle enum mapping
-                    enum_map = getattr(field_info, 'enum_map', None)
-                    if enum_map and isinstance(enum_map, dict):
-                        allowed_ints = list(enum_map.keys())
-                        if allowed_ints and val not in allowed_ints:
-                            val = allowed_ints[val % len(allowed_ints)]
-                    
-                    return val
-            except Exception:
-                pass
+            # Try to parse as integer
+            s = data.decode('utf-8', errors='ignore')
+            m = re.search(r"([+-]?0x[0-9a-fA-F]+|[+-]?\d+)", s)
+            if m:
+                token = m.group(1)
+                base = 16 if token.lower().startswith('0x') else 10
+                val = int(token, base)
+                
+                # Apply constraints
+                min_val = getattr(field_info, 'min_value', None)
+                max_val = getattr(field_info, 'max_value', None)
+                if min_val is not None and val < min_val:
+                    val = min_val
+                if max_val is not None and val > max_val:
+                    val = max_val
+                
+                # Handle enum mapping
+                enum_map = getattr(field_info, 'enum_map', None)
+                if enum_map and isinstance(enum_map, dict):
+                    allowed_ints = list(enum_map.keys())
+                    if allowed_ints and val not in allowed_ints:
+                        val = allowed_ints[val % len(allowed_ints)]
+                
+                return val
             return 0
             
         elif kind == 'string':
-            try:
-                s = data.decode('utf-8', errors='ignore')
-                max_len = getattr(field_info, 'max_length', None)
-                if isinstance(max_len, int) and max_len > 0:
-                    s = s[:max_len]
-                return s
-            except Exception:
-                return ""
+            s = data.decode('utf-8', errors='ignore')
+            max_len = getattr(field_info, 'max_length', None)
+            if isinstance(max_len, int) and max_len > 0:
+                s = s[:max_len]
+            return s
                 
         elif kind == 'raw':
             return data
             
         else:
-            # For unknown kinds, try to return as string
-            try:
-                return data.decode('utf-8', errors='ignore')
-            except Exception:
-                return data
+            # For unknown kinds, return as string
+            return data.decode('utf-8', errors='ignore')
     
     def teardown(self) -> bool:
         """Clean up LibFuzzer resources."""

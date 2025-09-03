@@ -76,20 +76,17 @@ class DictionaryOnlyMutator(BaseMutator):
 
     @staticmethod
     def _parse_int_from_entry(entry: Any) -> Optional[int]:
-        try:
-            if isinstance(entry, (bytes, bytearray)):
-                s = entry.decode('utf-8', errors='ignore')
-            else:
-                s = str(entry)
-            # Extract first integer-like token (supports 0x, +/-)
-            m = re.search(r"([+-]?0x[0-9a-fA-F]+|[+-]?\d+)", s)
-            if not m:
-                return None
-            token = m.group(1)
-            base = 16 if token.lower().startswith('0x') else 10
-            return int(token, base)
-        except Exception:
+        if isinstance(entry, (bytes, bytearray)):
+            s = entry.decode('utf-8', errors='ignore')
+        else:
+            s = str(entry)
+        # Extract first integer-like token (supports 0x, +/-)
+        m = re.search(r"([+-]?0x[0-9a-fA-F]+|[+-]?\d+)", s)
+        if not m:
             return None
+        token = m.group(1)
+        base = 16 if token.lower().startswith('0x') else 10
+        return int(token, base)
 
     @staticmethod
     def _clamp(v: int, min_v: int, max_v: int) -> int:
@@ -138,10 +135,7 @@ class DictionaryOnlyMutator(BaseMutator):
             if enum_map and isinstance(enum_map, dict):
                 allowed_ints = list(enum_map.keys())
                 if allowed_ints and val not in allowed_ints:
-                    try:
-                        val = allowed_ints[val % len(allowed_ints)]
-                    except Exception:
-                        pass
+                    val = allowed_ints[val % len(allowed_ints)]
             return val
 
         if kind == 'string':
@@ -152,10 +146,7 @@ class DictionaryOnlyMutator(BaseMutator):
             max_len = getattr(field_info, 'max_length', None)
             if isinstance(max_len, int) and max_len > 0:
                 s = s[:max_len]
-            try:
-                return s.decode('utf-8', errors='ignore')
-            except Exception:
-                return s.decode('latin-1', errors='ignore')
+            return s.decode('utf-8', errors='ignore')
 
         if kind in ('options', 'list'):
             return None

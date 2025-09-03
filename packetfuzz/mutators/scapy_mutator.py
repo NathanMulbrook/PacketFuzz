@@ -50,36 +50,35 @@ class ScapyMutator(BaseMutator):
         
         # Primary strategy: Use Scapy's field-specific randomization
         if layer is not None:
-            try:
-                if field_name and field_name != 'unknown':
-                    # Get the actual Scapy field object from the layer
-                    field_obj = layer.get_field(field_name)
-                    
-                    if field_obj is None:
-                        logger.warning(f"ScapyMutator: Field '{field_name}' not found in layer {type(layer).__name__}")
-                    elif not hasattr(field_obj, 'randval'):
-                        logger.warning(f"ScapyMutator: Field '{field_name}' ({type(field_obj).__name__}) has no randval() method")
-                    else:
-                        try:
-                            rand_val = field_obj.randval()
-                            if rand_val is None:
-                                logger.warning(f"ScapyMutator: Field '{field_name}' randval() returned None")
-                            else:
-                                # Fix volatile values to get concrete random data
-                                if hasattr(rand_val, '_fix'):
-                                    mutated_value = rand_val._fix()
-                                    logger.debug(f"ScapyMutator: Successfully mutated {field_name}: {current_value} -> {mutated_value} (via randval()._fix())")
-                                    return mutated_value
-                                else:
-                                    logger.debug(f"ScapyMutator: Successfully mutated {field_name}: {current_value} -> {rand_val} (direct randval())")
-                                    return rand_val
-                        except Exception as e:
-                            logger.warning(f"ScapyMutator: randval() failed for field '{field_name}': {e}")
+            if field_name and field_name != 'unknown':
+                # Get the actual Scapy field object from the layer
+                field_obj = layer.get_field(field_name)
+                
+                if field_obj is None:
+                    logger.warning(f"ScapyMutator: Field '{field_name}' not found in layer {type(layer).__name__}")
+                elif not hasattr(field_obj, 'randval'):
+                    logger.warning(f"ScapyMutator: Field '{field_name}' ({type(field_obj).__name__}) has no randval() method")
                 else:
-                    logger.warning(f"ScapyMutator: Invalid field_name: {field_name}")
-                    
-            except Exception as e:
-                logger.warning(f"ScapyMutator: Layer field access failed for '{field_name}': {e}")
+                    try:
+                        rand_val = field_obj.randval()
+                        if rand_val is None:
+                            logger.warning(f"ScapyMutator: Field '{field_name}' randval() returned None")
+                        else:
+                            # Fix volatile values to get concrete random data
+                            if hasattr(rand_val, '_fix'):
+                                mutated_value = rand_val._fix()
+                                logger.debug(f"ScapyMutator: Successfully mutated {field_name}: {current_value} -> {mutated_value} (via randval()._fix())")
+                                return mutated_value
+                            else:
+                                logger.debug(f"ScapyMutator: Successfully mutated {field_name}: {current_value} -> {rand_val} (direct randval())")
+                                return rand_val
+                    except Exception as e:
+                        logger.debug(f"ScapyMutator: randval() failed for field '{field_name}': {e}")
+                        # Don't catch this - let the caller handle the failure
+                        raise
+            else:
+                logger.warning(f"ScapyMutator: Invalid field_name: {field_name}")
+                
         else:
             logger.debug(f"ScapyMutator: No layer provided for field '{field_name}', using fallback")
         
@@ -103,13 +102,12 @@ class ScapyMutator(BaseMutator):
         
         logger.debug(f"ScapyMutator: Fallback mutation for field '{field_name}', kind='{kind}', current_value={current_value}")
         
-        try:
-            if kind in ('options', 'list'):
-                # Return current_value as-is for complex field types
-                logger.debug(f"ScapyMutator: Fallback for complex field type '{kind}', returning unchanged")
-                return current_value
-                
-            elif kind in ('string', 'raw'):
+        if kind in ('options', 'list'):
+            # Return current_value as-is for complex field types
+            logger.debug(f"ScapyMutator: Fallback for complex field type '{kind}', returning unchanged")
+            return current_value
+            
+        elif kind in ('string', 'raw'):
                 # String/raw field fallback strategies
                 s = '' if current_value is None else str(current_value)
                 if len(s) == 0:
@@ -141,47 +139,38 @@ class ScapyMutator(BaseMutator):
                     logger.debug(f"ScapyMutator: Fallback large string unchanged: '{s[:50]}...'")
                     return s  # Return large strings unchanged
                     
+        else:
+            # Numeric, flags, enum, or unknown field fallback strategies
+            v = 0 if current_value is None else current_value
+            int_val = int(v)
+            # Multiple numeric mutation strategies
+            strategy = rng.randint(1, 6)
+            if strategy == 1:
+                mutated_value = int_val ^ rng.randint(1, 0xFFFF)  # XOR with random value
+                logger.debug(f"ScapyMutator: Fallback XOR mutation: {int_val} -> {mutated_value}")
+                return mutated_value
+            elif strategy == 2:
+                mutated_value = rng.randint(0, 65535)  # Random replacement
+                logger.debug(f"ScapyMutator: Fallback random replacement: {int_val} -> {mutated_value}")
+                return mutated_value
+            elif strategy == 3:
+                delta = rng.randint(-1000, 1000)
+                mutated_value = int_val + delta  # Arithmetic mutation
+                logger.debug(f"ScapyMutator: Fallback arithmetic mutation: {int_val} + {delta} = {mutated_value}")
+                return mutated_value
+            elif strategy == 4:
+                shift = rng.randint(1, 4)
+                mutated_value = int_val << shift  # Bit shift
+                logger.debug(f"ScapyMutator: Fallback bit shift: {int_val} << {shift} = {mutated_value}")
+                return mutated_value
+            elif strategy == 5:
+                or_val = rng.randint(1, 0xFF)
+                mutated_value = int_val | or_val  # OR with random value
+                logger.debug(f"ScapyMutator: Fallback OR mutation: {int_val} | {or_val} = {mutated_value}")
+                return mutated_value
             else:
-                # Numeric, flags, enum, or unknown field fallback strategies
-                v = 0 if current_value is None else current_value
-                try:
-                    int_val = int(v)
-                    # Multiple numeric mutation strategies
-                    strategy = rng.randint(1, 6)
-                    if strategy == 1:
-                        mutated_value = int_val ^ rng.randint(1, 0xFFFF)  # XOR with random value
-                        logger.debug(f"ScapyMutator: Fallback XOR mutation: {int_val} -> {mutated_value}")
-                        return mutated_value
-                    elif strategy == 2:
-                        mutated_value = rng.randint(0, 65535)  # Random replacement
-                        logger.debug(f"ScapyMutator: Fallback random replacement: {int_val} -> {mutated_value}")
-                        return mutated_value
-                    elif strategy == 3:
-                        delta = rng.randint(-1000, 1000)
-                        mutated_value = int_val + delta  # Arithmetic mutation
-                        logger.debug(f"ScapyMutator: Fallback arithmetic mutation: {int_val} + {delta} = {mutated_value}")
-                        return mutated_value
-                    elif strategy == 4:
-                        shift = rng.randint(1, 4)
-                        mutated_value = int_val << shift  # Bit shift
-                        logger.debug(f"ScapyMutator: Fallback bit shift: {int_val} << {shift} = {mutated_value}")
-                        return mutated_value
-                    elif strategy == 5:
-                        or_val = rng.randint(1, 0xFF)
-                        mutated_value = int_val | or_val  # OR with random value
-                        logger.debug(f"ScapyMutator: Fallback OR mutation: {int_val} | {or_val} = {mutated_value}")
-                        return mutated_value
-                    else:
-                        # Boundary values
-                        boundaries = [0, 1, 255, 256, 65535, 65536]
-                        mutated_value = rng.choice(boundaries)
-                        logger.debug(f"ScapyMutator: Fallback boundary value: {int_val} -> {mutated_value}")
-                        return mutated_value
-                except Exception as e:
-                    logger.warning(f"ScapyMutator: Numeric fallback failed for field '{field_name}': {e}")
-                    return v
-                    
-        except Exception as e:
-            # Ultimate fallback: return original value
-            logger.error(f"ScapyMutator: All fallback strategies failed for field '{field_name}': {e}")
-            return current_value
+                # Boundary values
+                boundaries = [0, 1, 255, 256, 65535, 65536]
+                mutated_value = rng.choice(boundaries)
+                logger.debug(f"ScapyMutator: Fallback boundary value: {int_val} -> {mutated_value}")
+                return mutated_value

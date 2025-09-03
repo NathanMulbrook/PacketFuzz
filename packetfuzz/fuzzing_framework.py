@@ -480,10 +480,7 @@ class FuzzField:
     
     def __len__(self) -> int:
         """Return the length of the coerced bytes representation."""
-        try:
-            return len(self._coerce_to_bytes())
-        except Exception:
-            return 0
+        return len(self._coerce_to_bytes())
     
     def __getitem__(self, idx: int) -> int:
         """Get item from the coerced bytes representation."""
@@ -1572,13 +1569,10 @@ class FuzzingCampaign:
                             logger.info(f"[SEND] Iteration {iteration}: {pkt.summary()}")
                             logger.info(f"[SEND] Fuzzed fields: {fuzzed_fields_str}")
                         # Apply campaign target addressing based on network layer (using local pkt)
-                        try:
-                            if (socket_type in (SocketType.RAW_IP, SocketType.RAW_UDP, SocketType.RAW_TCP)) and pkt.haslayer(IP):
-                                pkt[IP].dst = self.target
-                            elif socket_type == SocketType.RAW_ETHERNET and pkt.haslayer(Ether):
-                                pkt[Ether].dst = self.target
-                        except Exception:
-                            pass
+                        if (socket_type in (SocketType.RAW_IP, SocketType.RAW_UDP, SocketType.RAW_TCP)) and pkt.haslayer(IP):
+                            pkt[IP].dst = self.target
+                        elif socket_type == SocketType.RAW_ETHERNET and pkt.haslayer(Ether):
+                            pkt[Ether].dst = self.target
                         
                         # Create a separate copy for PCAP output to avoid contaminating field analysis
                         # Keep the original fuzzed packet intact for field reporting

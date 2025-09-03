@@ -254,13 +254,9 @@ class MutatorManager:
         # Write debug report of all fuzzed packets (only in debug mode)
         if VERBOSITY_LEVEL >= 3:  # Only in debug mode
             #TODO update reporting
-            try:
-                log_dir = Path(DEFAULT_LOG_DIR)
-                log_dir.mkdir(parents=True, exist_ok=True)
-                write_debug_packet_log(self.data.packet_list, file_path=str(log_dir / "fuzz_fields_output_report.txt"), title="Fuzz Fields Output")
-            except Exception as e:
-                logger.debug(f"Failed to write packet report: {e}")
-                # Continue execution even if report writing fails
+            log_dir = Path(DEFAULT_LOG_DIR)
+            log_dir.mkdir(parents=True, exist_ok=True)
+            write_debug_packet_log(self.data.packet_list, file_path=str(log_dir / "fuzz_fields_output_report.txt"), title="Fuzz Fields Output")
         
         # Return the fuzzed packets from the data object
         return self.data
@@ -294,14 +290,9 @@ class MutatorManager:
             # Handle default values for the field if present
             if field.default_values:
                 pick_rng = self.fuzz_config.rng or random
-                try:
-                    pick = pick_rng.choice(field.default_values)
-                    self.data.validate_and_assign(field, pick)
-                    # Not recording this as a mutation; it's a deterministic assignment
-                except Exception:
-                    logger.warning(
-                        f"Failed to assign picked value {pick} to field {field.field_key} in packet index {field.packet_index}, using explicit value"
-                    )
+                pick = pick_rng.choice(field.default_values)
+                self.data.validate_and_assign(field, pick)
+                # Not recording this as a mutation; it's a deterministic assignment
             else:
                 dictionary_entries = self.dictionary_manager.get_dictionary_entries(
                     getattr(field, 'dictionary_paths', []) or []
@@ -480,22 +471,19 @@ class MutatorManager:
             self.data.record_field_mutation(field_info.field_key, field_info.packet_index, False, mutator_type if 'mutator_type' in locals() else "unknown")
             
             # Revert to original value through the data class
-            try:
-                # Get the original value and revert
-                original_value = field_info.current_value
-                if original_value is not None:
-                    # Try to revert to original value
-                    revert_success = self.data.validate_and_assign(field_info, original_value)
-                    if field_info.field_name in self.CRITICAL_FIELDS:
-                        if revert_success:
-                            logger.debug(f"Reverted {field_info.field_key} to {original_value} (mutation fallback)")
-                        else:
-                            logger.debug(f"Failed to revert {field_info.field_key} to {original_value} (mutation fallback)")
-                else:
-                    if field_info.field_name in self.CRITICAL_FIELDS:
-                        logger.debug(f"No original value to revert for {field_info.field_key} (mutation fallback)")
-            except Exception as e:
-                logger.debug(f"Exception during revert for {field_info.field_key}: {e}")
+            # Get the original value and revert
+            original_value = field_info.current_value
+            if original_value is not None:
+                # Try to revert to original value
+                revert_success = self.data.validate_and_assign(field_info, original_value)
+                if field_info.field_name in self.CRITICAL_FIELDS:
+                    if revert_success:
+                        logger.debug(f"Reverted {field_info.field_key} to {original_value} (mutation fallback)")
+                    else:
+                        logger.debug(f"Failed to revert {field_info.field_key} to {original_value} (mutation fallback)")
+            else:
+                if field_info.field_name in self.CRITICAL_FIELDS:
+                    logger.debug(f"No original value to revert for {field_info.field_key} (mutation fallback)")
         else:
             # Record successful mutation using centralized tracking
             self.data.record_field_mutation(field_info.field_key, field_info.packet_index, True, mutator_type if 'mutator_type' in locals() else "unknown")
@@ -557,59 +545,48 @@ class MutatorManager:
         mutated_packets = []
         for packet in self.data.original_packets:
             # Get packet-level dictionaries using consolidated API
-            try:
-                dictionary_paths = self.dictionary_manager.get_packet_dictionaries(packet)
-                if not dictionary_paths:
-                    all_paths = set()
-                    current_layer = packet
-                    while current_layer and not isinstance(current_layer, NoPayload):
-                        layer_name = current_layer.__class__.__name__
-                        if hasattr(current_layer, 'fields_desc'):
+            dictionary_paths = self.dictionary_manager.get_packet_dictionaries(packet)
+            if not dictionary_paths:
+                all_paths = set()
+                current_layer = packet
+                while current_layer and not isinstance(current_layer, NoPayload):
+                    layer_name = current_layer.__class__.__name__
+                    if hasattr(current_layer, 'fields_desc'):
                             for field_desc in current_layer.fields_desc:
                                 field_name = field_desc.name
                                 from .mutator_manager_data import FieldMetadata
-                                try:
-                                    field_meta = FieldMetadata(
-                                        field_key=f"{layer_name}[0].{field_name}",
-                                        field_name=field_name,
-                                        layer_name=layer_name,
-                                        layer_index=0,
-                                        packet_index=0,
+                                field_meta = FieldMetadata(
+                                    field_key=f"{layer_name}[0].{field_name}",
+                                    field_name=field_name,
+                                    layer_name=layer_name,
+                                    layer_index=0,
+                                    packet_index=0,
                                         field_type=field_desc.__class__.__name__,
                                         field_kind="unknown",
                                         current_value=getattr(current_layer, field_name, None),
                                         max_length=getattr(field_desc, 'sz', None)
                                     )
-                                    field_dicts = self.data._resolve_field_dictionaries(
-                                        field_meta, current_layer, self.dictionary_manager
-                                    )
-                                    all_paths.update(field_dicts)
-                                except Exception:
-                                    continue
-                        if hasattr(current_layer, 'payload'):
-                            current_layer = current_layer.payload
-                        else:
-                            break
-                    dictionary_paths = list(all_paths)
-                dictionaries = self.dictionary_manager.get_dictionary_entries(dictionary_paths)
-            except Exception as e:
-                logging.warning(f"Error loading dictionaries for packet-level fuzzing: {e}")
-                dictionaries = []
+                                field_dicts = self.data._resolve_field_dictionaries(
+                                    field_meta, current_layer, self.dictionary_manager
+                                )
+                                all_paths.update(field_dicts)
+                    if hasattr(current_layer, 'payload'):
+                        current_layer = current_layer.payload
+                    else:
+                        break
+                dictionary_paths = list(all_paths)
+            dictionaries = self.dictionary_manager.get_dictionary_entries(dictionary_paths)
 
             # Perform mutations for each iteration
             from scapy.packet import Raw
             for _ in range(iterations):
-                try:
-                    packet_bytes = bytes(packet)
-                    if mutator:
-                        fuzzed_bytes = mutator.mutate_bytes(packet_bytes, dictionaries)
-                    else:
-                        fuzzed_bytes = packet_bytes
-                    fuzzed_packet = Raw(fuzzed_bytes)
-                    mutated_packets.append(fuzzed_packet)
-                except Exception as e:
-                    logging.warning(f"Error during packet-level fuzzing iteration: {e}")
-                    continue
+                packet_bytes = bytes(packet)
+                if mutator:
+                    fuzzed_bytes = mutator.mutate_bytes(packet_bytes, dictionaries)
+                else:
+                    fuzzed_bytes = packet_bytes
+                fuzzed_packet = Raw(fuzzed_bytes)
+                mutated_packets.append(fuzzed_packet)
 
         # Update MutatorManagerData with mutated packets
         self.data.packet_list = mutated_packets
