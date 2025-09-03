@@ -197,37 +197,28 @@ class MetricsCalculator:
     @staticmethod
     def calculate_field_metrics(history_entries: List[Any]) -> Dict[str, Any]:
         """Calculate field-level fuzzing metrics"""
-        try:
-            field_distribution = {}
-            packets_with_fields = 0
-            packets_without_fields = 0
-            
-            for entry in history_entries:
-                if hasattr(entry, 'fuzzed_fields') and entry.fuzzed_fields:
-                    packets_with_fields += 1
-                    for field_name in entry.fuzzed_fields:
-                        field_distribution[field_name] = field_distribution.get(field_name, 0) + 1
-                else:
-                    packets_without_fields += 1
-            
-            # Get top most fuzzed fields using configuration constant
-            sorted_fields = sorted(field_distribution.items(), key=lambda x: x[1], reverse=True)
-            most_fuzzed_fields = [field for field, count in sorted_fields[:DEFAULT_TOP_FIELDS_COUNT]]
-            
-            return {
-                'fuzzed_field_distribution': field_distribution,
-                'packets_with_fuzzed_fields': packets_with_fields,
-                'packets_without_fuzzed_fields': packets_without_fields,
-                'most_fuzzed_fields': most_fuzzed_fields
-            }
-        except Exception as e:
-            logger.error(f"Failed to calculate field metrics: {e}")
-            return {
-                'fuzzed_field_distribution': {},
-                'packets_with_fuzzed_fields': 0,
-                'packets_without_fuzzed_fields': len(history_entries) if history_entries else 0,
-                'most_fuzzed_fields': []
-            }
+        field_distribution = {}
+        packets_with_fields = 0
+        packets_without_fields = 0
+
+        for entry in history_entries:
+            if hasattr(entry, 'fuzzed_fields') and entry.fuzzed_fields:
+                packets_with_fields += 1
+                for field_name in entry.fuzzed_fields:
+                    field_distribution[field_name] = field_distribution.get(field_name, 0) + 1
+            else:
+                packets_without_fields += 1
+
+        # Get top most fuzzed fields using configuration constant
+        sorted_fields = sorted(field_distribution.items(), key=lambda x: x[1], reverse=True)
+        most_fuzzed_fields = [field for field, count in sorted_fields[:DEFAULT_TOP_FIELDS_COUNT]]
+
+        return {
+            'fuzzed_field_distribution': field_distribution,
+            'packets_with_fuzzed_fields': packets_with_fields,
+            'packets_without_fuzzed_fields': packets_without_fields,
+            'most_fuzzed_fields': most_fuzzed_fields
+        }
     
     @staticmethod
     def calculate_protocol_metrics(history_entries: List[Any]) -> Dict[str, Any]:
@@ -405,37 +396,20 @@ class ReportingEngine:
         """Get list of available report levels"""
         return [level.value for level in self.generators.keys()]
     
-    def generate_report(
-        self,
-        campaign: Any,
-        campaign_context: Any,
-        history_entries: List[Any],
-        level: ReportLevel = ReportLevel.TECHNICAL,
-        output_format: str = 'html',
-        output_path: Optional[str] = None
-    ) -> str:
+    def generate_report(self, level: ReportLevel, output_format: str, output_path: str = None) -> str:
         """
-        Generate comprehensive report for campaign
-        
-        Args:
-            campaign: The fuzzing campaign instance
-            campaign_context: Campaign context containing mutator data and runtime info
-            history_entries: List of FuzzHistoryEntry objects from the campaign
-            level: Report detail level (executive, technical, forensics)
-            output_format: Export format (html, json, csv, etc.)
-            output_path: Optional custom output path
-            
+        Generate a report at the specified level and format.
+        output_format: Export format (html, json, csv, etc.)
+        output_path: Optional custom output path
         Returns:
             Path to the generated report file
         """
         # Validate inputs
         if level not in self.generators:
             raise ValueError(f"Unsupported report level: {level}. Available: {self.get_available_levels()}")
-        
         if output_format not in self.exporters:
             raise ValueError(f"Unsupported output format: {output_format}. Available: {self.get_available_formats()}")
-        
-        # Calculate core metrics with campaign context
+        # ...existing code...
         metrics = self._calculate_metrics(history_entries, campaign_context)
         
         # Perform protocol analysis

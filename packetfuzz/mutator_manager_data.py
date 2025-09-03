@@ -418,9 +418,6 @@ class MutatorManagerData:
             self._finalize_preprocessing()
             
         except Exception as e:
-            error_msg = f"Preprocessing failed: {e}"
-            self.preprocessing_errors.append(error_msg)
-            logger.error(error_msg)
             raise
     
     def _finalize_preprocessing(self) -> None:
@@ -1559,23 +1556,8 @@ class MutatorManagerData:
             return {'is_fuzzfield': False}
         
         return {
-            'is_fuzzfield': True,
-            'values': field_value.values or [],
-            'dictionaries': field_value.dictionaries or [],
-            'fuzz_weight': field_value.fuzz_weight,
-            'mutators': list(field_value.mutators.keys()) if isinstance(field_value.mutators, dict) else [],  # Legacy list for compatibility
-            'mutator_weights': field_value.mutators if isinstance(field_value.mutators, dict) else {},  # New dict format
-            'scapy_fuzz_weight': field_value.scapy_fuzz_weight,
-            'dictionary_only_weight': field_value.dictionary_only_weight,
-            'use_scapy_fuzz': field_value.use_scapy_fuzz,
-            'dictionary_override': getattr(field_value, 'dictionary_override', False)
-        }
-    
-    def _build_global_field_index(self) -> None:
-        """Build global index for cross-packet field analysis."""
-        for packet_data in self.packet_data:
-            for field_key, field_metadata in packet_data.fields.items():
-                if field_key not in self.global_field_index:
+            except Exception as e:
+                raise
                     self.global_field_index[field_key] = []
                 self.global_field_index[field_key].append(
                     (packet_data.packet_index, field_key)

@@ -55,8 +55,10 @@ def get_all_known_layer_names() -> Set[str]:
         
     except ImportError as e:
         logger.warning(f"Could not import Scapy config: {e}")
+        raise
     except Exception as e:
         logger.warning(f"Error accessing Scapy layer registry: {e}")
+        raise
     
     # Method 2: Get fuzzing categories from FIELD_NAME_WEIGHTS
     try:
@@ -74,8 +76,10 @@ def get_all_known_layer_names() -> Set[str]:
         
     except ImportError as e:
         logger.warning(f"Could not import default_mappings: {e}")
+        raise
     except Exception as e:
         logger.warning(f"Error accessing FIELD_NAME_WEIGHTS: {e}")
+        raise
     
     # Cache the result
     _layer_cache['all_layers'] = all_layer_names

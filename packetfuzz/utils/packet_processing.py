@@ -215,14 +215,10 @@ def convert_to_scapy(data: bytes, protocol_hint: Optional[str] = None) -> Packet
     
     # Try parsers in order
     for parser in parsers:
-        try:
-            pkt = parser(data)
-            # Prefer parsers that create multiple layers
-            if hasattr(pkt, 'layers') and len(pkt.layers()) > 1:
-                return pkt
-        except Exception as e:
-            logger.debug(f"Parser {parser.__name__} failed: {e}")
-            continue
+        pkt = parser(data)
+        # Prefer parsers that create multiple layers
+        if hasattr(pkt, 'layers') and len(pkt.layers()) > 1:
+            return pkt
     
     # Fallback to Raw
     return Raw(data)

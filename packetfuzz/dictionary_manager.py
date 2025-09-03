@@ -362,16 +362,10 @@ class DictionaryManager:
             
         combined_entries = []
         for dict_path in dictionary_paths:
-            try:
-                entries = self._load_dictionary_file(dict_path)
-                combined_entries.extend(entries)
-            except FileNotFoundError as e:
-                logger.warning(f"Dictionary file not found: {dict_path} ({e})")
-            except Exception as e:
-                logger.error(f"Error loading dictionary entries from {dict_path}: {e}")
+            entries = self._load_dictionary_file(dict_path)  # Let any error propagate
+            combined_entries.extend(entries)
         # Remove duplicates within this batch while preserving order
         unique_entries = list(dict.fromkeys(combined_entries))
-        
         return unique_entries
     
     def _load_dictionary_file(self, dict_path: str) -> List[bytes]:
