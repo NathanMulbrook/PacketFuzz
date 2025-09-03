@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Dictionary Management Tests - Simplified Version
 
@@ -18,16 +17,13 @@ from pathlib import Path
 from typing import Dict, List, Any
 from scapy.all import IP, TCP, UDP, DNS, DNSQR, Raw
 
-# Add parent directory to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from packetfuzz.dictionary_manager import DictionaryManager
 from packetfuzz.fuzzing_framework import FuzzingCampaign
 
-# Import packet extensions to enable field_fuzz() method
 import packetfuzz.packet_extensions
 
-# Import from conftest with proper path handling
 try:
     from conftest import create_test_packet, DictionaryTestCampaign
 except ImportError:
@@ -52,9 +48,6 @@ except ImportError:
             
             class DictionaryTestCampaign:
                 """Test campaign for dictionary functionality validation."""
-                pass
-
-
 class TestBasicDictionaryManager(unittest.TestCase):
     """Test basic dictionary manager functionality that exists"""
     
@@ -65,16 +58,14 @@ class TestBasicDictionaryManager(unittest.TestCase):
     
     def test_manager_with_config_file(self):
         """Test DictionaryManager with explicit config file"""
-        # The DictionaryManager constructor doesn't take user_config_file
-        # Configuration is now handled at the MutatorManager level
-        # Just test basic manager creation with dictionary path
+
         config_path = "examples/config/user_dictionary_config.py"
         if os.path.exists(config_path):
-            # Test manager creation with dictionary_path instead
+
             manager = DictionaryManager(dictionary_path="examples/dictionaries")
             assert manager is not None
         else:
-            # Create manager without config file
+
             manager = DictionaryManager()
             assert manager is not None
     
@@ -87,21 +78,19 @@ class TestBasicDictionaryManager(unittest.TestCase):
         assert isinstance(packet_dicts, list)
         assert len(packet_dicts) == 0  # Should not have dictionaries
 
-
 class TestDictionaryLoading(unittest.TestCase):
     """Test dictionary loading functionality"""
     
     def test_dictionary_entries_loading(self):
         """Test loading dictionary entries from files"""
         manager = DictionaryManager()
-        
-        # Create temporary dictionary file
+
         with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as tmp_file:
             tmp_file.write("test1\ntest2\ntest3\n")
             tmp_path = tmp_file.name
         
         try:
-            # Test loading entries
+            # Added fix
             entries = manager.get_dictionary_entries([tmp_path])
             assert isinstance(entries, list)
             assert b"test1" in entries
@@ -122,8 +111,6 @@ class TestDictionaryLoading(unittest.TestCase):
         manager = DictionaryManager()
         entries = manager.get_dictionary_entries(["/nonexistent/path.txt"])
         assert isinstance(entries, list)
-        # Should return empty list if file doesn't exist
-
 
 class TestAdvancedMappingFunctionality(unittest.TestCase):
     """Test advanced mapping functionality that still exists"""
@@ -131,16 +118,15 @@ class TestAdvancedMappingFunctionality(unittest.TestCase):
     def test_get_merged_field_mapping(self):
         """Test getting merged field mapping"""
         manager = DictionaryManager()
-        # Test with empty mapping - should not fail
+
         mapping = manager.get_merged_field_mapping([], "", "", {})
         assert isinstance(mapping, list)
     
     def test_expand_macro(self):
         """Test macro expansion functionality"""
-        # Test basic macro that should exist
+
         expanded = DictionaryManager.expand_macro("test")
         assert isinstance(expanded, list)
-
 
 class TestDictionaryConfiguration(unittest.TestCase):
     """Test dictionary configuration functionality"""
@@ -154,14 +140,10 @@ class TestDictionaryConfiguration(unittest.TestCase):
         """Test DictionaryManager with global config"""
         config_path = "examples/config/user_dictionary_config.py"
         if os.path.exists(config_path):
-            # Test with dictionary_path instead of user_config_file
+
             manager = DictionaryManager(dictionary_path="examples/dictionaries")
             assert manager is not None
         else:
-            # Create minimal manager if config doesn't exist
+
             manager = DictionaryManager()
             assert manager is not None
-
-
-if __name__ == '__main__':
-    unittest.main()

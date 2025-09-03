@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Callback tests for the fuzzing framework.
 Tests custom send callbacks and related callback scenarios.
@@ -12,7 +11,6 @@ import tempfile
 import shutil
 from pathlib import Path
 
-# Add the project root to sys.path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from packetfuzz.fuzzing_framework import FuzzingCampaign, CallbackResult, CampaignContext
@@ -35,7 +33,7 @@ class CallbackTest(unittest.TestCase):
     def custom_send_callback(self, fuzzed_packet, context: CampaignContext):
         """Custom callback function to track sent packets during testing."""
         self.callback_calls.append("custom_send")
-        # Ensure dport is always an integer
+
         custom_packet = IP(dst=context.campaign.target)/TCP(dport=int(8080))/Raw(load=b"CustomTCPPayload")
         self.sent_packets.append(custom_packet)
         context.shared_data['custom_sends'] = context.shared_data.get('custom_sends', 0) + 1
@@ -143,16 +141,13 @@ class CallbackTest(unittest.TestCase):
         """Test response capture functionality using fuzz history"""
         from datetime import datetime
         from packetfuzz.fuzzing_framework import FuzzHistoryEntry
-        
-        # Create campaign and context
+
         campaign = FuzzingCampaign()
         context = CampaignContext(campaign)
-        
-        # Create a test packet and mock response
+
         test_packet = IP(dst="192.168.1.1")/TCP(dport=80)/Raw(load=b"GET / HTTP/1.1\r\n\r\n")
         mock_response = IP(src="192.168.1.1", dst="192.168.1.2")/TCP(sport=80)/Raw(load=b"HTTP/1.1 200 OK\r\n\r\n")
-        
-        # Create history entry and add to context
+
         sent_time = datetime.now()
         history_entry = FuzzHistoryEntry(
             packet_bytes=bytes(test_packet),
@@ -160,12 +155,10 @@ class CallbackTest(unittest.TestCase):
             iteration=0
         )
         context.fuzz_history.append(history_entry)
-        
-        # Update history entry with response
+
         context.fuzz_history[-1].timestamp_received = datetime.now()
         context.fuzz_history[-1].response = mock_response
-        
-        # Verify the history entry
+
         self.assertEqual(len(context.fuzz_history), 1)
         self.assertEqual(context.fuzz_history[0].packet_bytes, bytes(test_packet))
         self.assertEqual(context.fuzz_history[0].response, mock_response)
@@ -173,8 +166,7 @@ class CallbackTest(unittest.TestCase):
         self.assertIsNotNone(context.fuzz_history[0].timestamp_received)
         self.assertIsNotNone(context.fuzz_history[0].get_response_time())
         self.assertFalse(context.fuzz_history[0].crashed)
-        
-        # Test max_history_size by adding more entries
+
         context.max_history_size = 3
         for i in range(1, 5):
             history_entry = FuzzHistoryEntry(
@@ -182,12 +174,11 @@ class CallbackTest(unittest.TestCase):
                 timestamp_sent=datetime.now(),
                 iteration=i
             )
-            # Maintain history size limit
+
             if len(context.fuzz_history) >= context.max_history_size:
                 context.fuzz_history.pop(0)  # Remove oldest entry
             context.fuzz_history.append(history_entry)
-        
-        # Verify history size and contents
+
         self.assertEqual(len(context.fuzz_history), 3)
         self.assertEqual(context.fuzz_history[0].iteration, 2)
         self.assertEqual(context.fuzz_history[1].iteration, 3)

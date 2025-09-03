@@ -1666,22 +1666,21 @@ class FuzzingCampaign:
                 if self.duration and (time.time() - start_time) >= self.duration:
                     break
 
+                # Get packet for this iteration - common for all send modes
+                packet = fuzzed_packets[iteration] if fuzzed_packets and iteration < len(fuzzed_packets) else None
+                
                 # Execute pre-send callback with error handling
                 if self.pre_send_callback:
-                    pkt_arg = fuzzed_packets[iteration] if fuzzed_packets and iteration < len(fuzzed_packets) else None
                     result = self.callback_manager.execute_callback(
-                        self.pre_send_callback, "pre_send", self.context, pkt_arg
+                        self.pre_send_callback, "pre_send", self.context, packet
                     )
                     
                     # Handle callback result - determine if execution should continue
                     if result == CallbackResult.FAIL_CRASH:
-                        self.callback_manager.handle_crash("pre_send", pkt_arg, self.context)
+                        self.callback_manager.handle_crash("pre_send", packet, self.context)
                         return False
                     elif result == CallbackResult.NO_SUCCESS:
-                        self.callback_manager.handle_no_success("pre_send", self.context, pkt_arg)
-
-                # Get packet for this iteration - common for all send modes
-                packet = fuzzed_packets[iteration] if fuzzed_packets and iteration < len(fuzzed_packets) else None
+                        self.callback_manager.handle_no_success("pre_send", self.context, packet)
                 if packet is None:
                     continue
                     

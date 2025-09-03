@@ -22,7 +22,7 @@ class QuickStartCampaign(FuzzingCampaign):
     """Minimal fuzzing campaign - just the essentials."""
     name = "Quick Start"
     socket_config = ManagedUDPConfig(target="192.168.1.100", port=53)
-    iterations = 100
+    iterations = 10
     verbose = False  # Disable verbose mode to show the difference
     packet = (
               HTTP() / 
@@ -33,7 +33,7 @@ class QuickStartCampaignMultilayer(FuzzingCampaign):
     """Minimal fuzzing campaign - just the essentials."""
     name = "Quick Start Multilayer"
     socket_config = RawIPConfig(target="192.168.1.100")
-    iterations = 100
+    iterations = 10
     verbose = False  # Disable verbose mode to show the difference
     packet = (IP() /
                 TCP() /
