@@ -20,6 +20,14 @@ class SocketConfigType(str, Enum):
     RAW_IP = "raw_ip_config"
     RAW_TCP = "raw_tcp_config"
     RAW_ETHERNET = "raw_ethernet_config"
+    FTP_CLIENT = "ftp_client_config"
+    FTP_SERVER = "ftp_server_config"
+    TFTP_CLIENT = "tftp_client_config"
+    TFTP_SERVER = "tftp_server_config"
+    TELNET_CLIENT = "telnet_client_config"
+    TELNET_SERVER = "telnet_server_config"
+    MODBUS_CLIENT = "modbus_client_config"
+    MODBUS_SERVER = "modbus_server_config"
 
 
 class SocketType(str, Enum):
@@ -138,6 +146,94 @@ class SocketType(str, Enum):
     Use case: Server-side UDP fuzzing, protocol testing as server
     """
 
+    FTP_CLIENT = "ftp_client"
+    """FTP client socket - connects to FTP servers for data fuzzing
+    
+    Requirements:
+    - FTP server must be available
+    - Supports active and passive modes
+    - Uses ftplib for protocol handling
+    
+    Use case: Fuzzing data sent to FTP servers, file upload fuzzing
+    """
+
+    FTP_SERVER = "ftp_server"
+    """FTP server socket - accepts FTP client connections
+    
+    Requirements:
+    - Port must be available for binding (default 21)
+    - Uses pyftpdlib for server implementation
+    - Supports active and passive modes
+    
+    Use case: Fuzzing data received from FTP clients, server-side fuzzing
+    """
+
+    TFTP_CLIENT = "tftp_client"
+    """TFTP client socket - connects to TFTP servers for data fuzzing
+    
+    Requirements:
+    - TFTP server must be available
+    - Uses tftpy for protocol handling
+    - UDP-based protocol (port 69)
+    
+    Use case: Fuzzing data sent to TFTP servers, file upload fuzzing
+    """
+
+    TFTP_SERVER = "tftp_server"
+    """TFTP server socket - accepts TFTP client connections
+    
+    Requirements:
+    - Port must be available for binding (default 69)
+    - Uses tftpy for server implementation
+    - UDP-based protocol
+    
+    Use case: Fuzzing data received from TFTP clients, server-side fuzzing
+    """
+
+    TELNET_CLIENT = "telnet_client"
+    """Telnet client socket - connects to Telnet servers for data fuzzing
+    
+    Requirements:
+    - Telnet server must be available
+    - Uses telnetlib for protocol handling
+    - TCP-based protocol (port 23)
+    
+    Use case: Fuzzing data sent to Telnet servers, command fuzzing
+    """
+
+    TELNET_SERVER = "telnet_server"
+    """Telnet server socket - accepts Telnet client connections
+    
+    Requirements:
+    - Port must be available for binding (default 23)
+    - Uses custom implementation for server
+    - TCP-based protocol
+    
+    Use case: Fuzzing data received from Telnet clients, server-side fuzzing
+    """
+
+    MODBUS_CLIENT = "modbus_client"
+    """Modbus client socket - connects to Modbus servers/devices for industrial protocol fuzzing
+    
+    Requirements:
+    - Modbus TCP server/device must be available
+    - Uses pymodbus for protocol handling
+    - TCP-based protocol (port 502)
+    
+    Use case: Fuzzing industrial control systems, PLC communication, and SCADA systems
+    """
+
+    MODBUS_SERVER = "modbus_server"
+    """Modbus server socket - acts as a Modbus server for client application testing
+    
+    Requirements:
+    - Port must be available for binding (default 502)
+    - Uses pymodbus for server implementation
+    - TCP-based protocol
+    
+    Use case: Fuzzing Modbus clients, HMIs, and SCADA system responses
+    """
+
     @classmethod
     def get_valid_types(cls) -> list[str]:
         """Get list of all valid socket type strings."""
@@ -173,7 +269,15 @@ class SocketType(str, Enum):
             SocketType.MANAGED_UDP: [],
             SocketType.CANBUS: ["CAN"],
             SocketType.SERVER_TCP: [],
-            SocketType.SERVER_UDP: []
+            SocketType.SERVER_UDP: [],
+            SocketType.FTP_CLIENT: [],
+            SocketType.FTP_SERVER: [],
+            SocketType.TFTP_CLIENT: [],
+            SocketType.TFTP_SERVER: [],
+            SocketType.TELNET_CLIENT: [],
+            SocketType.TELNET_SERVER: [],
+            SocketType.MODBUS_CLIENT: [],
+            SocketType.MODBUS_SERVER: []
         }
         return header_requirements.get(self, [])
 
@@ -188,7 +292,15 @@ class SocketType(str, Enum):
             SocketType.MANAGED_UDP: "Managed UDP connection - standard sockets",
             SocketType.CANBUS: "CAN bus - automotive protocols",
             SocketType.SERVER_TCP: "TCP server - accepts incoming connections",
-            SocketType.SERVER_UDP: "UDP server - receives datagrams"
+            SocketType.SERVER_UDP: "UDP server - receives datagrams",
+            SocketType.FTP_CLIENT: "FTP client - connects to FTP servers for data fuzzing",
+            SocketType.FTP_SERVER: "FTP server - accepts FTP connections for data fuzzing",
+            SocketType.TFTP_CLIENT: "TFTP client - connects to TFTP servers for data fuzzing",
+            SocketType.TFTP_SERVER: "TFTP server - accepts TFTP connections for data fuzzing",
+            SocketType.TELNET_CLIENT: "Telnet client - connects to Telnet servers for data fuzzing",
+            SocketType.TELNET_SERVER: "Telnet server - accepts Telnet connections for data fuzzing",
+            SocketType.MODBUS_CLIENT: "Modbus client - connects to Modbus devices for industrial protocol fuzzing",
+            SocketType.MODBUS_SERVER: "Modbus server - acts as a Modbus server for client testing"
         }
         return descriptions.get(self, f"Unknown socket type: {self.value}")
 
@@ -207,7 +319,11 @@ class SocketType(str, Enum):
         """Get socket types that support listening for incoming connections."""
         return [
             cls.SERVER_TCP,
-            cls.SERVER_UDP
+            cls.SERVER_UDP,
+            cls.FTP_SERVER,
+            cls.TFTP_SERVER,
+            cls.TELNET_SERVER,
+            cls.MODBUS_SERVER
         ]
 
     def is_listening_type(self) -> bool:

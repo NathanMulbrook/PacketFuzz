@@ -208,6 +208,14 @@ def create(campaign: 'FuzzingCampaign') -> FuzzSocket:
         SocketType.CANBUS: ('canbus_socket', 'CANBusSocket'),
         SocketType.SERVER_TCP: ('server_tcp_socket', 'ServerTCPSocket'),
         SocketType.SERVER_UDP: ('server_udp_socket', 'ServerUDPSocket'),
+        SocketType.FTP_CLIENT: ('ftp_client_socket', 'FTPClientSocket'),
+        SocketType.FTP_SERVER: ('ftp_server_socket', 'FTPServerSocket'),
+        SocketType.TFTP_CLIENT: ('tftp_client_socket', 'TFTPClientSocket'),
+        SocketType.TFTP_SERVER: ('tftp_server_socket', 'TFTPServerSocket'),
+        SocketType.TELNET_CLIENT: ('telnet_client_socket', 'TelnetClientSocket'),
+        SocketType.TELNET_SERVER: ('telnet_server_socket', 'TelnetServerSocket'),
+        SocketType.MODBUS_CLIENT: ('modbus_client_socket', 'ModbusClientSocket'),
+        SocketType.MODBUS_SERVER: ('modbus_server_socket', 'ModbusServerSocket'),
     }
     
     if st not in socket_registry:
@@ -244,6 +252,30 @@ def create(campaign: 'FuzzingCampaign') -> FuzzSocket:
         elif module_name == 'server_udp_socket':
             from .server_udp_socket import ServerUDPSocket
             return ServerUDPSocket(campaign)
+        elif module_name == 'ftp_client_socket':
+            from .ftp_client_socket import FTPClientSocket
+            return FTPClientSocket(campaign)
+        elif module_name == 'ftp_server_socket':
+            from .ftp_server_socket import FTPServerSocket
+            return FTPServerSocket(campaign)
+        elif module_name == 'tftp_client_socket':
+            from .tftp_client_socket import TFTPClientSocket
+            return TFTPClientSocket(campaign)
+        elif module_name == 'tftp_server_socket':
+            from .tftp_server_socket import TFTPServerSocket
+            return TFTPServerSocket(campaign)
+        elif module_name == 'telnet_client_socket':
+            from .telnet_client_socket import TelnetClientSocket
+            return TelnetClientSocket(campaign)
+        elif module_name == 'telnet_server_socket':
+            from .telnet_server_socket import TelnetServerSocket
+            return TelnetServerSocket(campaign)
+        elif module_name == 'modbus_client_socket':
+            from .modbus_client_socket import ModbusClientSocket
+            return ModbusClientSocket(campaign)
+        elif module_name == 'modbus_server_socket':
+            from .modbus_server_socket import ModbusServerSocket
+            return ModbusServerSocket(campaign)
         else:
             raise NotImplementedError(f"Socket implementation not found: {module_name}")
     except ImportError as e:
