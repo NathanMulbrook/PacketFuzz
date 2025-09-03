@@ -305,3 +305,25 @@ def create_layer_filter_config(include: Optional[List[str]] = None,
         include_layers=include,
         exclude_layers=exclude
     )
+
+
+def get_layer_names_from_packets(packets: Union[Packet, List[Packet], List[Optional[Packet]]]) -> List[str]:
+    """
+    Extract layer names from packets using Scapy's built-in packet.layers() method.
+    
+    Args:
+        packets: Single packet, list of packets, or PacketList to extract layers from
+        
+    Returns:
+        List of unique layer names found in the packets
+    """
+    if not packets:
+        return []
+    
+    # Normalize to list
+    packet_list = packets if isinstance(packets, list) else [packets]
+    
+    # Extract layer names using Scapy's built-in method
+    layer_names = {cls.__name__ for pkt in packet_list if pkt for cls in pkt.layers()}
+    
+    return sorted(layer_names)

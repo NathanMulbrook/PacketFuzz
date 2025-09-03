@@ -10,7 +10,7 @@ This package provides tools for network packet fuzzing, including:
 """
 
 from .fuzzing_framework import FuzzingCampaign, FuzzField, FuzzMutator, CallbackResult, CampaignContext
-from .pcapfuzz import PcapFuzzCampaign, pcap_fuzz
+from .pcapfuzz import PcapFuzzCampaign
 from .mutator_manager import MutatorManager, FuzzConfig, FuzzMode
 from .dictionary_manager import DictionaryManager
 
@@ -22,7 +22,6 @@ __all__ = [
     "CallbackResult",
     "CampaignContext",
     "PcapFuzzCampaign",
-    "pcap_fuzz",
     "MutatorManager",
     "FuzzConfig",
     "FuzzMode",

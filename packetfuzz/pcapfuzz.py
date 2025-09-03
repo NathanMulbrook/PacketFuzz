@@ -149,11 +149,8 @@ class PcapFuzzCampaign(FuzzingCampaign):
         cur = tpl
         # Walk layer names
         while cur is not None:
-            try:
-                names.append(cur.name)
-                cur = cur.payload if cur.payload else None
-            except Exception:
-                break
+            names.append(cur.name)
+            cur = cur.payload if cur.payload else None
         return "/".join(names) if names else None
 
     @repackage_in.setter
@@ -163,19 +160,16 @@ class PcapFuzzCampaign(FuzzingCampaign):
             self.repackage_template = None
             return
         v = value.upper().strip()
-        try:
-            if v == "IP/UDP":
-                template = IP()/UDP()
-            elif v == "IP/TCP":
-                template = IP()/TCP()
-            elif v == "IP":
-                template = IP()
-            else:
-                # Unknown string; leave unset so payload passes through unchanged
-                template = None
-            self.repackage_template = template
-        except Exception:
-            self.repackage_template = None
+        if v == "IP/UDP":
+            template = IP()/UDP()
+        elif v == "IP/TCP":
+            template = IP()/TCP()
+        elif v == "IP":
+            template = IP()
+        else:
+            # Unknown string; leave unset so payload passes through unchanged
+            template = None
+        self.repackage_template = template
     
     def get_packet_with_embedded_config(self) -> Optional[Packet]:
         """
@@ -251,31 +245,6 @@ class PcapFuzzCampaign(FuzzingCampaign):
             logger.error(f"PCAP campaign execution failed: {e}")
             return False
     
-    def _convert_to_scapy(self, packet_bytes: bytes) -> Packet:
-        """
-        Convert raw packet bytes to a Scapy packet object using the existing utility function.
-        
-        Args:
-            packet_bytes: Raw packet bytes
-        Returns:
-            Scapy packet object
-        """
-        return convert_to_scapy(packet_bytes)
+
 
 # Standalone utility function for backwards compatibility
-def pcap_fuzz(pcap_folder: str, extract_at_layer: Optional[str] = None, **kwargs):
-    """
-    Simple wrapper for PcapFuzzCampaign functionality.
-    
-    Args:
-        pcap_folder: Path to folder containing PCAP files
-        extract_at_layer: Layer to extract at ("UDP", "TCP", "IP", "Ethernet")
-        **kwargs: Additional campaign configuration options
-    """
-    campaign = PcapFuzzCampaign()
-    campaign.pcap_folder = pcap_folder
-    campaign.extract_at_layer = extract_at_layer
-    for key, value in kwargs.items():
-        if hasattr(campaign, key):
-            setattr(campaign, key, value)
-    return campaign.execute()  # Use standard campaign execution

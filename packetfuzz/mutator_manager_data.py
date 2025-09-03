@@ -347,7 +347,7 @@ class MutatorManagerData:
             self.packet_list = [self.packets]
             self.is_single_packet = True
         elif isinstance(self.packets, list):
-            if len(self.packets) == 0:
+            if not self.packets:
                 raise ValueError("Packet list cannot be empty")
             self.packet_list = list(self.packets)
             self.is_single_packet = False
@@ -669,54 +669,27 @@ class MutatorManagerData:
         Returns:
             Categorized field type
         """
-        try:
-            from packetfuzz.utils.field_utils import get_field_type_chain
-            
-            # Get detailed type chain
-            type_chain = get_field_type_chain(layer, field_name)
-            
-            if type_chain:
-                # Check the entire inheritance chain, not just the primary type
-                for type_name in type_chain:
-                    # Categorize based on type hierarchy
-                    if any(typ in type_name for typ in ['Int', 'Byte', 'Short', 'Bit']):
-                        return "numeric"
-                    elif any(typ in type_name for typ in ['Str', 'String']):
-                        return "string"
-                    elif any(typ in type_name for typ in ['Enum']):
-                        return "enum"
-                    elif any(typ in type_name for typ in ['Flag']):
-                        return "flags"
-                
-                # If no match found in inheritance chain, return unknown
-                return "unknown"
-            
-        except ImportError:
-            # Fallback to field descriptor-based logic
-            pass
+        from packetfuzz.utils.field_utils import get_field_type_chain
         
-        # Fallback logic using field descriptor
-        field_desc = None
-        for desc in layer.__class__.fields_desc:
-            if desc.name == field_name:
-                field_desc = desc
-                break
+        # Get detailed type chain
+        type_chain = get_field_type_chain(layer, field_name)
         
-        if field_desc:
-            # Import here to avoid circular imports
-            from scapy.fields import (BitField, FlagsField, EnumField, StrField, 
-                                     IntField, ByteField, ShortField, IntEnumField)
+        if type_chain:
+            # Check the entire inheritance chain, not just the primary type
+            for type_name in type_chain:
+                # Categorize based on type hierarchy
+                if any(typ in type_name for typ in ['Int', 'Byte', 'Short', 'Bit']):
+                    return "numeric"
+                elif any(typ in type_name for typ in ['Str', 'String']):
+                    return "string"
+                elif any(typ in type_name for typ in ['Enum']):
+                    return "enum"
+                elif any(typ in type_name for typ in ['Flag']):
+                    return "flags"
             
-            # Use same categorization logic as MutatorManager._build_field_info
-            if isinstance(field_desc, (ByteField, ShortField, IntField, BitField)):
-                return "numeric"
-            elif isinstance(field_desc, StrField):
-                return "string"
-            elif isinstance(field_desc, (EnumField, IntEnumField)):
-                return "enum"
-            elif isinstance(field_desc, FlagsField):
-                return "flags"
-                
+            # If no match found in inheritance chain, return unknown
+            return "unknown"
+        
         return "unknown"
     
     def _extract_field_constraints(self, layer: Packet, field_desc: Field, layer_name: str, field_name: str) -> Dict[str, Any]:
@@ -733,121 +706,79 @@ class MutatorManagerData:
             Dictionary of constraint information
         """
         # Use field_utils for robust property extraction
-        try:
-            from .utils.field_utils import extract_field_properties
-            properties = extract_field_properties(layer, field_desc.name)
-            
-            # Convert properties to constraints format
-            constraints = {
-                'min_value': None,
-                'max_value': None,
-                'min_length': None,
-                'max_length': None,
-                'enum_values': None,
-                'is_signed': False
-            }
-            
-            # Map properties to constraints with fuzzing-friendly adjustments
-            if 'length' in properties:
-                constraints['max_length'] = properties['length']
-            if 'size' in properties:
-                constraints['max_length'] = properties['size']
-            
-            # Fix overly restrictive size constraints for HTTP header values
-            # Scapy's _HTTPHeaderField uses sz=2 (for header indexes), but for fuzzing
-            # header values we need realistic limits
-            if layer_name in ['HTTPRequest', 'HTTPResponse']:
-                if field_name == 'Method':
-                    constraints['max_length'] = 32  # HTTP methods: GET, POST, etc.
-                    constraints['min_length'] = 3   # Minimum realistic method length
-                elif field_name in ['Path']:
-                    constraints['max_length'] = 8192  # URLs can be long
-                    constraints['min_length'] = 1    # At least "/"
-                elif field_name in ['Host']:
-                    constraints['max_length'] = 253  # DNS hostname limit
-                    constraints['min_length'] = 3    # Minimum realistic hostname
-                elif field_name in ['User_Agent']:
-                    constraints['max_length'] = 2048  # User agents can be long
-                    constraints['min_length'] = 20   # Encourage realistic UA strings
-                elif field_name in ['Authorization', 'Cookie', 'Set_Cookie']:
-                    constraints['max_length'] = 4096  # Auth/cookie data can be very long
-                    constraints['min_length'] = 10   # Encourage substantial content
-                elif field_name in ['Content_Type', 'Accept', 'Accept_Encoding', 'Accept_Language']:
-                    constraints['max_length'] = 512  # Content negotiation headers
-                    constraints['min_length'] = 8    # Encourage realistic MIME types
-                # For other HTTP fields, if size is unreasonably small, use a reasonable default
-                elif constraints.get('max_length') and constraints['max_length'] < 128:
-                    constraints['max_length'] = 1024  # General reasonable default
-                    constraints['min_length'] = 4     # Encourage non-trivial content
-                    
-            # Add field-specific constraints using MutatorManager logic
-            from scapy.fields import (BitField, ByteField, ShortField, IntField, 
-                                     EnumField, IntEnumField, StrField)
-            
-            # Numeric field constraints (consistent with MutatorManager._build_field_info)
-            if isinstance(field_desc, BitField):
-                bits = getattr(field_desc, 'size', 8)
-                constraints['min_value'] = 0
-                constraints['max_value'] = (1 << bits) - 1
-            elif isinstance(field_desc, ByteField):
-                constraints['min_value'] = 0
-                constraints['max_value'] = 0xFF
-            elif isinstance(field_desc, ShortField):
-                constraints['min_value'] = 0
-                constraints['max_value'] = 0xFFFF
-            elif isinstance(field_desc, IntField):
-                constraints['min_value'] = 0
-                constraints['max_value'] = 0xFFFFFFFF
-            
-            # Enum field constraints
-            if isinstance(field_desc, (EnumField, IntEnumField)):
-                enum_dict = getattr(field_desc, 'enum', {})
-                if enum_dict:
-                    constraints['enum_values'] = dict(enum_dict)
-            
-            # String field constraints
-            if isinstance(field_desc, StrField):
-                max_len = getattr(field_desc, 'max_len', None)
-                if max_len:
-                    constraints['max_length'] = max_len
-            
-            return constraints
-            
-        except ImportError:
-            # Fallback to original logic if utils not available
-            return self._extract_field_constraints_fallback(layer, field_desc, layer_name, field_name)
-    
-    def _extract_field_constraints_fallback(self, layer: Packet, field_desc: Field, layer_name: str, field_name: str) -> Dict[str, Any]:
-        """
-        Fallback method for extracting field constraints when field_utils is unavailable.
+        from .utils.field_utils import extract_field_properties
+        properties = extract_field_properties(layer, field_desc.name)
         
-        Args:
-            layer: The packet layer containing the field
-            field_desc: The field descriptor
-            
-        Returns:
-            Dictionary of field constraints
-        """
-        constraints = {}
+        # Convert properties to constraints format
+        constraints = {
+            'min_value': None,
+            'max_value': None,
+            'min_length': None,
+            'max_length': None,
+            'enum_values': None,
+            'is_signed': False
+        }
         
-        # Basic field constraint extraction
-        if hasattr(field_desc, 'fmt'):
-            fmt = getattr(field_desc, 'fmt', None)
-            if fmt:
-                constraints['format'] = fmt
+        # Map properties to constraints with fuzzing-friendly adjustments
+        if 'length' in properties:
+            constraints['max_length'] = properties['length']
+        if 'size' in properties:
+            constraints['max_length'] = properties['size']
         
-        if hasattr(field_desc, 'default'):
-            default = getattr(field_desc, 'default', None)
-            if default is not None:
-                constraints['default'] = default
+        # Fix overly restrictive size constraints for HTTP header values
+        # Scapy's _HTTPHeaderField uses sz=2 (for header indexes), but for fuzzing
+        # header values we need realistic limits
+        if layer_name in ['HTTPRequest', 'HTTPResponse']:
+            if field_name == 'Method':
+                constraints['max_length'] = 32  # HTTP methods: GET, POST, etc.
+                constraints['min_length'] = 3   # Minimum realistic method length
+            elif field_name in ['Path']:
+                constraints['max_length'] = 8192  # URLs can be long
+                constraints['min_length'] = 1    # At least "/"
+            elif field_name in ['Host']:
+                constraints['max_length'] = 253  # DNS hostname limit
+                constraints['min_length'] = 3    # Minimum realistic hostname
+            elif field_name in ['User_Agent']:
+                constraints['max_length'] = 2048  # User agents can be long
+                constraints['min_length'] = 20   # Encourage realistic UA strings
+            elif field_name in ['Authorization', 'Cookie', 'Set_Cookie']:
+                constraints['max_length'] = 4096  # Auth/cookie data can be very long
+                constraints['min_length'] = 10   # Encourage substantial content
+            elif field_name in ['Content_Type', 'Accept', 'Accept_Encoding', 'Accept_Language']:
+                constraints['max_length'] = 512  # Content negotiation headers
+                constraints['min_length'] = 8    # Encourage realistic MIME types
+            # For other HTTP fields, if size is unreasonably small, use a reasonable default
+            elif constraints.get('max_length') and constraints['max_length'] < 128:
+                constraints['max_length'] = 1024  # General reasonable default
+                constraints['min_length'] = 4     # Encourage non-trivial content
+                
+        # Add field-specific constraints using MutatorManager logic
+        from scapy.fields import (BitField, ByteField, ShortField, IntField, 
+                                 EnumField, IntEnumField, StrField)
         
-        # Length constraints
-        if hasattr(field_desc, 'length_of'):
-            length_of = getattr(field_desc, 'length_of', None)
-            if length_of:
-                constraints['length_of'] = length_of
+        # Numeric field constraints (consistent with MutatorManager._build_field_info)
+        if isinstance(field_desc, BitField):
+            bits = getattr(field_desc, 'size', 8)
+            constraints['min_value'] = 0
+            constraints['max_value'] = (1 << bits) - 1
+        elif isinstance(field_desc, ByteField):
+            constraints['min_value'] = 0
+            constraints['max_value'] = 0xFF
+        elif isinstance(field_desc, ShortField):
+            constraints['min_value'] = 0
+            constraints['max_value'] = 0xFFFF
+        elif isinstance(field_desc, IntField):
+            constraints['min_value'] = 0
+            constraints['max_value'] = 0xFFFFFFFF
         
-        if hasattr(field_desc, 'max_len'):
+        # Enum field constraints
+        if isinstance(field_desc, (EnumField, IntEnumField)):
+            enum_dict = getattr(field_desc, 'enum', {})
+            if enum_dict:
+                constraints['enum_values'] = dict(enum_dict)
+        
+        # String field constraints
+        if isinstance(field_desc, StrField):
             max_len = getattr(field_desc, 'max_len', None)
             if max_len:
                 constraints['max_length'] = max_len
@@ -1055,12 +986,9 @@ class MutatorManagerData:
                 resolved_paths = [dictionary_manager._resolve_path(path) for path in adv_dicts]
                 config['dictionaries'] = resolved_paths
                 
-                # Load dictionary entries as values
-                try:
-                    dict_entries = dictionary_manager.get_dictionary_entries(adv_dicts)
-                    config['values'] = [entry.decode('utf-8', errors='ignore') for entry in dict_entries]
-                except Exception:
-                    pass
+                # Load dictionary entries as values - CRITICAL: Must succeed
+                dict_entries = dictionary_manager.get_dictionary_entries(adv_dicts)
+                config['values'] = [entry.decode('utf-8', errors='ignore') for entry in dict_entries]
             
             # Handle direct values list (list format)
             elif isinstance(adv_config, list):
@@ -1269,17 +1197,8 @@ class MutatorManagerData:
         Returns:
             int: Depth below the current layer (0 = innermost, 1+ = outer layers)
         """
-        try:
-            from packetfuzz.utils.field_utils import calculate_layer_depth_below
-            return calculate_layer_depth_below(layer)
-        except ImportError:
-            # Fallback to local implementation if utility not available
-            depth_below = 0
-            cursor = layer
-            while hasattr(cursor, 'payload') and not isinstance(cursor.payload, NoPayload):
-                depth_below += 1
-                cursor = cursor.payload
-            return depth_below
+        from packetfuzz.utils.field_utils import calculate_layer_depth_below
+        return calculate_layer_depth_below(layer)
     
     def _resolve_field_mutator_weights(self, sources: ConfigurationSources, layer: Packet) -> Dict[str, float]:
         """
@@ -1292,15 +1211,12 @@ class MutatorManagerData:
         Returns:
             Dict mapping mutator names to weights
         """
-        # Import the default mappings
-        try:
-            from .default_mappings import (
-                FIELD_TYPE_MUTATOR_WEIGHTS, 
-                FIELD_NAME_MUTATOR_WEIGHTS, 
-                FIELD_ADVANCED_MUTATOR_WEIGHTS
-            )
-        except ImportError:
-            return {}
+        # Import the default mappings - CRITICAL: Must succeed
+        from .default_mappings import (
+            FIELD_TYPE_MUTATOR_WEIGHTS, 
+            FIELD_NAME_MUTATOR_WEIGHTS, 
+            FIELD_ADVANCED_MUTATOR_WEIGHTS
+        )
         
         # Extract field information for lookup
         field_name = getattr(sources, 'manager_source_type', None) or "unknown"
@@ -1368,12 +1284,9 @@ class MutatorManagerData:
         # Get layer scaling factor from config or default
         layer_scaling_factor = getattr(self.fuzz_config, 'layer_weight_scaling', None)
         if layer_scaling_factor is None:
-            # Import default scaling constant
-            try:
-                from .default_mappings import LAYER_WEIGHT_SCALING
-                layer_scaling_factor = LAYER_WEIGHT_SCALING
-            except ImportError:
-                layer_scaling_factor = 0.5  # Fallback default
+            # Import default scaling constant - CRITICAL: Must succeed
+            from .default_mappings import LAYER_WEIGHT_SCALING
+            layer_scaling_factor = LAYER_WEIGHT_SCALING
         
         # Calculate depth and apply scaling
         depth_below = self._calculate_layer_depth(layer)
@@ -1646,13 +1559,7 @@ class MutatorManagerData:
         Returns a dictionary with FuzzField configuration or empty config if not a FuzzField.
         """
         # Import FuzzField
-        try:
-            from .fuzzing_framework import FuzzField
-        except ImportError:
-            try:
-                from fuzzing_framework import FuzzField
-            except ImportError:
-                return {'is_fuzzfield': False}
+        from .fuzzing_framework import FuzzField
         
         if not isinstance(field_value, FuzzField):
             return {'is_fuzzfield': False}
@@ -1724,10 +1631,7 @@ class MutatorManagerData:
                 return v
             s: Optional[str] = None
             if isinstance(v, (bytes, bytearray)):
-                try:
-                    s = v.decode('utf-8', errors='ignore').strip()
-                except Exception:
-                    return None
+                s = v.decode('utf-8', errors='ignore').strip()
             elif isinstance(v, str):
                 s = v.strip()
             if s is None or s == "":

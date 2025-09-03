@@ -914,9 +914,7 @@ class AdvancedPerformanceGenerator(ReportGeneratorInterface):
         
         # Extract mutator data from campaign context
         mutator_data = None
-        if hasattr(campaign, 'get_mutator_data'):
-            mutator_data = campaign.get_mutator_data()
-        elif hasattr(campaign, 'context') and hasattr(campaign.context, 'mutator_data'):
+        if hasattr(campaign, 'context') and hasattr(campaign.context, 'mutator_data'):
             mutator_data = campaign.context.mutator_data
         
         performance_data = {

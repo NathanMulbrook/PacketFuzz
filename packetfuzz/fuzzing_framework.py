@@ -45,6 +45,9 @@ from .mutator_manager import FuzzConfig, FuzzMode, MutatorManager
 from .mutator_manager_data import MutatorManagerData
 from .socket_types import SocketType
 from .utils.packet_report import ReportingEngine, ReportLevel, write_crash_report, generate_campaign_reports, write_fuzz_history_dump
+from .utils.packet_processing import get_layer_names_from_packets
+from .default_mappings import FIELD_NAME_WEIGHTS, FIELD_ADVANCED_WEIGHTS
+from .utils.pattern_utils import parse_field_patterns, pattern_matches_any
 
 # Constants
 DEFAULT_INTERFACE = "eth0"
@@ -96,11 +99,8 @@ if not logging.getLogger().handlers:
 logger = logging.getLogger(__name__)
 
 # Install packet extensions for embedded configuration
-try:
-    from packet_extensions import install_packet_extensions
-    install_packet_extensions()
-except ImportError:
-    pass
+from .packet_extensions import install_packet_extensions
+install_packet_extensions()
 
 
 class CallbackResult(Enum):
@@ -819,82 +819,62 @@ class FuzzingCampaign:
         
         # Handle excluded_layers by adding advanced mapping entries
         if self.excluded_layers:
-            exclude_entries = [
-                {"layer": lname, "fuzz_weight": 0.0} for lname in self.excluded_layers
-            ]
             if not self.advanced_field_mapping_overrides:
                 self.advanced_field_mapping_overrides = []
-            self.advanced_field_mapping_overrides.extend(exclude_entries)
+            self.advanced_field_mapping_overrides.extend([
+                {"layer": lname, "fuzz_weight": 0.0} for lname in self.excluded_layers
+            ])
 
         # Handle layers_to_fuzz by setting weight to 0.0 for all layers except those specified
         if self.layers_to_fuzz:
-            # Get all known layer names from default mappings to exclude those not in layers_to_fuzz
-            from .default_mappings import FIELD_NAME_WEIGHTS
-            all_layer_names = set()
-            for field_key in FIELD_NAME_WEIGHTS.keys():
-                if '.' in field_key:
-                    layer_name = field_key.split('.', 1)[0]
-                    all_layer_names.add(layer_name)
+            # Get layers from packet or fallback to all known layers
+            layer_names = get_layer_names_from_packets(self.packet) if self.packet else []
+            all_layer_names = set(layer_names) if layer_names else {
+                field_key.split('.')[0] for field_key in FIELD_NAME_WEIGHTS.keys() if '.' in field_key
+            }
             
-            # Create exclusion entries for layers not in layers_to_fuzz
+            # Exclude layers not in layers_to_fuzz
             layers_to_exclude = all_layer_names - set(self.layers_to_fuzz)
             if layers_to_exclude:
-                fuzz_only_entries = [
-                    {"layer": lname, "fuzz_weight": 0.0} for lname in layers_to_exclude
-                ]
                 if not self.advanced_field_mapping_overrides:
                     self.advanced_field_mapping_overrides = []
-                self.advanced_field_mapping_overrides.extend(fuzz_only_entries)
+                self.advanced_field_mapping_overrides.extend([
+                    {"layer": lname, "fuzz_weight": 0.0} for lname in layers_to_exclude
+                ])
 
         # Handle excluded_fields with pattern matching support
         if self.excluded_fields:
-            from .pattern_utils import parse_field_patterns
-            field_exclude_entries = parse_field_patterns(self.excluded_fields, exclude=True)
             if not self.advanced_field_mapping_overrides:
                 self.advanced_field_mapping_overrides = []
-            self.advanced_field_mapping_overrides.extend(field_exclude_entries)
+            self.advanced_field_mapping_overrides.extend(
+                parse_field_patterns(self.excluded_fields, exclude=True)
+            )
 
         # Handle fields_to_fuzz (whitelist approach) - exclude all fields except those specified
         if self.fields_to_fuzz:
-            from .pattern_utils import parse_field_patterns, pattern_matches_any
-            # Get all known field patterns from default mappings
-            from .default_mappings import FIELD_NAME_WEIGHTS, FIELD_TYPE_WEIGHTS
-            all_field_patterns = set()
-            
-            # Add all known Layer.field patterns from FIELD_NAME_WEIGHTS
-            for field_key in FIELD_NAME_WEIGHTS.keys():
-                all_field_patterns.add(field_key)
-            
-            # Create exclusion entries for fields not in fields_to_fuzz
-            # FIXED: Avoid creating broad Layer.* exclusions when specific fields in that layer are whitelisted
+            # Get all known patterns
+            all_patterns = set(FIELD_NAME_WEIGHTS.keys())
             whitelisted_patterns = set(self.fields_to_fuzz)
-            fields_to_exclude = []
             
-            # Get layers that have specific fields whitelisted
-            whitelisted_layers = set()
-            for pattern in whitelisted_patterns:
-                if '.' in pattern and not pattern.endswith('.*'):
-                    layer_name = pattern.split('.', 1)[0]
-                    if layer_name != '*':  # Ignore *.field patterns
-                        whitelisted_layers.add(layer_name)
+            # Extract layer names from whitelisted patterns (e.g., "TCP.dport" -> "TCP")
+            whitelisted_layers = {
+                pattern.split('.', 1)[0] for pattern in whitelisted_patterns 
+                if '.' in pattern and not pattern.endswith('.*') and pattern.split('.', 1)[0] != '*'
+            }
             
-            for pattern in all_field_patterns:
-                if not pattern_matches_any(pattern, whitelisted_patterns):
-                    # FIXED: Skip Layer.* exclusions if specific fields in that layer are whitelisted
-                    if pattern.endswith('.*'):
-                        layer_name = pattern[:-2]
-                        if layer_name in whitelisted_layers:
-                            continue  # Don't exclude Layer.* if specific Layer.field is whitelisted
-                    
-                    fields_to_exclude.append(pattern)
+            # Build exclusion list, avoiding broad Layer.* exclusions for whitelisted layers
+            fields_to_exclude = [
+                pattern for pattern in all_patterns 
+                if not pattern_matches_any(pattern, whitelisted_patterns)
+                and not (pattern.endswith('.*') and pattern[:-2] in whitelisted_layers)
+            ]
             
             if fields_to_exclude:
-                field_whitelist_entries = parse_field_patterns(fields_to_exclude, exclude=True)
                 if not self.advanced_field_mapping_overrides:
                     self.advanced_field_mapping_overrides = []
-                self.advanced_field_mapping_overrides.extend(field_whitelist_entries)
-
-
+                self.advanced_field_mapping_overrides.extend(
+                    parse_field_patterns(fields_to_exclude, exclude=True)
+                )
 
     def _normalize_socket_type(self) -> Optional[SocketType]:
         """
@@ -909,18 +889,6 @@ class FuzzingCampaign:
             return SocketType.from_string(self.socket_type)
         return None
 
-    def get_mutator_data(self) -> Optional['MutatorManagerData']:
-        """
-        Retrieve the MutatorManagerData from the most recent fuzzer on demand.
-        This avoids storing separate references and keeps data authoritative.
-        Returns None if a fuzzer hasn't been created yet.
-        """
-        try:
-            fuzzer = getattr(self, 'last_fuzzer', None)
-            return getattr(fuzzer, 'data', None)
-        except Exception:
-            return None
-
     def create_fuzzer(self, packets: Optional[Union[Packet, List[Packet]]] = None, 
                      iterations: Optional[int] = None) -> 'MutatorManager':
         """
@@ -933,8 +901,6 @@ class FuzzingCampaign:
         Returns:
             MutatorManager instance ready for fuzzing
         """
-        from .mutator_manager import MutatorManager, FuzzConfig, FuzzMode
-        
         # Use provided packets or fall back to campaign packet
         if packets is None:
             packets = self.packet
@@ -1002,24 +968,18 @@ class FuzzingCampaign:
                 errors.append(f"Invalid socket_type {self.socket_type}, must be a SocketType enum value or valid string")
             else:
                 if packet and normalized_socket_type == SocketType.RAW_ETHERNET:
-                    try:
-                        from scapy.layers.l2 import Ether
-                        if not packet.haslayer(Ether):
-                            errors.append("Raw Ethernet (socket_type=SocketType.RAW_ETHERNET) campaign requires Ethernet header")
-                    except ImportError:
-                        errors.append("Scapy Ether layer not available for validation")
+                    from scapy.layers.l2 import Ether
+                    if not packet.haslayer(Ether):
+                        errors.append("Raw Ethernet (socket_type=SocketType.RAW_ETHERNET) campaign requires Ethernet header")
                 if packet and normalized_socket_type in [SocketType.RAW_IP, SocketType.RAW_TCP, SocketType.RAW_UDP]:
-                    try:
-                        from scapy.layers.inet import IP
-                        if not packet.haslayer(IP):
-                            errors.append(f"socket_type={normalized_socket_type} campaign requires IP header")
-                    except ImportError:
-                        errors.append("Scapy IP layer not available for validation")
+                    from scapy.layers.inet import IP
+                    if not packet.haslayer(IP):
+                        errors.append(f"socket_type={normalized_socket_type} campaign requires IP header")
         # Log validation errors if verbose mode is enabled
         if errors and self.verbose:
             for error in errors:
                 logger.error(error)
-        return len(errors) == 0
+        return not errors
 
 
 
@@ -1068,12 +1028,9 @@ class FuzzingCampaign:
         # Check for common protocol layers (highest to lowest level)
         from scapy.layers.inet import IP, TCP, UDP, ICMP
         from scapy.layers.l2 import Ether, ARP
-        try:
-            from scapy.layers.http import HTTP, HTTPRequest, HTTPResponse
-            if packet.haslayer(HTTPRequest) or packet.haslayer(HTTPResponse):
-                return "HTTP"
-        except ImportError:
-            pass
+        from scapy.layers.http import HTTP, HTTPRequest, HTTPResponse
+        if packet.haslayer(HTTPRequest) or packet.haslayer(HTTPResponse):
+            return "HTTP"
         
         # Check for transport layer protocols
         if packet.haslayer(TCP):
@@ -1257,11 +1214,6 @@ class FuzzingCampaign:
             )
             fuzzer = MutatorManager(config)
             self.context.mutator_data = fuzzer.fuzz_packet()
-
-            try:
-                self.last_fuzzer = fuzzer
-            except Exception:
-                pass
 
             # Start monitor thread if callback provided
             self._start_monitor_thread()
@@ -1827,8 +1779,6 @@ class FuzzingCampaign:
         3. Inline campaign overrides (if provided)
         Merge or override according to mapping_merge_mode.
         """
-        from .default_mappings import FIELD_ADVANCED_WEIGHTS
-
         def load_mapping_file(path):
             """Load mapping configuration from JSON or Python file."""
             if not os.path.isfile(path):

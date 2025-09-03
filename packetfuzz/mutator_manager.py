@@ -39,11 +39,8 @@ try:
 except Exception:
     ScapyMutator = None  # type: ignore
 
-# Default mappings import
-try:
-    from .default_mappings import LAYER_WEIGHT_SCALING as DEFAULT_LAYER_SCALING
-except Exception:
-    DEFAULT_LAYER_SCALING = 0.9
+# Default mappings import - CRITICAL: Must succeed or fail fast
+from .default_mappings import LAYER_WEIGHT_SCALING as DEFAULT_LAYER_SCALING
 
 # Import default directories - use constant directly to avoid circular imports
 DEFAULT_LOG_DIR = "artifacts/logs"
@@ -55,31 +52,12 @@ logger = logging.getLogger(__name__)
 # Verbosity levels: 0=quiet, 1=normal, 2=verbose, 3=debug
 VERBOSITY_LEVEL = 1  # Default; can be set by campaign or CLI
 
-# Import FuzzField for direct handling
-try:
-    from fuzzing_framework import FuzzField
-except ImportError:
-    FuzzField = None
+# Removed unused FuzzField import - was not being used anywhere in the code
 
 # Constants
 DEFAULT_MAX_OUTPUT_SIZE = 1024
 DEFAULT_MAX_MUTATIONS = 1000
 DEFAULT_FUZZ_WEIGHT = 0.7
-
-
-def get_log_file_path(filename: str) -> str:
-    """
-    Get the full path for a log file in the logs directory.
-    
-    Args:
-        filename: The name of the log file
-        
-    Returns:
-        Full path to the log file in the logs directory
-    """
-    log_dir = Path(DEFAULT_LOG_DIR)
-    log_dir.mkdir(parents=True, exist_ok=True)
-    return str(log_dir / filename)
 
 
 class MutatorManager:
@@ -143,18 +121,9 @@ class MutatorManager:
        
         logger.debug("MutatorManager teardown completed")
 
-    def get_current_fuzzed_fields(self) -> List[str]:
-        """Get the list of fields that were fuzzed in the current iteration"""
-        #TODO get data from muatatormanagerdata
-        return self.data.get_all_fuzzed_fields()
-        
-    def get_fuzzed_fields_for_packet(self, packet_index: int) -> List[str]:
-        """Get the list of fields that were fuzzed for a specific packet in the last batch"""
-        return self.data.get_fuzzed_fields_for_packet(packet_index)
 
-    def get_mutator_usage_counts(self) -> Dict[str, int]:
-        """Get mutator usage counts from the tracked field data"""
-        return self.data.get_mutator_usage_summary()
+
+
 
     def get_field_mutation_failures(self) -> Dict[str, Dict[Tuple[str, str], int]]:
         """Get field mutation failure counts for all fields"""
@@ -183,30 +152,27 @@ class MutatorManager:
                 return original_value != new_value.encode()
             elif isinstance(original_value, str) and isinstance(new_value, bytes):
                 return original_value.encode() != new_value
-        except:
+        except (UnicodeEncodeError, UnicodeDecodeError):
+            # Can't safely convert between string and bytes due to encoding issues
             pass
         
         return original_value != new_value
 
     def get_mutator_type(self, mutator_obj: Any) -> str:
         """Record mutator usage and return the mutator name for field tracking"""
-        try:
-            name = None
-            if mutator_obj is None:
-                name = "none"
-            else:
-                cls_name = mutator_obj.__class__.__name__.lower()
-                if "dictionary" in cls_name and "only" in cls_name:
-                    name = "dictionary_only"
-                elif "libfuzzer" in cls_name:
-                    name = "libfuzzer"
-                elif "scapy" in cls_name:
-                    name = "scapy"
-                else:
-                    name = cls_name
-            return name or "unknown"
-        except Exception:
+        if mutator_obj is None:
             return "unknown"
+        
+        # Extract class name and map to readable name
+        cls_name = str(type(mutator_obj)).lower()
+        if "dictionary" in cls_name:
+            return "dictionary"
+        elif "libfuzzer" in cls_name:
+            return "libfuzzer"
+        elif "scapy" in cls_name:
+            return "scapy"
+        else:
+            return cls_name
 
     
     def set_global_dictionary_config(self, config_path: str) -> None:
@@ -261,7 +227,9 @@ class MutatorManager:
             
         # Debug logging only in verbose mode
         if VERBOSITY_LEVEL >= 3:  # Only in debug mode
-            write_debug_packet_log(self.data.original_packets, file_path=get_log_file_path("fuzz_fields_input_report.txt"), title="Fuzz Fields Input")
+            log_dir = Path(DEFAULT_LOG_DIR)
+            log_dir.mkdir(parents=True, exist_ok=True)
+            write_debug_packet_log(self.data.original_packets, file_path=str(log_dir / "fuzz_fields_input_report.txt"), title="Fuzz Fields Input")
 
         # Diagnostic logging for fuzzing process
         if VERBOSITY_LEVEL >= 2:
@@ -287,7 +255,9 @@ class MutatorManager:
         if VERBOSITY_LEVEL >= 3:  # Only in debug mode
             #TODO update reporting
             try:
-                write_debug_packet_log(self.data.packet_list, file_path=get_log_file_path("fuzz_fields_output_report.txt"), title="Fuzz Fields Output")
+                log_dir = Path(DEFAULT_LOG_DIR)
+                log_dir.mkdir(parents=True, exist_ok=True)
+                write_debug_packet_log(self.data.packet_list, file_path=str(log_dir / "fuzz_fields_output_report.txt"), title="Fuzz Fields Output")
             except Exception as e:
                 logger.debug(f"Failed to write packet report: {e}")
                 # Continue execution even if report writing fails
@@ -322,7 +292,7 @@ class MutatorManager:
         for field in fields_to_fuzz:
             # Within this block we are fuzzing a single field
             # Handle default values for the field if present
-            if field is not None and field.default_values:
+            if field.default_values:
                 pick_rng = self.fuzz_config.rng or random
                 try:
                     pick = pick_rng.choice(field.default_values)
@@ -579,10 +549,7 @@ class MutatorManager:
                 self.mutators["scapy"] = ScapyMutator()
             mutator = self.mutators["libfuzzer"] or self.mutators["dictionary_only"] or self.mutators["scapy"]
 
-        try:
-            mutator_name = self.get_mutator_type(mutator)
-        except Exception:
-            mutator_name = "unknown"
+        mutator_name = self.get_mutator_type(mutator)
 
         # Iterate over all packets in MutatorManagerData
         iters_cfg = getattr(self.fuzz_config, 'iterations', None)

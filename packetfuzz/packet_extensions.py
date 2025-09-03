@@ -161,10 +161,6 @@ class FieldFuzzProxy:
             return getattr(config, name)
         else:
             raise AttributeError(f"FieldFuzzConfig has no attribute '{name}'")
-    
-    def get_value(self) -> Any:
-        """Get the actual field value"""
-        return getattr(self._packet, self._field_name)
 
 
 class PacketFuzzProxy:
