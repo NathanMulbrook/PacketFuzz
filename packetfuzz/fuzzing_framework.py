@@ -1166,7 +1166,7 @@ class FuzzingCampaign:
         return completed
 
     def _create_iteration_history_entry(self, iteration: int, packet, mutator_data) -> 'FuzzHistoryEntry':
-        """Create a history entry for this iteration with runtime execution metadata only."""
+        """Create a history entry for this iteration with runtime execution metadata and essential packet data."""
         history_entry = FuzzHistoryEntry(
             timestamp_sent=datetime.now(),
             iteration=iteration,
@@ -1175,6 +1175,17 @@ class FuzzingCampaign:
             protocol=self._extract_protocol(packet),
             target_port=self._extract_target_port(packet),
         )
+        
+        # Add essential packet data without causing memory issues
+        if packet:
+            try:
+                # Store packet bytes for reproduction
+                history_entry.packet_bytes = bytes(packet)
+                history_entry.payload_size = len(history_entry.packet_bytes)
+                history_entry.payload_hash = hashlib.md5(history_entry.packet_bytes).hexdigest()
+                        
+            except Exception as e:
+                logger.debug(f"Could not extract packet data for history: {e}")
         
         # Manage history size limit
         if len(self.context.fuzz_history) >= self.context.max_history_size:
@@ -1427,7 +1438,8 @@ class FuzzingCampaign:
                             fuzz_history=self.context.fuzz_history,
                             file_path=str(dump_path),
                             verbose_level=self.verbose,
-                            title=f"Packet History Dump - {campaign_name}"
+                            title=f"Packet History Dump - {campaign_name}",
+                            mutator_data=getattr(self.context, 'mutator_data', None)
                         )
                         
                         logger.info(f"Packet history dump written to: {dump_path}")

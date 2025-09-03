@@ -196,28 +196,19 @@ class MetricsCalculator:
     
     @staticmethod
     def calculate_field_metrics(history_entries: List[Any]) -> Dict[str, Any]:
-        """Calculate field-level fuzzing metrics"""
-        field_distribution = {}
-        packets_with_fields = 0
-        packets_without_fields = 0
-
-        for entry in history_entries:
-            if hasattr(entry, 'fuzzed_fields') and entry.fuzzed_fields:
-                packets_with_fields += 1
-                for field_name in entry.fuzzed_fields:
-                    field_distribution[field_name] = field_distribution.get(field_name, 0) + 1
-            else:
-                packets_without_fields += 1
-
-        # Get top most fuzzed fields using configuration constant
-        sorted_fields = sorted(field_distribution.items(), key=lambda x: x[1], reverse=True)
-        most_fuzzed_fields = [field for field, count in sorted_fields[:DEFAULT_TOP_FIELDS_COUNT]]
-
+        """
+        Calculate field-level fuzzing metrics.
+        
+        Note: Field mutation information is now tracked in MutatorManagerData
+        rather than duplicated in history entries. This function provides
+        placeholder values for backward compatibility.
+        """
+        # Return empty metrics since field information is tracked in MutatorManagerData
         return {
-            'fuzzed_field_distribution': field_distribution,
-            'packets_with_fuzzed_fields': packets_with_fields,
-            'packets_without_fuzzed_fields': packets_without_fields,
-            'most_fuzzed_fields': most_fuzzed_fields
+            'fuzzed_field_distribution': {},
+            'packets_with_fuzzed_fields': 0,
+            'packets_without_fuzzed_fields': len(history_entries) if history_entries else 0,
+            'most_fuzzed_fields': []
         }
     
     @staticmethod
@@ -457,9 +448,11 @@ class ReportingEngine:
         protocol_metrics = MetricsCalculator.calculate_protocol_metrics(history_entries)
         timing_metrics = MetricsCalculator.calculate_timing_metrics(history_entries)
         
-        # Extract mutator data for enhanced analytics
+        # Extract mutator data for enhanced analytics (cached to avoid recomputation)
         mutator_data = getattr(campaign_context, 'mutator_data', None)
-        mutator_metrics = MutatorAnalyzer.extract_mutator_metrics(mutator_data)
+        if not hasattr(self, '_cached_mutator_metrics'):
+            self._cached_mutator_metrics = MutatorAnalyzer.extract_mutator_metrics(mutator_data)
+        mutator_metrics = self._cached_mutator_metrics
         
         # Populate ReportMetrics object
         self._populate_metrics(metrics, basic_metrics, field_metrics, protocol_metrics, timing_metrics, mutator_metrics)
@@ -2165,7 +2158,8 @@ def write_fuzz_history_dump(
     fuzz_history: List[Any],
     file_path: str,
     verbose_level: int = 2,
-    title: str = "Fuzz History Dump"
+    title: str = "Fuzz History Dump",
+    mutator_data: Any = None
 ) -> None:
     """
     Write a detailed dump of the fuzz history for very verbose runs.
@@ -2217,21 +2211,130 @@ def write_fuzz_history_dump(
                 if hasattr(entry, 'payload_hash') and entry.payload_hash:
                     f.write(f"Payload Hash: {entry.payload_hash}\n")
                 
-                # Fuzzed fields information
-                if hasattr(entry, 'fuzzed_fields') and entry.fuzzed_fields:
+                # Fuzzed fields information - get from MutatorManagerData if available
+                fuzzed_fields = []
+                if mutator_data and hasattr(mutator_data, 'get_fuzzed_fields_for_packet'):
+                    try:
+                        iteration_num = getattr(entry, 'iteration', i)
+                        fuzzed_fields = mutator_data.get_fuzzed_fields_for_packet(iteration_num)
+                    except Exception:
+                        # Fall back to checking if entry has fuzzed_fields (for backward compatibility)
+                        if hasattr(entry, 'fuzzed_fields') and entry.fuzzed_fields:
+                            fuzzed_fields = entry.fuzzed_fields
+                elif hasattr(entry, 'fuzzed_fields') and entry.fuzzed_fields:
+                    # Backward compatibility fallback
+                    fuzzed_fields = entry.fuzzed_fields
+                
+                if fuzzed_fields:
                     # If we have detailed mutator info, show field -> mutator mapping
                     if hasattr(entry, 'field_mutators') and entry.field_mutators:
                         # Create formatted list showing field and its mutator
                         field_mutator_pairs = []
-                        for field in entry.fuzzed_fields:
+                        for field in fuzzed_fields:
                             mutator = entry.field_mutators.get(field, 'unknown')
                             field_mutator_pairs.append(f"{field}({mutator})")
                         f.write(f"Fuzzed Fields: {', '.join(field_mutator_pairs)}\n")
                     else:
-                        # Fallback to simple field list if no mutator info
-                        f.write(f"Fuzzed Fields: {', '.join(entry.fuzzed_fields)}\n")
-                elif hasattr(entry, 'fuzzed_fields'):  # Empty list case
+                        # Simple field list
+                        f.write(f"Fuzzed Fields: {', '.join(fuzzed_fields)}\n")
+                else:
                     f.write(f"Fuzzed Fields: None\n")
+                
+                # Add detailed field values breakdown (if verbose enough and we have mutator data)
+                if verbose_level >= 2 and mutator_data:
+                    try:
+                        iteration_num = getattr(entry, 'iteration', i)
+                        
+                        # Show complete packet breakdown by layers
+                        f.write("\nCOMPLETE PACKET BREAKDOWN:\n")
+                        f.write("=" * 80 + "\n")
+                        
+                        # Get mutator usage information for this iteration
+                        mutator_usage = mutator_data.get_mutators_for_packet(iteration_num)
+                        
+                        # Get the layer names in hierarchical order (outer to inner)
+                        if iteration_num < len(mutator_data.packet_data):
+                            packet_data = mutator_data.packet_data[iteration_num]
+                            ordered_layers = packet_data.layer_names if hasattr(packet_data, 'layer_names') else []
+                        else:
+                            # Fallback to first packet if iteration is out of range
+                            packet_data = mutator_data.packet_data[0] if mutator_data.packet_data else None
+                            ordered_layers = packet_data.layer_names if packet_data and hasattr(packet_data, 'layer_names') else []
+                        
+                        # If no ordered layers available, fallback to getting all layer types
+                        if not ordered_layers:
+                            ordered_layers = mutator_data.get_all_layer_types()
+                        
+                        for layer_depth, layer_name in enumerate(ordered_layers):
+                            # Get all fields for this layer from the specific packet iteration
+                            if iteration_num < len(mutator_data.packet_data):
+                                layer_fields = mutator_data.packet_data[iteration_num].get_field_by_layer(layer_name)
+                            else:
+                                # Fallback to first packet if iteration is out of range
+                                layer_fields = mutator_data.packet_data[0].get_field_by_layer(layer_name) if mutator_data.packet_data else []
+                            
+                            if not layer_fields:
+                                continue
+                            
+                            # Create indentation based on layer depth (outer to inner)
+                            indent = "  " * layer_depth
+                            
+                            f.write(f"\n{indent}{layer_name}:\n")
+                            
+                            # Sort fields for consistent output
+                            layer_field_keys = sorted([field.field_key for field in layer_fields])
+                            
+                            for field_key in layer_field_keys:
+                                try:
+                                    # Get the actual field value for this iteration
+                                    field_value = mutator_data.get_field_value(field_key, iteration_num)
+                                    
+                                    # Get mutator type for this field
+                                    mutator_type = mutator_usage.get(field_key, "")
+                                    
+                                    # Format mutator type column (always left-aligned, fixed width)
+                                    if mutator_type:
+                                        # Abbreviate common mutator names for better display
+                                        mutator_display = {
+                                            'libfuzzer': 'LibFuzz',
+                                            'dictionary_only': 'Dict',
+                                            'scapy_mutator': 'Scapy',
+                                            'radamsa': 'Radamsa',
+                                            'bit_flip': 'BitFlip',
+                                            'custom': 'Custom'
+                                        }.get(mutator_type, mutator_type[:8])  # Truncate long names
+                                        mutator_column = f"[{mutator_display:<8}]"
+                                    else:
+                                        mutator_column = " " * 10  # Empty space for non-fuzzed fields
+                                    
+                                    # Handle different types of values appropriately
+                                    if field_value is None:
+                                        display_value = "None"
+                                    elif isinstance(field_value, (str, bytes)):
+                                        # Truncate very long values for readability
+                                        if len(str(field_value)) > 100:
+                                            display_value = repr(str(field_value)[:97] + "...")
+                                        else:
+                                            display_value = repr(field_value)
+                                    else:
+                                        display_value = repr(field_value)
+                                    
+                                    # Extract field name from field_key (remove layer prefix)
+                                    field_name = field_key.split('.')[-1] if '.' in field_key else field_key
+                                    
+                                    # Format with fuzzer at the end of the line
+                                    if mutator_type != "None":
+                                        f.write(f"{indent}{field_name:>20}: {display_value} [{mutator_type}]\n")
+                                    else:
+                                        f.write(f"{indent}{field_name:>20}: {display_value}\n")
+                                except Exception as e:
+                                    field_name = field_key.split('.')[-1] if '.' in field_key else field_key
+                                    f.write(f"{indent}{field_name:>20}: <error retrieving value: {e}>\n")
+                        
+                        f.write("\n")
+                        
+                    except Exception as e:
+                        f.write(f"Error retrieving complete packet breakdown: {e}\n\n")
                 
                 f.write("\n")
                 

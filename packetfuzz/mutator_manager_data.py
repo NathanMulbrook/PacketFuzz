@@ -1523,15 +1523,18 @@ class MutatorManagerData:
             elif field_metadata.field_kind == "unknown":
                 field_metadata.exclusion_reason = "Unknown field type"
         
-        # Debug logging
-        logger.debug(f"Applied config for {field_metadata.field_key}: "
-                    f"weight={field_metadata.fuzz_weight}, "
-                    f"dictionaries={len(field_metadata.dictionary_paths)}, "
-                    f"values={len(field_metadata.default_values)}, "
-                    f"source={resolved.config_source} (priority {resolved.priority_level})")
-        
-        if resolved.resolution_notes:
-            logger.debug(f"Resolution notes for {field_metadata.field_key}: {', '.join(resolved.resolution_notes)}")
+        # Debug logging (only at highest verbosity to reduce overhead)
+        # Import verbosity level from mutator_manager to avoid performance issues
+        from .mutator_manager import VERBOSITY_LEVEL
+        if VERBOSITY_LEVEL >= 4:  # Only log at very high verbosity
+            logger.debug(f"Applied config for {field_metadata.field_key}: "
+                        f"weight={field_metadata.fuzz_weight}, "
+                        f"dictionaries={len(field_metadata.dictionary_paths)}, "
+                        f"values={len(field_metadata.default_values)}, "
+                        f"source={resolved.config_source} (priority {resolved.priority_level})")
+            
+            if resolved.resolution_notes:
+                logger.debug(f"Resolution notes for {field_metadata.field_key}: {', '.join(resolved.resolution_notes)}")
     
     def _materialize_fuzzfield_in_packet(self, layer: Packet, field_name: str, fuzzfield_object: Any) -> None:
         """
