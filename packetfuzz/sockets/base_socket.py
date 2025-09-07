@@ -10,10 +10,15 @@ from __future__ import annotations
 
 from .socket_interface import FuzzSocket, create as create_socket
 
-__all__ = ["FuzzSocket", "create_socket"]
+__all__ = ["FuzzSocket", "create_socket", "BaseSocketConfig", "BaseSocket"]
 
 import abc
 from typing import Tuple
+
+
+class BaseSocketConfig(abc.ABC):
+    """Abstract base class for all socket configurations."""
+    pass
 
 
 class BaseSocket(abc.ABC):

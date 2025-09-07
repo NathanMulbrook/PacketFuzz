@@ -7,7 +7,7 @@ from typing import Optional, TYPE_CHECKING
 from dataclasses import dataclass
 
 from .socket_interface import FuzzSocket
-from .config import BaseSocketConfig
+from .base_socket import BaseSocketConfig
 from ..socket_types import SocketType
 
 if TYPE_CHECKING:
@@ -29,20 +29,14 @@ class RawEthernetSocket(FuzzSocket):
 
     def open(self) -> "RawEthernetSocket":
         s = socket.socket(socket.AF_PACKET, socket.SOCK_RAW)
-        cfg = getattr(self.campaign, 'socket_config', None)
-        interface = cfg.interface if isinstance(cfg, RawEthernetConfig) else 'eth0'
-        s.bind((interface, 0))
+        s.bind((self.socket_config.interface, 0))
         self._sock = s
         return self
 
     def send_packet(self, packet_bytes: bytes, context: "CampaignContext") -> Optional[int]:
         if not self._sock:
-            return None
-        try:
-            return self._sock.send(packet_bytes)
-        except Exception as e:
-            logging.getLogger(__name__).error(f"[RawEthernetSocket] send failed: {e}")
-            return None
+            raise RuntimeError("Socket not open")
+        return self._sock.send(packet_bytes)
 
     def prepare_for_pcap_logging(self, raw_bytes: bytes, original_packet=None) -> bytes:
         """
@@ -55,7 +49,4 @@ class RawEthernetSocket(FuzzSocket):
         return raw_bytes
 
     def close(self) -> None:
-        try:
-            super().close()
-        except Exception as e:
-            logging.getLogger(__name__).warning(f"[RawEthernetSocket] close error: {e}")
+        super().close()

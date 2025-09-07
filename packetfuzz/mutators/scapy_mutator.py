@@ -176,5 +176,3 @@ class ScapyMutator(BaseMutator):
                 return mutated_value
 
 
-# Register this mutator
-# Removed manual registration - now uses auto-discovery

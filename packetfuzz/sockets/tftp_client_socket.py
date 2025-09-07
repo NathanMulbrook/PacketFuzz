@@ -14,7 +14,7 @@ from typing import Optional, TYPE_CHECKING
 from dataclasses import dataclass
 
 from .socket_interface import FuzzSocket
-from .config import BaseSocketConfig
+from .base_socket import BaseSocketConfig
 
 if TYPE_CHECKING:
     from ..fuzzing_framework import CampaignContext
@@ -92,30 +92,24 @@ class TFTPClientSocket(FuzzSocket):
         Uses a default filename 'fuzzed_file.bin' unless specified in context.
         """
         if not self.is_open or not self._tftp_client or not self._temp_dir:
-            self.logger.error("TFTP client not configured")
-            return None
+            raise RuntimeError("TFTP client not configured")
         
-        try:
-            # Get filename from context or use default
-            filename = getattr(context, 'tftp_filename', 'fuzzed_file.bin')
-            
-            # Create temporary file with fuzzed data
-            temp_file_path = os.path.join(self._temp_dir, 'upload_data')
-            with open(temp_file_path, 'wb') as f:
-                f.write(packet_bytes)
-            
-            # Upload fuzzed data
-            self._tftp_client.upload(filename, temp_file_path)
-            
-            # Clean up temporary file
-            os.unlink(temp_file_path)
-            
-            self.logger.debug(f"Uploaded {len(packet_bytes)} bytes as {filename}")
-            return len(packet_bytes)
-            
-        except Exception as e:
-            self.logger.error("TFTP upload failed", e)
-            return None
+        # Get filename from context or use default
+        filename = getattr(context, 'tftp_filename', 'fuzzed_file.bin')
+        
+        # Create temporary file with fuzzed data
+        temp_file_path = os.path.join(self._temp_dir, 'upload_data')
+        with open(temp_file_path, 'wb') as f:
+            f.write(packet_bytes)
+        
+        # Upload fuzzed data
+        self._tftp_client.upload(filename, temp_file_path)
+        
+        # Clean up temporary file
+        os.unlink(temp_file_path)
+        
+        self.logger.debug(f"Uploaded {len(packet_bytes)} bytes as {filename}")
+        return len(packet_bytes)
 
     def receive_response(self, timeout: Optional[float] = None) -> Optional[bytes]:
         """
@@ -193,3 +187,28 @@ class TFTPClientSocket(FuzzSocket):
             "temp_directory": self._temp_dir
         })
         return base_info
+
+    def prepare_for_pcap_logging(self, raw_bytes: bytes, original_packet=None) -> bytes:
+        """
+        Prepare TFTP client data for PCAP logging by wrapping in complete network stack.
+        TFTP operates over UDP, so we create a UDP/IP/Ethernet packet.
+        """
+        from scapy.layers.l2 import Ether
+        from scapy.layers.inet import IP, UDP
+        
+        # Create UDP packet for TFTP communication (typically port 69)
+        udp_packet = UDP(
+            sport=0,  # Client uses ephemeral port
+            dport=self.socket_cfg.port
+        ) / raw_bytes
+        
+        # Wrap in IP layer
+        ip_packet = IP(
+            src="127.0.0.1",  # Local client
+            dst=self.socket_cfg.host
+        ) / udp_packet
+        
+        # Wrap in Ethernet layer for PCAP compatibility
+        eth_packet = Ether() / ip_packet
+        
+        return bytes(eth_packet)

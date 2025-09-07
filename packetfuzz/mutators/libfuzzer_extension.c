@@ -95,13 +95,10 @@ int load_dictionaries_native(const char **dictionary, size_t dict_count) {
         __libfuzzer_add_word(g_loaded_dictionaries[i], len);
     }
     g_dict_count = dict_count;
-    return 1;  // Return 1 indicating success
+    return 1;
 }
 
-/*
- * Enhanced dictionary-based mutation with hybrid approach
- * Uses LibFuzzer native dictionary support when available, falls back to custom logic
- */
+
 size_t mutate_with_dict_enhanced(const uint8_t *input_data, size_t input_size,
                                 uint8_t *output_data, size_t max_output_size,
                                 const char **dictionary, size_t dict_size,

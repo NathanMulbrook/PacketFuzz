@@ -28,7 +28,7 @@ class SocketConfig:
     """Standardized configuration access for sockets."""
     
     def __init__(self, campaign: 'FuzzingCampaign') -> None:
-        self.campaign = campaign
+        self.socket_config = getattr(campaign, 'socket_config', None)
         # Import socket config types once during initialization
         self.config_types = self._load_socket_config_types()
     
@@ -53,25 +53,23 @@ class SocketConfig:
     
     def get_target(self, default: str = '127.0.0.1') -> str:
         """Get target address from socket_config when present, else default."""
-        cfg = getattr(self.campaign, 'socket_config', None)
-        if isinstance(cfg, self.config_types.get("target_configs", ())):
-            return getattr(cfg, 'target', default)
+        if isinstance(self.socket_config, self.config_types.get("target_configs", ())):
+            return getattr(self.socket_config, 'target', default)
         return default
     
     def get_port(self, default: int = 80) -> int:
         """Get port from socket_config when present, else default."""
-        cfg = getattr(self.campaign, 'socket_config', None)
-        if isinstance(cfg, self.config_types.get("port_configs", ())):
-            return getattr(cfg, 'port', default)
+        if isinstance(self.socket_config, self.config_types.get("port_configs", ())):
+            return getattr(self.socket_config, 'port', default)
         return default
     
     def get_interface(self, default: str = 'eth0') -> str:
-        """Get network interface with fallback default."""
-        return getattr(self.campaign, 'interface', default)
+        """Get network interface from socket_config when present, else default."""
+        return getattr(self.socket_config, 'interface', default) if self.socket_config else default
     
     def get_bind_address(self, default: str = '0.0.0.0') -> str:
-        """Get bind address for server mode with fallback default."""
-        return getattr(self.campaign, 'bind_address', default)
+        """Get bind address from socket_config when present, else default."""
+        return getattr(self.socket_config, 'bind_address', default) if self.socket_config else default
 
 
 class SocketLogger:
@@ -108,9 +106,10 @@ class FuzzSocket(ABC):
     """
 
     def __init__(self, campaign: 'FuzzingCampaign') -> None:
-        self.campaign = campaign
         self.socket_type: Optional[SocketType] = getattr(campaign, 'socket_type', None)
         self._sock: Optional[socket.socket] = None
+        self.socket_config = getattr(campaign, 'socket_config', None)
+        self.debug_mode: bool = getattr(campaign, 'debug_mode', False)
         # Helper objects for standardized operations
         self.config = SocketConfig(campaign)
         self.logger = SocketLogger(self.__class__.__name__)
@@ -175,7 +174,7 @@ class FuzzSocket(ABC):
     def get_socket_info(self) -> dict:
         return {
             "socket_type": self.socket_type.value if self.socket_type else "unknown",
-            "interface": getattr(self.campaign, "interface", None),
+            "interface": getattr(self.socket_config, "interface", None),
             "is_open": self.is_open,
         }
 

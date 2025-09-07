@@ -12,7 +12,7 @@ from typing import Optional, TYPE_CHECKING
 from dataclasses import dataclass
 
 from .socket_interface import FuzzSocket
-from .config import BaseSocketConfig
+from .base_socket import BaseSocketConfig
 
 if TYPE_CHECKING:
     from ..fuzzing_framework import CampaignContext
@@ -41,9 +41,8 @@ class ManagedUDPSocket(FuzzSocket):
     def __init__(self, campaign) -> None:
         super().__init__(campaign)
         # Prefer explicit socket_config when provided
-        cfg = getattr(self.campaign, 'socket_config', None)
         self.socket_cfg: Optional[ManagedUDPConfig] = (
-            cfg if isinstance(cfg, ManagedUDPConfig) else None
+            self.socket_config if isinstance(self.socket_config, ManagedUDPConfig) else None
         )
 
     def open(self) -> "ManagedUDPSocket":
@@ -60,22 +59,9 @@ class ManagedUDPSocket(FuzzSocket):
     def send_packet(self, packet_bytes: bytes, context: "CampaignContext") -> Optional[int]:
         """Send UDP datagram."""
         if not self._sock:
-            logging.getLogger(__name__).error("[ManagedUDPSocket] Socket not open")
-            return None
-            
-        try:
-            # Resolve target/port from config if available, else fall back to campaign
-            if self.socket_cfg:
-                target = self.socket_cfg.target
-                port = self.socket_cfg.port
-            else:
-                target = getattr(self.campaign, 'target', '127.0.0.1')
-                port = getattr(self.campaign, 'port', 53)  # Default to DNS port
-            
-            return self._sock.sendto(packet_bytes, (target, port))
-        except Exception as e:
-            logging.getLogger(__name__).error(f"[ManagedUDPSocket] send failed: {e}")
-            return None
+            raise RuntimeError("Socket not open")
+        
+        return self._sock.sendto(packet_bytes, (self.socket_config.target, self.socket_config.port))
 
     def receive_response(self, timeout: Optional[float] = None) -> Optional[bytes]:
         """Receive response datagram from UDP socket."""
@@ -93,16 +79,41 @@ class ManagedUDPSocket(FuzzSocket):
         except socket.timeout:
             logging.getLogger(__name__).debug("[ManagedUDPSocket] receive timeout")
             return None
-        except Exception as e:
-            logging.getLogger(__name__).error(f"[ManagedUDPSocket] receive failed: {e}")
-            return None
         finally:
             if timeout is not None:
                 self._sock.settimeout(None)  # Reset to blocking
 
+    def prepare_for_pcap_logging(self, raw_bytes: bytes, original_packet=None) -> bytes:
+        """
+        Prepare packet for PCAP logging with full UDP/IP/Ethernet stack.
+        
+        For managed UDP sockets, we create a complete protocol stack suitable
+        for PCAP analysis with the raw fuzzed bytes as the UDP payload.
+        """
+        from scapy.layers.l2 import Ether, Raw
+        from scapy.layers.inet import IP, UDP
+        from scapy.volatile import RandShort
+        import random
+        
+        target_ip = self.config.get_target('127.0.0.1')
+        target_port = self.config.get_port(53)
+        sport = random.randint(49152, 65535)  # Ephemeral port range
+        
+        # Create complete UDP/IP/Ethernet packet with fuzzed data as payload
+        completed = Ether(dst="ff:ff:ff:ff:ff:ff", src="00:00:00:00:00:00") / \
+                   IP(dst=target_ip, src="127.0.0.1") / \
+                   UDP(dport=target_port, sport=sport) / Raw(load=raw_bytes)
+        
+        # Let Scapy recalculate checksums
+        try:
+            del completed[UDP].chksum
+            completed[IP].id = RandShort()
+            del completed[IP].chksum
+        except Exception as e:
+            self.logger.debug(f"Could not populate UDP fields: {e}")
+        
+        return bytes(completed)
+
     def close(self) -> None:
         """Close the UDP socket."""
-        try:
-            super().close()
-        except Exception as e:
-            logging.getLogger(__name__).warning(f"[ManagedUDPSocket] close error: {e}")
+        super().close()

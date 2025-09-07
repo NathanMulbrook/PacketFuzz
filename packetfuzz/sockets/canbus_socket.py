@@ -13,7 +13,7 @@ from typing import Optional, TYPE_CHECKING
 from dataclasses import dataclass
 
 from .socket_interface import FuzzSocket
-from .config import BaseSocketConfig
+from .base_socket import BaseSocketConfig
 
 if TYPE_CHECKING:
     from ..fuzzing_framework import CampaignContext
@@ -49,13 +49,9 @@ class CANBusSocket(FuzzSocket):
             
             # Create CAN socket
             s = socket.socket(socket.AF_CAN, socket.CAN_RAW)
-            
-            # Get interface from explicit config when provided
-            cfg = getattr(self.campaign, 'socket_config', None)
-            interface = cfg.interface if isinstance(cfg, CANBusConfig) else getattr(self.campaign, 'interface', 'vcan0')
-            
+                    
             # Bind to CAN interface
-            s.bind((interface,))
+            s.bind((self.socket_config.interface,))
             
             self._sock = s
             return self
@@ -67,14 +63,9 @@ class CANBusSocket(FuzzSocket):
     def send_packet(self, packet_bytes: bytes, context: "CampaignContext") -> Optional[int]:
         """Send CAN frame."""
         if not self._sock:
-            logging.getLogger(__name__).error("[CANBusSocket] Socket not open")
-            return None
+            raise RuntimeError("Socket not open")
             
-        try:
-            return self._sock.send(packet_bytes)
-        except Exception as e:
-            logging.getLogger(__name__).error(f"[CANBusSocket] send failed: {e}")
-            return None
+        return self._sock.send(packet_bytes)
 
 
 
@@ -93,16 +84,23 @@ class CANBusSocket(FuzzSocket):
         except socket.timeout:
             logging.getLogger(__name__).debug("[CANBusSocket] receive timeout")
             return None
-        except Exception as e:
-            logging.getLogger(__name__).error(f"[CANBusSocket] receive failed: {e}")
-            return None
         finally:
             if timeout is not None:
                 self._sock.settimeout(None)  # Reset to blocking
 
+    def prepare_for_pcap_logging(self, raw_bytes: bytes, original_packet=None) -> bytes:
+        """
+        Prepare packet for PCAP logging for CAN bus sockets.
+        
+        CAN frames have a specific format, so we create a minimal Ethernet frame
+        with the raw CAN data as payload for PCAP compatibility.
+        """
+        from scapy.layers.l2 import Ether, Raw
+        
+        # Create Ethernet frame with CAN data as payload
+        completed = Ether(dst="ff:ff:ff:ff:ff:ff", src="00:00:00:00:00:00") / Raw(load=raw_bytes)
+        return bytes(completed)
+
     def close(self) -> None:
         """Close the CAN socket."""
-        try:
-            super().close()
-        except Exception as e:
-            logging.getLogger(__name__).warning(f"[CANBusSocket] close error: {e}")
+        super().close()

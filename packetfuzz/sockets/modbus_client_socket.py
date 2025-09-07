@@ -35,7 +35,7 @@ except ImportError:
     PYMODBUS_AVAILABLE = False
 
 from .socket_interface import FuzzSocket
-from .config import BaseSocketConfig
+from .base_socket import BaseSocketConfig
 
 if TYPE_CHECKING:
     from ..fuzzing_framework import CampaignContext
@@ -169,56 +169,48 @@ class ModbusClientSocket(FuzzSocket):
         For standard Modbus requests, use send_modbus_request instead.
         """
         if not self._reconnect_if_needed():
-            self.logger.error("Not connected to Modbus server")
-            return None
+            raise RuntimeError("Not connected to Modbus server")
             
         if self.socket_cfg.one_connection_per_request:
             self.open()
             
-        try:
-            # Store the request
-            self._last_request = packet_bytes
-            self._request_history.append(packet_bytes)
-            # Trim history if needed
-            if len(self._request_history) > self.socket_cfg.request_history_size:
-                self._request_history.pop(0)
-                
-            if self.debug_mode:
-                self.logger.debug(f"Sending {len(packet_bytes)} bytes: {packet_bytes.hex(' ')}")
+        # Store the request
+        self._last_request = packet_bytes
+        self._request_history.append(packet_bytes)
+        # Trim history if needed
+        if len(self._request_history) > self.socket_cfg.request_history_size:
+            self._request_history.pop(0)
             
-            # Send raw bytes to the socket
-            if not hasattr(self._modbus_client, 'socket'):
-                self.logger.error("No socket available in Modbus client")
-                return None
-                
-            sock = self._modbus_client.socket
-            if not sock:
-                self.logger.error("Socket not initialized")
-                return None
-                
-            bytes_sent = sock.send(packet_bytes)
+        if self.debug_mode:
+            self.logger.debug(f"Sending {len(packet_bytes)} bytes: {packet_bytes.hex(' ')}")
+        
+        # Send raw bytes to the socket
+        if not hasattr(self._modbus_client, 'socket'):
+            raise RuntimeError("No socket available in Modbus client")
             
-            if self.socket_cfg.one_connection_per_request:
-                # For one-connection-per-request mode, read response before closing
-                try:
-                    response = sock.recv(1024)
-                    self._last_response = response
-                    self._response_history.append(response)
-                    # Trim history if needed
-                    if len(self._response_history) > self.socket_cfg.response_history_size:
-                        self._response_history.pop(0)
-                    if self.debug_mode and response:
-                        self.logger.debug(f"Received {len(response)} bytes: {response.hex(' ')}")
-                except Exception as recv_err:
-                    self.logger.error(f"Error receiving response: {recv_err}")
-                finally:
-                    self.close()
+        sock = self._modbus_client.socket
+        if not sock:
+            raise RuntimeError("Socket not initialized")
             
-            return bytes_sent
-        except Exception as e:
-            self.logger.error(f"Failed to send data: {e}")
-            self._connected = False
-            return None
+        bytes_sent = sock.send(packet_bytes)
+        
+        if self.socket_cfg.one_connection_per_request:
+            # For one-connection-per-request mode, read response before closing
+            try:
+                response = sock.recv(1024)
+                self._last_response = response
+                self._response_history.append(response)
+                # Trim history if needed
+                if len(self._response_history) > self.socket_cfg.response_history_size:
+                    self._response_history.pop(0)
+                if self.debug_mode and response:
+                    self.logger.debug(f"Received {len(response)} bytes: {response.hex(' ')}")
+            except Exception as recv_err:
+                self.logger.error(f"Error receiving response: {recv_err}")
+            finally:
+                self.close()
+        
+        return bytes_sent
 
     def receive_response(self, timeout: Optional[float] = None) -> Optional[bytes]:
         """
@@ -385,3 +377,29 @@ class ModbusClientSocket(FuzzSocket):
             "pymodbus_available": PYMODBUS_AVAILABLE
         })
         return base_info
+
+    def prepare_for_pcap_logging(self, raw_bytes: bytes, original_packet=None) -> bytes:
+        """
+        Prepare Modbus client data for PCAP logging by wrapping in complete network stack.
+        Modbus/TCP operates over TCP, so we create a TCP/IP/Ethernet packet.
+        """
+        from scapy.layers.l2 import Ether
+        from scapy.layers.inet import IP, TCP
+        
+        # Create TCP packet for Modbus communication (typically port 502)
+        tcp_packet = TCP(
+            sport=0,  # Client uses ephemeral port
+            dport=self.socket_cfg.port,
+            flags="PA"  # Push+Ack flags for data
+        ) / raw_bytes
+        
+        # Wrap in IP layer
+        ip_packet = IP(
+            src="127.0.0.1",  # Local client
+            dst=self.socket_cfg.host
+        ) / tcp_packet
+        
+        # Wrap in Ethernet layer for PCAP compatibility
+        eth_packet = Ether() / ip_packet
+        
+        return bytes(eth_packet)

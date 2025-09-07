@@ -13,7 +13,7 @@ from typing import Optional, TYPE_CHECKING
 from dataclasses import dataclass
 
 from .socket_interface import FuzzSocket
-from .config import BaseSocketConfig
+from .base_socket import BaseSocketConfig
 
 if TYPE_CHECKING:
     from ..fuzzing_framework import CampaignContext
@@ -106,14 +106,9 @@ class ServerUDPSocket(FuzzSocket):
     def send_packet(self, packet_bytes: bytes, context: "CampaignContext") -> Optional[int]:
         """Send response to the last client that contacted us."""
         if not self._sock or not self._last_client_addr:
-            logging.getLogger(__name__).warning("[ServerUDPSocket] No client address available for response")
-            return None
+            raise RuntimeError("No client address available for response")
         
-        try:
-            return self._sock.sendto(packet_bytes, self._last_client_addr)
-        except Exception as e:
-            logging.getLogger(__name__).error(f"[ServerUDPSocket] send failed: {e}")
-            return None
+        return self._sock.sendto(packet_bytes, self._last_client_addr)
 
 
 
@@ -132,20 +127,39 @@ class ServerUDPSocket(FuzzSocket):
         except socket.timeout:
             logging.getLogger(__name__).debug("[ServerUDPSocket] receive timeout")
             return None
-        except Exception as e:
-            logging.getLogger(__name__).error(f"[ServerUDPSocket] receive failed: {e}")
-            return None
         finally:
             if timeout is not None:
                 self._sock.settimeout(None)
 
+    def prepare_for_pcap_logging(self, raw_bytes: bytes, original_packet=None) -> bytes:
+        """
+        Prepare UDP server data for PCAP logging by wrapping in complete network stack.
+        For server sockets, we create a complete UDP/IP/Ethernet packet.
+        """
+        from scapy.layers.l2 import Ether
+        from scapy.layers.inet import IP, UDP
+        
+        # Create UDP packet with server context
+        udp_packet = UDP(
+            sport=self.socket_config.port,
+            dport=0  # Unknown client port for server
+        ) / raw_bytes
+        
+        # Wrap in IP layer
+        ip_packet = IP(
+            src=self.socket_config.host,
+            dst="0.0.0.0"  # Unknown destination for server
+        ) / udp_packet
+        
+        # Wrap in Ethernet layer for PCAP compatibility
+        eth_packet = Ether() / ip_packet
+        
+        return bytes(eth_packet)
+
     def close(self) -> None:
         """Close the listening socket."""
-        try:
-            self._listening = False
-            super().close()
-        except Exception as e:
-            logging.getLogger(__name__).warning(f"[ServerUDPSocket] close error: {e}")
+        self._listening = False
+        super().close()
 
 
 class ClientUDPSocket(FuzzSocket):
@@ -167,13 +181,9 @@ class ClientUDPSocket(FuzzSocket):
     def send_packet(self, packet_bytes: bytes, context: "CampaignContext") -> Optional[int]:
         """Send UDP datagram to the specific client."""
         if not self._sock:
-            return None
+            raise RuntimeError("Socket not open")
         
-        try:
-            return self._sock.sendto(packet_bytes, self._client_addr)
-        except Exception as e:
-            logging.getLogger(__name__).error(f"[ClientUDPSocket] send failed: {e}")
-            return None
+        return self._sock.sendto(packet_bytes, self._client_addr)
 
 
 
@@ -196,9 +206,6 @@ class ClientUDPSocket(FuzzSocket):
         except socket.timeout:
             logging.getLogger(__name__).debug("[ClientUDPSocket] receive timeout")
             return None
-        except Exception as e:
-            logging.getLogger(__name__).error(f"[ClientUDPSocket] receive failed: {e}")
-            return None
         finally:
             if timeout is not None:
                 self._sock.settimeout(None)
@@ -210,6 +217,31 @@ class ClientUDPSocket(FuzzSocket):
     def get_client_address(self) -> tuple[str, int]:
         """Get the address of this client."""
         return self._client_addr
+
+    def prepare_for_pcap_logging(self, raw_bytes: bytes, original_packet=None) -> bytes:
+        """
+        Prepare UDP client data for PCAP logging by wrapping in complete network stack.
+        For client sockets created by server, we create a complete UDP/IP/Ethernet packet.
+        """
+        from scapy.layers.l2 import Ether
+        from scapy.layers.inet import IP, UDP
+        
+        # Create UDP packet with client context (we know both endpoints)
+        udp_packet = UDP(
+            sport=self._client_addr[1],
+            dport=self._server_sock.getsockname()[1]  # Server port
+        ) / raw_bytes
+        
+        # Wrap in IP layer
+        ip_packet = IP(
+            src=self._client_addr[0],
+            dst=self._server_sock.getsockname()[0]  # Server IP
+        ) / udp_packet
+        
+        # Wrap in Ethernet layer for PCAP compatibility
+        eth_packet = Ether() / ip_packet
+        
+        return bytes(eth_packet)
 
     def close(self) -> None:
         """Close connection to this client (no-op for UDP)."""

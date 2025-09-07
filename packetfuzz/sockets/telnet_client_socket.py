@@ -14,7 +14,7 @@ from typing import Optional, TYPE_CHECKING
 from dataclasses import dataclass
 
 from .socket_interface import FuzzSocket
-from .config import BaseSocketConfig
+from .base_socket import BaseSocketConfig
 
 if TYPE_CHECKING:
     from ..fuzzing_framework import CampaignContext
@@ -96,26 +96,20 @@ class TelnetClientSocket(FuzzSocket):
                 self.logger.info("Reconnecting for new command")
                 self.open()
             else:
-                self.logger.error("Not connected to Telnet server")
-                return None
+                raise RuntimeError("Not connected to Telnet server")
         
-        try:
-            # Send data
-            if self.debug_mode:
-                self.logger.debug(f"Sending {len(packet_bytes)} bytes: {packet_bytes}")
-            
-            self._telnet_client.write(packet_bytes)
-            
-            if self.socket_cfg.one_connection_per_command:
-                # Read response before closing if configured for one command per connection
-                self._last_response = self._telnet_client.read_all()
-                self.close()
-            
-            return len(packet_bytes)
-        except Exception as e:
-            self.logger.error(f"Failed to send data: {e}")
-            self._connected = False
-            return None
+        # Send data
+        if self.debug_mode:
+            self.logger.debug(f"Sending {len(packet_bytes)} bytes: {packet_bytes}")
+        
+        self._telnet_client.write(packet_bytes)
+        
+        if self.socket_cfg.one_connection_per_command:
+            # Read response before closing if configured for one command per connection
+            self._last_response = self._telnet_client.read_all()
+            self.close()
+        
+        return len(packet_bytes)
 
     def receive_response(self, timeout: Optional[float] = None) -> Optional[bytes]:
         """Read response from the Telnet server."""
@@ -169,3 +163,29 @@ class TelnetClientSocket(FuzzSocket):
             "one_connection_per_command": self.socket_cfg.one_connection_per_command
         })
         return base_info
+
+    def prepare_for_pcap_logging(self, raw_bytes: bytes, original_packet=None) -> bytes:
+        """
+        Prepare Telnet client data for PCAP logging by wrapping in complete network stack.
+        Telnet operates over TCP, so we create a TCP/IP/Ethernet packet.
+        """
+        from scapy.layers.l2 import Ether
+        from scapy.layers.inet import IP, TCP
+        
+        # Create TCP packet for Telnet communication (typically port 23)
+        tcp_packet = TCP(
+            sport=0,  # Client uses ephemeral port
+            dport=self.socket_cfg.port,
+            flags="PA"  # Push+Ack flags for data
+        ) / raw_bytes
+        
+        # Wrap in IP layer
+        ip_packet = IP(
+            src="127.0.0.1",  # Local client
+            dst=self.socket_cfg.host
+        ) / tcp_packet
+        
+        # Wrap in Ethernet layer for PCAP compatibility
+        eth_packet = Ether() / ip_packet
+        
+        return bytes(eth_packet)

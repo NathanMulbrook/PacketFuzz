@@ -13,7 +13,7 @@ from typing import Optional, TYPE_CHECKING
 from dataclasses import dataclass
 
 from .socket_interface import FuzzSocket
-from .config import BaseSocketConfig
+from .base_socket import BaseSocketConfig
 
 if TYPE_CHECKING:
     from ..fuzzing_framework import CampaignContext
@@ -57,24 +57,22 @@ class RawUDPSocket(FuzzSocket):
     def send_packet(self, packet_bytes: bytes, context: "CampaignContext") -> Optional[int]:
         """Send raw UDP packet."""
         if not self._sock:
-            logging.getLogger(__name__).error("[RawUDPSocket] Socket not open")
-            return None
-            
-        try:
-            # Send to target from config or campaign
-            cfg = getattr(self.campaign, 'socket_config', None)
-            if isinstance(cfg, RawUDPConfig):
-                target = cfg.target
-            else:
-                target = getattr(self.campaign, 'target', '127.0.0.1')
-            return self._sock.sendto(packet_bytes, (target, 0))
-        except Exception as e:
-            logging.getLogger(__name__).error(f"[RawUDPSocket] send failed: {e}")
-            return None
+            raise RuntimeError("Socket not open")
+        return self._sock.sendto(packet_bytes, (self.socket_config.target, self.socket_config.port))
+
+    def prepare_for_pcap_logging(self, raw_bytes: bytes, original_packet=None) -> bytes:
+        """
+        Prepare packet for PCAP logging for raw UDP sockets.
+        
+        Raw UDP packets already contain complete UDP/IP headers, so we just need to 
+        add Ethernet framing for PCAP compatibility.
+        """
+        from scapy.layers.l2 import Ether
+        
+        # Add Ethernet frame around the raw UDP/IP packet
+        completed = Ether(dst="ff:ff:ff:ff:ff:ff", src="00:00:00:00:00:00") / raw_bytes
+        return bytes(completed)
 
     def close(self) -> None:
         """Close the raw UDP socket."""
-        try:
-            super().close()
-        except Exception as e:
-            logging.getLogger(__name__).warning(f"[RawUDPSocket] close error: {e}")
+        super().close()

@@ -62,19 +62,13 @@ class LibFuzzerMutator(BaseMutator):
     
     def _load_library(self) -> None:
         """Load the libFuzzer C extension library"""
-        try:
-            # Look for the compiled library
-            lib_path = self._find_library_path()
-            if lib_path and Path(lib_path).exists():
-                self._lib = ctypes.CDLL(lib_path)
-                self._setup_function_signatures()
-            else:
-                raise RuntimeError("LibFuzzer extension library not found. Compile the extension first.")
-        except Exception as e:
-            if "LibFuzzer extension library not found" in str(e):
-                raise
-            logger.error(f"Could not load libFuzzer extension: {e}")
-            raise RuntimeError("LibFuzzer extension failed to load. Check compilation.")
+        # Look for the compiled library
+        lib_path = self._find_library_path()
+        if lib_path and Path(lib_path).exists():
+            self._lib = ctypes.CDLL(lib_path)
+            self._setup_function_signatures()
+        else:
+            raise RuntimeError("LibFuzzer extension library not found. Compile the extension first.")
     
     def _find_library_path(self) -> Optional[str]:
         """Find the compiled libFuzzer extension library (Linux only)."""
@@ -128,37 +122,29 @@ class LibFuzzerMutator(BaseMutator):
         if not dictionaries:
             logger.debug("No dictionaries provided to load; skipping dictionary loading.")
             return True
-        try:
-            # Convert to C format
-            dict_entries = (ctypes.c_char_p * len(dictionaries))()
-            for i, entry in enumerate(dictionaries):
-                dict_entries[i] = ctypes.c_char_p(entry.encode('utf-8', errors='ignore'))
-            # Load into LibFuzzer memory only
-            result = self._lib.load_dictionaries_native(dict_entries, len(dictionaries))
-            logger.debug(f"LibFuzzer dictionary loading result: {result} (entries: {len(dictionaries)})")
-            if result == -1:
-                logger.error("Error loading dictionaries: allocation or internal error.")
-                return False
-            else:
-                # Verify actual loaded count to determine success
-                try:
-                    loaded_count = self._lib.get_loaded_dict_count()
-                    if loaded_count > 0:
-                        logger.debug(f"Successfully loaded {loaded_count} dictionary entries into LibFuzzer")
-                        return True
-                    else:
-                        if dictionaries:
-                            logger.error(f"No dictionaries loaded, but non-empty dictionary list was provided! (entries: {len(dictionaries)})")
-                        else:
-                            logger.debug("No dictionaries loaded (empty list or None provided).")
-                        return True  # Still return True to not block fuzzing
-                except Exception as e:
-                    logger.warning(f"Failed to verify dictionary loading: {e}")
-                    # Assume success if we can't verify
-                    return True
-        except Exception as e:
-            logger.error(f"Exception loading dictionaries: {e}")
+        # Convert to C format
+        dict_entries = (ctypes.c_char_p * len(dictionaries))()
+        for i, entry in enumerate(dictionaries):
+            dict_entries[i] = ctypes.c_char_p(entry.encode('utf-8', errors='ignore'))
+        # Load into LibFuzzer memory only
+        result = self._lib.load_dictionaries_native(dict_entries, len(dictionaries))
+        logger.debug(f"LibFuzzer dictionary loading result: {result} (entries: {len(dictionaries)})")
+        if result == -1:
+            logger.error("Error loading dictionaries: allocation or internal error.")
             return False
+        else:
+            # Verify actual loaded count to determine success
+            loaded_count = self._lib.get_loaded_dict_count()
+            if loaded_count > 0:
+                logger.debug(f"Successfully loaded {loaded_count} dictionary entries into LibFuzzer")
+                return True
+            else:
+                if dictionaries:
+                    logger.error(f"No dictionaries loaded, but non-empty dictionary list was provided! (entries: {len(dictionaries)})")
+                else:
+                    logger.debug("No dictionaries loaded (empty list or None provided).")
+                return True  # Still return True to not block fuzzing
+
     
     def mutate_bytes(self, data: bytes, dictionaries: Optional[List[bytes]] = None) -> bytes:
         """Mutate byte data using libFuzzer with multi-round iterative mutations"""
@@ -177,11 +163,18 @@ class LibFuzzerMutator(BaseMutator):
         - Multiple rounds allow LibFuzzer to build upon previous mutations
         - Round count is random (0-30) for variety
         """
-        # Random round count between 0 and 3 (reduced for performance)
-        round_count = self._rng.randint(0, 3)
-        
         max_length = max_length or DEFAULT_MAX_OUTPUT_SIZE
+
+        # Scale max number of rounds based on max_length (logarithmic, min 2, max 8)
+        import math
+        if max_length is not None and max_length > 0:
+            max_rounds = min(8, max(2, int(2 + math.log2(max_length))))
+        else:
+            max_rounds = 2
+        round_count = self._rng.randint(0, max_rounds)
         
+
+
         if round_count == 0:
             # No multi-round: single mutation with provided seed
             return self._mutate_with_libfuzzer(data, dictionaries, max_length)
@@ -278,23 +271,17 @@ class LibFuzzerMutator(BaseMutator):
             True if dictionaries were loaded successfully or no loading needed,
             False if LibFuzzer is not available or loading failed
         """
-        if not self.is_libfuzzer_available():
-            return False
-            
-        try:
-            # Convert bytes dictionaries to string format for C extension
-            dict_strings = []
-            for d in dictionaries:
-                if isinstance(d, bytes):
-                    dict_strings.append(d.decode('utf-8', errors='ignore'))
-                else:
-                    dict_strings.append(str(d))
-            
-            # Load dictionaries into memory only (no corpus)
-            return self.load_dictionaries_for_native_support(dict_strings)
-        except Exception as e:
-            logger.warning(f"Failed to load dictionaries into LibFuzzer: {e}")
-            return False
+        # Convert bytes dictionaries to string format for C extension
+        dict_strings = []
+        for d in dictionaries:
+            if isinstance(d, bytes):
+                dict_strings.append(d.decode('utf-8', errors='ignore'))
+            else:
+                dict_strings.append(str(d))
+        
+        # Load dictionaries into memory only (no corpus)
+        return self.load_dictionaries_for_native_support(dict_strings)
+
 
     # --- New API: type-aware field mutation ---
     def mutate_field(self,
@@ -322,14 +309,6 @@ class LibFuzzerMutator(BaseMutator):
         current_value = getattr(field_info, 'current_value', None)
         # Try both 'kind' and 'field_kind' for compatibility
         kind = getattr(field_info, 'kind', None) or getattr(field_info, 'field_kind', 'unknown')
-
-        if not self.is_libfuzzer_available():
-            return current_value
-
-        # Helper: mutate some bytes, return bytes
-        def mutate_bytes_seed(b: bytes) -> bytes:
-            """Helper function to mutate bytes with error handling."""
-            return self._mutate_with_libfuzzer_multiround(b, dictionaries)
 
         # Helper: parse int from bytes/str
         def parse_int(data: bytes | str) -> Optional[int]:
@@ -379,8 +358,6 @@ class LibFuzzerMutator(BaseMutator):
             # 2. Output from previous LibFuzzer rounds (for evolution)
             # Dictionaries influence LibFuzzer INTERNALLY, not as seed input!
             
-            field_name = getattr(field_info, 'field_name', 'Unknown')
-            
             # Always start with empty seed - let LibFuzzer generate everything
             seed = b""
             
@@ -408,6 +385,7 @@ class LibFuzzerMutator(BaseMutator):
 
         if kind in ('options', 'list'):
             # Let the manager/scapy mutator handle options
+            #TODO evaluate if this actually works this way
             return None
 
         if kind == 'raw':
@@ -429,30 +407,25 @@ class LibFuzzerMutator(BaseMutator):
         Returns:
             True if initialization successful, False otherwise
         """
-        if not self.is_libfuzzer_available():
-            return False
             
         # Only load dictionaries once to avoid memory corruption in C extension
         if dictionaries and len(dictionaries) > 0 and not self._dictionaries_loaded:
             # Load dictionaries into LibFuzzer's memory
-            try:
                 # Convert dictionaries to string format and load
-                dict_strings = []
-                for d in dictionaries:
-                    if isinstance(d, bytes):
-                        dict_strings.append(d.decode('utf-8', errors='ignore'))
-                    else:
-                        dict_strings.append(str(d))
-                
-                success = self.load_dictionaries_for_native_support(dict_strings)
-                if success:
-                    self._dictionaries_loaded = True
-                    self.initialized = True
-                    logger.debug(f"Initialized LibFuzzer with {len(dictionaries)} dictionary entries")
-                return success
-            except Exception as e:
-                logger.warning(f"Failed to initialize LibFuzzer with dictionaries: {e}")
-                return False
+            dict_strings = []
+            for d in dictionaries:
+                if isinstance(d, bytes):
+                    dict_strings.append(d.decode('utf-8', errors='ignore'))
+                else:
+                    dict_strings.append(str(d))
+            
+            success = self.load_dictionaries_for_native_support(dict_strings)
+            if success:
+                self._dictionaries_loaded = True
+                self.initialized = True
+                logger.debug(f"Initialized LibFuzzer with {len(dictionaries)} dictionary entries")
+            return success
+
         
         # Even without dictionaries, consider the mutator initialized
         self.initialized = True
@@ -510,5 +483,3 @@ class LibFuzzerMutator(BaseMutator):
         self._dictionaries_loaded = False
         return True
 
-
-# Removed manual registration - now uses auto-discovery

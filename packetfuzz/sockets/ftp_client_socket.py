@@ -14,7 +14,7 @@ from typing import Optional, TYPE_CHECKING
 from dataclasses import dataclass
 
 from .socket_interface import FuzzSocket
-from .config import BaseSocketConfig
+from .base_socket import BaseSocketConfig
 
 if TYPE_CHECKING:
     from ..fuzzing_framework import CampaignContext
@@ -96,29 +96,23 @@ class FTPClientSocket(FuzzSocket):
         Uses a default filename 'fuzzed_file.bin' unless specified in context.
         """
         if not self.is_open or not self._ftp_client:
-            self.logger.error("FTP client not connected")
-            return None
+            raise RuntimeError("FTP client not connected")
         
-        try:
-            # Handle reconnection if configured
-            if self.socket_cfg.one_connection_per_file:
-                self._reconnect()
-            
-            # Get filename from context or use default
-            filename = getattr(context, 'ftp_filename', 'fuzzed_file.bin')
-            
-            # Create file-like object from fuzzed data
-            data_stream = io.BytesIO(packet_bytes)
-            
-            # Upload fuzzed data
-            self._ftp_client.storbinary(f'STOR {filename}', data_stream)
-            
-            self.logger.debug(f"Uploaded {len(packet_bytes)} bytes as {filename}")
-            return len(packet_bytes)
-            
-        except Exception as e:
-            self.logger.error("FTP upload failed", e)
-            return None
+        # Handle reconnection if configured
+        if self.socket_cfg.one_connection_per_file:
+            self._reconnect()
+        
+        # Get filename from context or use default
+        filename = getattr(context, 'ftp_filename', 'fuzzed_file.bin')
+        
+        # Create file-like object from fuzzed data
+        data_stream = io.BytesIO(packet_bytes)
+        
+        # Upload fuzzed data
+        self._ftp_client.storbinary(f'STOR {filename}', data_stream)
+        
+        self.logger.debug(f"Uploaded {len(packet_bytes)} bytes as {filename}")
+        return len(packet_bytes)
 
     def receive_response(self, timeout: Optional[float] = None) -> Optional[bytes]:
         """
@@ -187,3 +181,29 @@ class FTPClientSocket(FuzzSocket):
             "connected": self._connected
         })
         return base_info
+
+    def prepare_for_pcap_logging(self, raw_bytes: bytes, original_packet=None) -> bytes:
+        """
+        Prepare FTP client data for PCAP logging by wrapping in complete network stack.
+        FTP operates over TCP, so we create a TCP/IP/Ethernet packet.
+        """
+        from scapy.layers.l2 import Ether
+        from scapy.layers.inet import IP, TCP
+        
+        # Create TCP packet for FTP communication (typically port 21)
+        tcp_packet = TCP(
+            sport=0,  # Client uses ephemeral port
+            dport=self.socket_cfg.port,
+            flags="PA"  # Push+Ack flags for data
+        ) / raw_bytes
+        
+        # Wrap in IP layer
+        ip_packet = IP(
+            src="127.0.0.1",  # Local client
+            dst=self.socket_cfg.host
+        ) / tcp_packet
+        
+        # Wrap in Ethernet layer for PCAP compatibility
+        eth_packet = Ether() / ip_packet
+        
+        return bytes(eth_packet)

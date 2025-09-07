@@ -17,7 +17,7 @@ from typing import Optional, TYPE_CHECKING, Any, Dict, List, Tuple
 from dataclasses import dataclass
 
 from .socket_interface import FuzzSocket
-from .config import BaseSocketConfig
+from .base_socket import BaseSocketConfig
 
 if TYPE_CHECKING:
     from ..fuzzing_framework import CampaignContext
@@ -431,3 +431,29 @@ class TelnetServerSocket(FuzzSocket):
             "max_connections": self.socket_cfg.max_connections
         })
         return base_info
+
+    def prepare_for_pcap_logging(self, raw_bytes: bytes, original_packet=None) -> bytes:
+        """
+        Prepare Telnet server data for PCAP logging by wrapping in complete network stack.
+        Telnet operates over TCP, so we create a TCP/IP/Ethernet packet.
+        """
+        from scapy.layers.l2 import Ether
+        from scapy.layers.inet import IP, TCP
+        
+        # Create TCP packet for Telnet server response (typically port 23)
+        tcp_packet = TCP(
+            sport=self.socket_cfg.port,
+            dport=0,  # Unknown client port for server
+            flags="PA"  # Push+Ack flags for data
+        ) / raw_bytes
+        
+        # Wrap in IP layer
+        ip_packet = IP(
+            src=self.socket_cfg.bind_address,
+            dst="0.0.0.0"  # Unknown destination for server
+        ) / tcp_packet
+        
+        # Wrap in Ethernet layer for PCAP compatibility
+        eth_packet = Ether() / ip_packet
+        
+        return bytes(eth_packet)

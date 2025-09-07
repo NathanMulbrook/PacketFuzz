@@ -126,16 +126,22 @@ class DictionaryOnlyMutator(BaseMutator):
             entry = self._pick_entry(dictionaries, r)
             val = self._parse_int_from_entry(entry) if entry is not None else None
             if val is None:
+                # Fallback to common numeric values if no valid integer found in dictionary
                 candidates = [0, 1, -1, 255, 256, 1024, 4096, 65535, 0x7fffffff, -0x80000000]
                 val = r.choice(candidates)
+            
+            # Apply field size constraints
             min_v = getattr(field_info, 'min_value', 0)
             max_v = getattr(field_info, 'max_value', 0xFFFFFFFF)
             val = self._clamp(int(val), int(min_v), int(max_v))
-            enum_map = getattr(field_info, 'enum_map', None)
-            if enum_map and isinstance(enum_map, dict):
-                allowed_ints = list(enum_map.keys())
-                if allowed_ints and val not in allowed_ints:
-                    val = allowed_ints[val % len(allowed_ints)]
+            
+            # Handle enum mapping for enum/flags fields
+            if kind in ('enum', 'flags'):
+                enum_map = getattr(field_info, 'enum_map', None)
+                if enum_map and isinstance(enum_map, dict):
+                    allowed_ints = list(enum_map.keys())
+                    if allowed_ints and val not in allowed_ints:
+                        val = allowed_ints[val % len(allowed_ints)]
             return val
 
         if kind == 'string':
@@ -148,6 +154,7 @@ class DictionaryOnlyMutator(BaseMutator):
                 s = s[:max_len]
             return s.decode('utf-8', errors='ignore')
 
+        #TODO these might need some work
         if kind in ('options', 'list'):
             return None
 
@@ -159,6 +166,3 @@ class DictionaryOnlyMutator(BaseMutator):
 
         return current_value
 
-
-# Register this mutator
-# Removed manual registration - now uses auto-discovery

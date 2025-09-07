@@ -13,7 +13,7 @@ from typing import Optional, TYPE_CHECKING
 from dataclasses import dataclass
 
 from .socket_interface import FuzzSocket
-from .config import BaseSocketConfig
+from .base_socket import BaseSocketConfig
 
 if TYPE_CHECKING:
     from ..fuzzing_framework import CampaignContext
@@ -112,13 +112,36 @@ class ServerTCPSocket(FuzzSocket):
 
     
 
+    def prepare_for_pcap_logging(self, raw_bytes: bytes, original_packet=None) -> bytes:
+        """
+        Prepare TCP server data for PCAP logging by wrapping in complete network stack.
+        For server sockets, we create a complete TCP/IP/Ethernet packet.
+        """
+        from scapy.layers.l2 import Ether
+        from scapy.layers.inet import IP, TCP
+        
+        # Create TCP packet with server context
+        tcp_packet = TCP(
+            sport=self.socket_config.port,
+            dport=0,  # Unknown client port for server
+            flags="A"  # ACK flag for server response
+        ) / raw_bytes
+        
+        # Wrap in IP layer
+        ip_packet = IP(
+            src=self.socket_config.host,
+            dst="0.0.0.0"  # Unknown destination for server
+        ) / tcp_packet
+        
+        # Wrap in Ethernet layer for PCAP compatibility
+        eth_packet = Ether() / ip_packet
+        
+        return bytes(eth_packet)
+
     def close(self) -> None:
         """Close the listening socket."""
-        try:
-            self._listening = False
-            super().close()
-        except Exception as e:
-            logging.getLogger(__name__).warning(f"[ServerTCPSocket] close error: {e}")
+        self._listening = False
+        super().close()
 
 
 class ClientTCPSocket(FuzzSocket):
@@ -137,13 +160,9 @@ class ClientTCPSocket(FuzzSocket):
     def send_packet(self, packet_bytes: bytes, context: "CampaignContext") -> Optional[int]:
         """Send data to the connected client."""
         if not self._sock:
-            return None
+            raise RuntimeError("Socket not open")
         
-        try:
-            return self._sock.send(packet_bytes)
-        except Exception as e:
-            logging.getLogger(__name__).error(f"[ClientTCPSocket] send failed: {e}")
-            return None
+        return self._sock.send(packet_bytes)
 
 
 
@@ -161,12 +180,40 @@ class ClientTCPSocket(FuzzSocket):
         except socket.timeout:
             logging.getLogger(__name__).debug("[ClientTCPSocket] receive timeout")
             return None
-        except Exception as e:
-            logging.getLogger(__name__).error(f"[ClientTCPSocket] receive failed: {e}")
-            return None
         finally:
             if timeout is not None:
                 self._sock.settimeout(None)
+
+    def prepare_for_pcap_logging(self, raw_bytes: bytes, original_packet=None) -> bytes:
+        """
+        Prepare packet for PCAP logging with full TCP/IP/Ethernet stack for client connection.
+        
+        For server-side TCP client connections, we create a complete protocol stack
+        with the raw fuzzed bytes as the TCP payload.
+        """
+        from scapy.layers.l2 import Ether, Raw
+        from scapy.layers.inet import IP, TCP
+        from scapy.volatile import RandInt, RandShort
+        import random
+        
+        # For server-side connections, we reverse src/dst
+        sport = random.randint(49152, 65535)
+        
+        # Create complete TCP/IP/Ethernet packet with fuzzed data as payload
+        completed = Ether(dst="ff:ff:ff:ff:ff:ff", src="00:00:00:00:00:00") / \
+                   IP(dst="127.0.0.1", src="127.0.0.1") / \
+                   TCP(dport=sport, sport=80) / Raw(load=raw_bytes)
+        
+        # Populate connection fields for clean PCAP output
+        try:
+            completed[TCP].seq = RandInt()
+            del completed[TCP].chksum  # Let Scapy recalculate
+            completed[IP].id = RandShort()
+            del completed[IP].chksum  # Let Scapy recalculate
+        except Exception as e:
+            logging.getLogger(__name__).debug(f"Could not populate connection fields: {e}")
+        
+        return bytes(completed)
 
     def close(self) -> None:
         """Close the client connection."""

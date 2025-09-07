@@ -39,7 +39,7 @@ except ImportError:
     PYMODBUS_AVAILABLE = False
 
 from .socket_interface import FuzzSocket
-from .config import BaseSocketConfig
+from .base_socket import BaseSocketConfig
 
 if TYPE_CHECKING:
     from ..fuzzing_framework import CampaignContext
