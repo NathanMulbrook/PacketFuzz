@@ -152,6 +152,26 @@ class FuzzSocket(ABC):
         """Accept an incoming connection. Override in listening sockets."""
         raise NotImplementedError("This socket type does not support accepting connections")
 
+    def prepare_for_pcap_logging(self, raw_bytes: bytes, original_packet: Any) -> bytes:
+        """
+        Prepare packet for PCAP logging by creating a complete packet with proper lower layers.
+        
+        Each socket type knows exactly what lower layer protocol stack it needs.
+        This method creates a complete packet structure with the raw fuzzed bytes 
+        as payload, ensuring PCAP compatibility while preserving fuzz integrity.
+        
+        Args:
+            raw_bytes: Serialized fuzzed packet bytes to embed in PCAP structure
+            original_packet: Original packet structure for reference (optional)
+            
+        Returns:
+            Complete packet bytes ready for PCAP logging
+        """
+        # Default implementation: minimal Ethernet frame
+        from scapy.layers.l2 import Ether, Raw
+        fallback = Ether(dst="ff:ff:ff:ff:ff:ff", src="00:00:00:00:00:00") / Raw(load=raw_bytes)
+        return bytes(fallback)
+
     def get_socket_info(self) -> dict:
         return {
             "socket_type": self.socket_type.value if self.socket_type else "unknown",
@@ -200,8 +220,47 @@ def create(campaign: 'FuzzingCampaign') -> FuzzSocket:
         return fs
 
     st = campaign.socket_type
+    
+    # If socket_type is not set, try to infer from socket_config
+    if st is None and hasattr(campaign, 'socket_config') and campaign.socket_config is not None:
+        # Import config types to build mapping
+        config_to_socket_type = {}
+        try:
+            from .raw_ethernet_socket import RawEthernetConfig
+            from .raw_ip_socket import RawIPConfig
+            from .raw_tcp_socket import RawTCPConfig
+            from .raw_udp_socket import RawUDPConfig
+            from .managed_tcp_socket import ManagedTCPConfig
+            from .managed_udp_socket import ManagedUDPConfig
+            from .canbus_socket import CANBusConfig
+            from .server_tcp_socket import ServerTCPConfig
+            from .server_udp_socket import ServerUDPConfig
+            
+            config_to_socket_type = {
+                RawEthernetConfig: SocketType.RAW_ETHERNET,
+                RawIPConfig: SocketType.RAW_IP,
+                RawTCPConfig: SocketType.RAW_TCP,
+                RawUDPConfig: SocketType.RAW_UDP,
+                ManagedTCPConfig: SocketType.MANAGED_TCP,
+                ManagedUDPConfig: SocketType.MANAGED_UDP,
+                CANBusConfig: SocketType.CANBUS,
+                ServerTCPConfig: SocketType.SERVER_TCP,
+                ServerUDPConfig: SocketType.SERVER_UDP,
+            }
+            
+            # Find socket type based on config class
+            config_class = campaign.socket_config.__class__
+            st = config_to_socket_type.get(config_class)
+            
+            if st:
+                # Set the inferred socket type on the campaign
+                campaign.socket_type = st
+                
+        except ImportError:
+            pass  # Config classes not available
+    
     if st is None:
-        raise ValueError(f"Invalid socket_type: {getattr(campaign, 'socket_type', None)}")
+        raise ValueError(f"Cannot determine socket_type: socket_type=None and socket_config={getattr(campaign, 'socket_config', None)}")
 
     # Registry-based socket creation for cleaner factory pattern
     socket_registry = {
@@ -238,8 +297,13 @@ def create(campaign: 'FuzzingCampaign') -> FuzzSocket:
         # Get the socket class from the module
         socket_class = getattr(socket_module, class_name)
         
-        # Create and return the socket instance
-        return socket_class(campaign)
+        # Create socket instance
+        socket_instance = socket_class(campaign)
+        
+        # Set the socket_type from the inferred or provided type
+        socket_instance.socket_type = st
+        
+        return socket_instance
     except ImportError as e:
         raise ImportError(f"Failed to import socket implementation for {st}: {e}")
     except AttributeError as e:

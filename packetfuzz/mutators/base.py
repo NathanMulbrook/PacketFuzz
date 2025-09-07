@@ -14,6 +14,23 @@ from ..mutator_manager_data import FieldMetadata
 logger = logging.getLogger(__name__)
 
 
+class MutatorRegistry:
+    """Auto-discovery registry for mutator classes"""
+    
+    @classmethod
+    def get_available_mutators(cls):
+        """Get list of available mutator names by discovering BaseMutator subclasses"""
+        return [subcls.get_name() for subcls in BaseMutator.__subclasses__()]
+    
+    @classmethod
+    def get_mutator_class(cls, name: str):
+        """Get a mutator class by name"""
+        for subcls in BaseMutator.__subclasses__():
+            if subcls.get_name() == name:
+                return subcls
+        return None
+
+
 class BaseMutator(ABC):
     """
     Abstract base class for all mutators.
@@ -27,6 +44,25 @@ class BaseMutator(ABC):
         """Initialize the mutator with optional random seed."""
         if seed is not None:
             random.seed(seed)
+    
+    @classmethod
+    def get_name(cls) -> str:
+        """
+        Get the name of this mutator for registration.
+        Override this method to customize the name, or it will use the class name.
+        """
+        # Convert class name to snake_case and remove "Mutator" suffix
+        name = cls.__name__
+        if name.endswith('Mutator'):
+            name = name[:-7]  # Remove "Mutator" suffix
+        
+        # Convert CamelCase to snake_case
+        result = ""
+        for i, char in enumerate(name):
+            if char.isupper() and i > 0:
+                result += "_"
+            result += char.lower()
+        return result
     
     @abstractmethod
     def mutate_bytes(self, data: bytes, dictionaries: Optional[List[bytes]] = None) -> bytes:
@@ -76,11 +112,11 @@ class BaseMutator(ABC):
             rng: Optional RNG for randomization
             
         Returns:
-            List of candidate values ready for field assignment
+            True if initialization succeeded, False otherwise
         """
-        # Default implementation returns empty list (no corpus support)
+        # Default implementation returns True (successful initialization)
         self.initialized = True
-        return []
+        return True
     
     def teardown(self) -> None:
         """

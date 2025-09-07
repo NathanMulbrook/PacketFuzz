@@ -44,22 +44,11 @@ from pathlib import Path
 from typing import Any, List, Type
 
 # ===========================
-# Third-Party Imports
-# ===========================
-# (None required for CLI)
-
-# ===========================
 # Local Imports
 # ===========================
-from .mutators.libfuzzer_mutator import LibFuzzerMutator
 from .dictionary_manager import DictionaryManager
-
-# ===========================
-# Local Imports
-# ===========================
 from .fuzzing_framework import FuzzingCampaign, logger
 from .mutators.libfuzzer_mutator import LibFuzzerMutator
-from .dictionary_manager import DictionaryManager
 
 
 def load_campaigns_from_file(config_file: Path) -> List[Type[FuzzingCampaign]]:
@@ -117,21 +106,16 @@ def check_components() -> int:
         print(f"LibFuzzer extension: {'Available' if libfuzzer_available else 'Not available'}")
         
         if libfuzzer_available:
-            try:
-                # Check if native dictionary support works
-                mutator.load_dictionaries_for_native_support(['test'])
-                print("LibFuzzer native dictionary support: Available")
-            except Exception as e:
-                print(f"LibFuzzer native dictionary support: Error - {e}")
+            pass
+        else:
+            exit()
     except Exception as e:
         libfuzzer_available = False
         print(f"LibFuzzer extension: Not available - {e}")
+        exit()
     
     # Check dictionary manager
     try:
-        dict_manager = DictionaryManager()
-        print("Dictionary manager: Available")
-        
         # Check fuzzdb directory
         fuzzdb_path = os.path.join(os.path.dirname(__file__), 'fuzzdb')
         if os.path.exists(fuzzdb_path):
@@ -141,14 +125,6 @@ def check_components() -> int:
             
     except Exception as e:
         print(f"Dictionary manager: Error - {e}")
-    
-    # Overall status
-    if libfuzzer_available:
-        print("\nAll core components available - optimal fuzzing performance")
-        return 0
-    else:
-        print("\nLibFuzzer extension not available - compile extension for optimal performance")
-        return 1
 
 
 def apply_cli_overrides(campaign: Any, args: Any) -> None:
@@ -163,95 +139,66 @@ def apply_cli_overrides(campaign: Any, args: Any) -> None:
     allowing CLI flags to override campaign class defaults for network output,
     PCAP output, dictionary configuration, and verbose logging.
     """
-    # Network
     if args.enable_network:
         campaign.output_network = True
     elif args.disable_network:
         campaign.output_network = False
-    # PCAP
+
     if args.pcap_file:
         campaign.output_pcap = str(args.pcap_file)
-    elif args.enable_pcap:
-        if not campaign.output_pcap:
-            campaign.output_pcap = f"{campaign.__class__.__name__.lower()}_output.pcap"
+    elif args.enable_pcap and not campaign.output_pcap:
+        campaign.output_pcap = f"{campaign.__class__.__name__.lower()}_output.pcap"
     elif args.disable_pcap:
         campaign.output_pcap = None
-    # Auto-enable PCAP if network is disabled and no explicit PCAP setting,
-    # but only if user didn't request --disable-pcap
+
     if (not getattr(campaign, 'output_network', True) and 
         not getattr(campaign, 'output_pcap', None) and 
         not args.enable_pcap and not args.pcap_file and not args.disable_pcap):
         campaign.output_pcap = f"{campaign.__class__.__name__.lower()}_output.pcap"
-    # Dictionary
+
     if args.dictionary_config:
         campaign.dictionary_config_file = str(args.dictionary_config)
     
-    # Max iterations override
-    if args.max_iterations is not None:
+    if args.max_iterations:
         campaign.iterations = args.max_iterations
     
-    # Interface offload control
     if args.disable_offload:
         campaign.disable_interface_offload = True
     elif args.enable_offload:
         campaign.disable_interface_offload = False
     
-    # Verbose
-    if hasattr(campaign, 'verbose'):
+    if args.verbose:
         campaign.verbose = max(args.verbose, 
-                             getattr(args, 'console_verbosity', 0) or 0,
-                             getattr(args, 'file_verbosity', 0) or 0,
-                             getattr(args, 'log_verbosity', 0) or 0)
+            getattr(args, 'console_verbosity', 0) or 0,
+            getattr(args, 'file_verbosity', 0) or 0,
+            getattr(args, 'log_verbosity', 0) or 0)
     
-    # Report formats
     if args.report_formats:
-        # Handle 'all' option
         if 'all' in args.report_formats:
             campaign.report_formats = ['html', 'json', 'csv', 'sarif', 'markdown', 'yaml']
         else:
             campaign.report_formats = args.report_formats
-    elif os.getenv('PACKETFUZZ_REPORT_FORMATS'):
-        # Apply environment variable only if no CLI argument was provided
-        env_report_formats = os.getenv('PACKETFUZZ_REPORT_FORMATS')
-        if env_report_formats:
-            env_formats = [f.strip() for f in env_report_formats.split(',') if f.strip()]
-            if 'all' in env_formats:
-                campaign.report_formats = ['html', 'json', 'csv', 'sarif', 'markdown', 'yaml']
-            else:
-                campaign.report_formats = env_formats
-    
-    # Report level
-    if hasattr(args, 'report_level') and args.report_level:
+
+    if args.report_level:
         campaign.report_level = args.report_level
+
+
+## Logging Configuration
+    if args.console_verbosity:
+        console_verbosity = args.console_verbosity
+    else:
+        console_verbosity = args.verbose or 0
+
+    if args.file_verbosity:
+        file_verbosity = args.file_verbosity
+    elif args.log_verbosity and args.log_verbosity > 0:
+        file_verbosity = args.log_verbosity
+    else:
+        file_verbosity = args.verbose or 0
     
-    # Configure separate console and file logging levels
-    
-    # Helper to get int from environment variable
-    def env_int(var):
-        """Get integer value from environment variable or 0 if not set."""
-        val = os.getenv(var)
-        return int(val) if val else 0
-    
-    # Determine verbosity levels with precedence: explicit flags > counting flags > environment > default
-    console_verbosity = (getattr(args, 'console_verbosity', None) or 
-                        (args.verbose if args.verbose > 0 else 0) or
-                        env_int('PACKETFUZZ_CONSOLE_VERBOSITY') or
-                        env_int('PACKETFUZZ_VERBOSE'))
-    
-    file_verbosity = (getattr(args, 'file_verbosity', None) or 
-                     (getattr(args, 'log_verbosity', 0) if getattr(args, 'log_verbosity', 0) > 0 else 0) or
-                     (args.verbose if args.verbose > 0 else 0) or
-                     env_int('PACKETFUZZ_FILE_VERBOSITY') or
-                     env_int('PACKETFUZZ_LOG_VERBOSITY') or
-                     env_int('PACKETFUZZ_VERBOSE'))
-    
-    # Convert verbosity to log levels
-    def verbosity_to_level(verbosity):
-        """Convert verbosity level (0-3+) to logging level."""
-        return logging.DEBUG if verbosity >= 2 else logging.INFO if verbosity >= 1 else logging.WARNING
-    
-    console_level = verbosity_to_level(console_verbosity)
-    file_level = verbosity_to_level(file_verbosity)
+    # Convert verbosity to log levels (inline to avoid tiny helper)
+    console_level = logging.DEBUG if console_verbosity >= 2 else logging.INFO if console_verbosity >= 1 else logging.WARNING
+    file_level = logging.DEBUG if file_verbosity >= 2 else logging.INFO if file_verbosity >= 1 else logging.WARNING
     
     # Configure logging - set root to the most verbose level needed
     root_logger = logging.getLogger()
@@ -330,7 +277,7 @@ def main() -> int:
     parser.add_argument(
         "-l",
         action="count",
-        default=0,
+        default=env_defaults['log_verbosity'],
         dest="log_verbosity",
         help="Increase log file verbosity: -l (INFO), -ll (DEBUG), -lll+ (more detailed). "
              "Overrides -v for file output."
@@ -398,7 +345,7 @@ def main() -> int:
         "--report-formats",
         nargs='+',
         choices=['html', 'json', 'csv', 'sarif', 'markdown', 'yaml', 'all'],
-        default=None,
+    default=env_defaults['report_formats'],
         help="Report output formats (can specify multiple). Use 'all' for all formats. "
              "Can also set PACKETFUZZ_REPORT_FORMATS as comma-separated list (default: json)"
     )

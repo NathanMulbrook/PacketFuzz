@@ -8,6 +8,7 @@ from dataclasses import dataclass
 
 from .socket_interface import FuzzSocket
 from .config import BaseSocketConfig
+from ..socket_types import SocketType
 
 if TYPE_CHECKING:
     from ..fuzzing_framework import CampaignContext
@@ -20,6 +21,7 @@ class RawEthernetConfig(BaseSocketConfig):
 
 
 class RawEthernetSocket(FuzzSocket):
+    SOCKET_TYPE = SocketType.RAW_ETHERNET
     """
     AF_PACKET/SOCK_RAW sender for Layer 2 frames.
     Binds to interface from config and uses send() on raw bytes.
@@ -41,6 +43,16 @@ class RawEthernetSocket(FuzzSocket):
         except Exception as e:
             logging.getLogger(__name__).error(f"[RawEthernetSocket] send failed: {e}")
             return None
+
+    def prepare_for_pcap_logging(self, raw_bytes: bytes, original_packet=None) -> bytes:
+        """
+        Prepare packet for PCAP logging for raw Ethernet sockets.
+        
+        For raw Ethernet sockets, the packet should already be a complete Ethernet frame,
+        so we just return the raw bytes as-is for PCAP logging.
+        """
+        # Raw Ethernet sockets already have complete frames
+        return raw_bytes
 
     def close(self) -> None:
         try:

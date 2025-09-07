@@ -14,6 +14,7 @@ from dataclasses import dataclass
 
 from .socket_interface import FuzzSocket
 from .config import BaseSocketConfig
+from ..socket_types import SocketType
 
 if TYPE_CHECKING:
     from ..fuzzing_framework import CampaignContext
@@ -27,6 +28,7 @@ class ManagedTCPConfig(BaseSocketConfig):
 
 
 class ManagedTCPSocket(FuzzSocket):
+    SOCKET_TYPE = SocketType.MANAGED_TCP
     """
     Managed TCP socket implementation for standard TCP connections.
     
@@ -102,6 +104,38 @@ class ManagedTCPSocket(FuzzSocket):
         finally:
             if timeout is not None:
                 self._sock.settimeout(None)  # Reset to blocking
+
+    def prepare_for_pcap_logging(self, raw_bytes: bytes, original_packet=None) -> bytes:
+        """
+        Prepare packet for PCAP logging with full TCP/IP/Ethernet stack.
+        
+        For managed TCP sockets, we create a complete protocol stack suitable
+        for PCAP analysis with the raw fuzzed bytes as the TCP payload.
+        """
+        from scapy.layers.l2 import Ether, Raw
+        from scapy.layers.inet import IP, TCP
+        from scapy.volatile import RandInt, RandShort
+        import random
+        
+        target_ip = self.config.get_target('127.0.0.1')
+        target_port = self.config.get_port(80)
+        sport = random.randint(49152, 65535)  # Ephemeral port range
+        
+        # Create complete TCP/IP/Ethernet packet with fuzzed data as payload
+        completed = Ether(dst="ff:ff:ff:ff:ff:ff", src="00:00:00:00:00:00") / \
+                   IP(dst=target_ip, src="127.0.0.1") / \
+                   TCP(dport=target_port, sport=sport) / Raw(load=raw_bytes)
+        
+        # Populate connection fields for clean PCAP output
+        try:
+            completed[TCP].seq = RandInt()
+            del completed[TCP].chksum  # Let Scapy recalculate
+            completed[IP].id = RandShort()
+            del completed[IP].chksum  # Let Scapy recalculate
+        except Exception as e:
+            self.logger.debug(f"Could not populate connection fields: {e}")
+        
+        return bytes(completed)
 
     def close(self) -> None:
         """Close the TCP connection."""

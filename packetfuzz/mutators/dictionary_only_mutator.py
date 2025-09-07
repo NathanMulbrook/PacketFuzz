@@ -16,7 +16,7 @@ from scapy.fields import AnyField, Field
 from scapy.packet import Packet
 
 # Local imports
-from .base import BaseMutator
+from .base import BaseMutator, MutatorRegistry
 
 
 class DictionaryOnlyMutator(BaseMutator):
@@ -158,3 +158,7 @@ class DictionaryOnlyMutator(BaseMutator):
             return self._to_str_bytes(entry)
 
         return current_value
+
+
+# Register this mutator
+# Removed manual registration - now uses auto-discovery

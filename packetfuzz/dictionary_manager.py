@@ -1,299 +1,181 @@
 #!/usr/bin/env python3
-"""
-Dictionary Management for PacketFuzzing
+"""Dictionary Management for PacketFuzzing."""
 
-Provides data access layer for dictionary operations with advanced resolution logic.
-
-This module has been refactored as part of architectural consolidation:
-- Field-level resolution logic moved to MutatorManagerData (business logic layer)
-- DictionaryManager now focuses on data access and advanced algorithms
-- Legacy field resolution methods removed to eliminate duplication
-
-Core responsibilities:
-- Advanced resolution algorithms (override/combine, min/max/multiply)
-- File path resolution and macro expansion  
-- Dictionary file loading operations
-- Configuration merging utilities
-"""
-
-# Standard library imports
 import importlib.util
 import json
 import logging
 import os
-from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Union
+from typing import Any, Dict, List, Optional, Union
 
-# Third-party imports
-from scapy.packet import Packet
+from .default_mappings import MACROS
 
-# Local imports
-from .default_mappings import (
-    FIELD_ADVANCED_DICTIONARIES,
-    FIELD_ADVANCED_WEIGHTS,
-    FIELD_NAME_DICTIONARIES,
-    FIELD_NAME_WEIGHTS,
-    FIELD_TYPE_DICTIONARIES,
-    FIELD_TYPE_WEIGHTS,
-    MACROS,
-)
-
-# Configuration constants
 logger = logging.getLogger(__name__)
 
 
 class DictionaryManager:
-    """
-    Dictionary manager focused on data access and advanced resolution logic.
-    
-    Core responsibilities:
-    - Advanced resolution logic (override/combine for dictionaries, min/max/multiply for weights)
-    - File path resolution and macro expansion
-    - Dictionary file loading operations
-    - Configuration merging utilities
-    
-    Note: Field-level resolution logic has been consolidated into MutatorManagerData.
-    This class now serves as the data access layer for the business logic layer.
-    """
+    """Manages dictionary data access and advanced resolution logic for packet fuzzing."""
     
     def __init__(self, dictionary_path: Optional[str] = None, 
                  fuzzdb_path: Optional[str] = None,
-                 default_dictionary_package: Optional[str] = None,
+                 default_dictionary_package: str = "general",
                  max_dictionary_size: int = 1000000):
         """
         Initialize the DictionaryManager.
         
-        Args:
-            dictionary_path: Optional custom path to dictionary folder
-            fuzzdb_path: Optional path to FuzzDB installation
-            default_dictionary_package: Default package for new dictionaries
-            max_dictionary_size: Maximum size limit for dictionaries
+        Optional custom dictionary path, FuzzDB installation path, default package name,
+        and maximum dictionary size can be specified during initialization.
         """
         self.max_dictionary_size = max_dictionary_size
-        self.default_dictionary_package = default_dictionary_package or "general"
-        
-        # Add path resolution cache for performance
+        self.default_dictionary_package = default_dictionary_package
         self._path_cache = {}
-        
-        # Resolve paths
         self.dictionary_path = dictionary_path
         self.fuzzdb_path = fuzzdb_path or self._find_fuzzdb_path()
-        
-        logger.info(f"DictionaryManager initialized with dictionary_path='{self.dictionary_path}', "
-                   f"fuzzdb_path='{self.fuzzdb_path}'")
-        
-        # Validate paths
-        if self.dictionary_path and not Path(self.dictionary_path).exists():
-            logger.warning(f"Dictionary path does not exist: {self.dictionary_path}")
-        if self.fuzzdb_path and not Path(self.fuzzdb_path).exists():
-            logger.warning(f"FuzzDB path does not exist: {self.fuzzdb_path}")
-        
-        logger.debug(f"DictionaryManager setup complete")
     
     def __str__(self) -> str:
-        """String representation of DictionaryMapping."""
         return f"DictionaryManager(fuzzdb={bool(self.fuzzdb_path)})"
     
     def __repr__(self) -> str:
-        """Detailed representation of DictionaryMapping."""
         return f"DictionaryManager(fuzzdb_path='{self.fuzzdb_path}')"
     
     def _find_fuzzdb_path(self) -> Optional[str]:
-        """Auto-detect FuzzDB directory from common installation locations."""
-        possible_paths = [
-            Path("fuzzdb"),
-            Path("../fuzzdb"),
-            Path("/usr/share/fuzzdb"),
-            Path("/opt/fuzzdb"),
-            Path.home() / "fuzzdb"
-        ]
-        for path in possible_paths:
-            if path.exists() and path.is_dir():
+        paths = [Path("fuzzdb"), Path("../fuzzdb"), Path("/usr/share/fuzzdb"), 
+                 Path("/opt/fuzzdb"), Path.home() / "fuzzdb"]
+        for path in paths:
+            if path.is_dir():
                 return str(path)
         return None
     
     def _resolve_path(self, path: str) -> str:
-        """
-        Resolve dictionary path to absolute path.
-        
-        Args:
-            path: Dictionary file path (relative or absolute)
-            
-        Returns:
-            Absolute path to the dictionary file
-        """
         p = Path(path)
         if p.is_absolute():
             return str(p)
-        # Convert fuzzdb/ relative paths to absolute if fuzzdb_path available
         if path.startswith("fuzzdb/") and self.fuzzdb_path:
             return str(Path(self.fuzzdb_path) / path[7:])
-        # Fallback: try to find fuzzdb directory from current location
+        
         current = Path(__file__).parent
         while current != current.parent:
             fuzzdb_path = current / "fuzzdb"
             if fuzzdb_path.exists():
                 return str(fuzzdb_path / path)
             current = current.parent
-        # Last resort: relative to project root
         return str(Path(__file__).parent / path)
     
     @staticmethod
     def expand_macro(entry: str) -> List[str]:
         """
         Expand macro references (e.g., '@string') to their dictionary lists.
+        
+        Returns the expanded list of dictionary entries, or a single-item list 
+        containing the original entry if it's not a macro reference.
         """
-        if entry.startswith("@"):  # Macro reference
-            macro_name = entry[1:]
-            return MACROS.get(macro_name, [])
+        if entry.startswith("@"):
+            return MACROS.get(entry[1:], [])
         return [entry]
     
-    # Resolves advanced dictionary mappings for a field (merge/override logic for dictionary lists)
-    def _resolve_advanced_dictionary(self, mapping_list: list, field_name: str, field_type: str, properties: dict, global_mode: str = "merge") -> list:
-        """
-        Advanced dictionary resolver supporting combining modes: override, merge.
-        - mode can be set globally (global_mode) or per-entry (entry['mode'])
-        - If multiple entries match, combine according to the highest-priority mode found (per-entry overrides global)
-        """
+    def _match_criteria(self, match: dict, field_name: str, field_type: str, properties: dict) -> bool:
         length = properties.get("length")
         context = properties.get("context")
+        return (
+            ("name" not in match or match["name"] == field_name) and
+            ("type" not in match or match["type"] == field_type) and
+            ("length" not in match or (length is not None and str(length) == str(match["length"]).replace('>', ''))) and
+            ("context" not in match or match["context"] == context)
+        )
+    
+    def _resolve_advanced_dictionary(self, mapping_list: list, field_name: str, field_type: str, properties: dict, global_mode: str = "merge") -> list:
+        """
+        Resolve advanced dictionary mappings for a field with merge/override logic.
+        
+        Searches through mapping entries to find matches based on field name, type,
+        and properties. Combines results using merge or override mode as specified.
+        """
         matches = []
         modes = []
         
-        # Scan all mapping entries to find matches based on field criteria
         for adv in mapping_list:
             match = adv.get("match", {})
-            # Multi-criteria matching: all specified criteria must pass
-            if (
-                ("name" not in match or match["name"] == field_name) and
-                ("type" not in match or match["type"] == field_type) and
-                # Handle length comparison with optional '>' prefix for ranges
-                ("length" not in match or (length is not None and str(length) == str(match["length"]).replace('>', ''))) and
-                ("context" not in match or match["context"] == context)
-            ):
-                if "dictionaries" in adv:
-                    # Expand macro placeholders to actual dictionary file paths
-                    expanded = []
-                    for d in adv["dictionaries"]:
-                        expanded.extend(DictionaryManager.expand_macro(d))
-                    matches.append(expanded)
-                    modes.append(adv.get("mode"))
+            if self._match_criteria(match, field_name, field_type, properties) and "dictionaries" in adv:
+                expanded = []
+                for d in adv["dictionaries"]:
+                    expanded.extend(DictionaryManager.expand_macro(d))
+                matches.append(expanded)
+                modes.append(adv.get("mode"))
         
         if not matches:
             return []
             
-        # Resolution mode precedence: per-entry mode > global_mode
         mode = next((m for m in modes if m), global_mode)
         if mode == "merge":
-            # Combine all matches and remove duplicates while preserving order
             return list(dict.fromkeys([v for sublist in matches for v in sublist]))
-        # Default: override (last match wins)
         return matches[-1]
 
-    # Resolves advanced weight mappings for a field (supports override, sum, average, max, min)
     def _resolve_advanced_weight(self, mapping_list: list, field_name: str, field_type: str, properties: dict, global_mode: str = "override") -> Optional[float]:
         """
-        Advanced weight resolver supporting combining modes: override, sum, average, max, min.
-        - mode can be set globally (global_mode) or per-entry (entry['mode'])
-        - If multiple entries match, combine according to the highest-priority mode found (per-entry overrides global)
+        Resolve advanced weight mappings for a field with mathematical combinations.
+        
+        Supports sum, average, max, min, and override modes for combining multiple
+        weight matches. Returns None if no matches are found.
         """
-        length = properties.get("length")
-        context = properties.get("context")
         matches = []
         modes = []
+        
         for adv in mapping_list:
             match = adv.get("match", {})
-            if (
-                ("name" not in match or match["name"] == field_name) and
-                ("type" not in match or match["type"] == field_type) and
-                ("length" not in match or (length is not None and str(length) == str(match["length"]).replace('>', ''))) and
-                ("context" not in match or match["context"] == context)
-            ):
-                if "weight" in adv:
-                    matches.append(float(adv["weight"]))
-                    modes.append(adv.get("mode"))
+            if self._match_criteria(match, field_name, field_type, properties) and "weight" in adv:
+                matches.append(float(adv["weight"]))
+                modes.append(adv.get("mode"))
+        
         if not matches:
-            return None  # No match found, continue to other weight resolution steps
-        # Determine mode: per-entry mode takes precedence, else use global_mode
-        mode = None
-        for m in modes:
-            if m:
-                mode = m
-                break
-        if not mode:
-            mode = global_mode
-        if mode == "sum":
-            return sum(matches)
-        elif mode == "average":
-            return sum(matches) / len(matches)
-        elif mode == "max":
-            return max(matches)
-        elif mode == "min":
-            return min(matches)
-        # Default: override (last match wins)
-        return matches[-1]
+            return None
+            
+        mode = next((m for m in modes if m), global_mode)
+        weight_ops = {"sum": sum, "average": lambda x: sum(x) / len(x), "max": max, "min": min}
+        return weight_ops.get(mode, lambda x: x[-1])(matches)
 
-    # Resolves advanced value mappings for a field (merge/override logic for value lists)
     def _resolve_advanced_values(self, mapping_list: list, field_name: str, field_type: str, properties: dict, global_mode: str = "override") -> list:
         """
-        Advanced values resolver supporting combining modes: override, merge.
-        - mode can be set globally (global_mode) or per-entry (entry['mode'])
-        - If multiple entries match, combine according to the highest-priority mode found (per-entry overrides global)
+        Resolve advanced value mappings for a field with merge/override logic.
+        
+        Finds matching value entries and combines them using merge (flatten and deduplicate)
+        or override (last match wins) mode.
         """
-        length = properties.get("length")
-        context = properties.get("context")
         matches = []
         modes = []
+        
         for adv in mapping_list:
             match = adv.get("match", {})
-            if (
-                ("name" not in match or match["name"] == field_name) and
-                ("type" not in match or match["type"] == field_type) and
-                ("length" not in match or (length is not None and str(length) == str(match["length"]).replace('>', ''))) and
-                ("context" not in match or match["context"] == context)
-            ):
-                if "values" in adv:
-                    matches.append(adv["values"])
-                    modes.append(adv.get("mode"))
+            if self._match_criteria(match, field_name, field_type, properties) and "values" in adv:
+                matches.append(adv["values"])
+                modes.append(adv.get("mode"))
+        
         if not matches:
             return []
-        # Determine mode: per-entry mode takes precedence, else use global_mode
+            
         mode = next((m for m in modes if m), global_mode)
         if mode == "merge":
-            # Flatten and deduplicate
             return list(dict.fromkeys([v for sublist in matches for v in sublist]))
-        # Default: override (last match wins)
         return matches[-1]
 
-    def get_merged_field_mapping(self, 
-                                 default_mapping: list, 
-                                 user_mapping_file: Optional[str] = None, 
-                                 inline_overrides: Optional[list] = None, 
-                                 merge_mode: Optional[str] = None,
+    def get_merged_field_mapping(self, default_mapping: list, user_mapping_file: Optional[str] = None, 
+                                 inline_overrides: Optional[list] = None, merge_mode: Optional[str] = None,
                                  mode: str = 'dictionary') -> list:
         """
-        Load and merge advanced field mappings (for weights, dictionaries, or values).
-
-        Default behavior:
-            - For dictionaries: merge lists from all sources (default, user, inline)
-            - For values: override (last/highest-priority source wins)
-            - For weights: override (last/highest-priority source wins)
+        Load and merge advanced field mappings from multiple sources.
+        
+        Combines default mappings with optional user mapping files (.json or .py) 
+        and inline overrides. Uses merge mode for dictionaries and override mode 
+        for weights/values by default.
         """
-        # Set default merge_mode based on mode if not explicitly provided
         if merge_mode is None:
             merge_mode = 'merge' if mode == 'dictionary' else 'override'
 
         def load_mapping_file(path: str) -> Union[Dict[str, Any], List[Any]]:
-            """Load dictionary mapping configuration from a JSON or Python file."""
-            # Check if the mapping file exists
             if not os.path.isfile(path):
                 raise FileNotFoundError(f"Mapping file not found: {path}")
-            # Support loading from JSON
             if path.endswith('.json'):
                 with open(path, 'r') as f:
                     return json.load(f)
-            # Support loading from Python file (expects FIELD_ADVANCED_DICTIONARIES)
             elif path.endswith('.py'):
                 spec = importlib.util.spec_from_file_location("user_mapping", path)
                 if spec is None or spec.loader is None:
@@ -306,80 +188,62 @@ class DictionaryManager:
 
         # 1. Start with the default mapping (lowest priority)
         merged = list(default_mapping)
-        # 2. If a user mapping file is provided, load and merge/override
+        
         if user_mapping_file:
             user_map = load_mapping_file(user_mapping_file)
-            if merge_mode == 'override':
-                # 2.1 User mapping completely overrides default
-                merged = list(user_map)
-            else:
-                # 2.2 Merge: add user entries not already present
-                merged = merged + [m for m in user_map if m not in merged]
-        # 3. If inline/campaign overrides are provided, merge/override as highest priority
+            if isinstance(user_map, dict):
+                user_map = list(user_map.values()) if user_map else []
+            merged = self._apply_merge_mode(merged, user_map, merge_mode)
+            
         if inline_overrides:
-            if merge_mode == 'override':
-                # 3.1 Inline overrides completely override all others
-                merged = list(inline_overrides)
-            else:
-                # 3.2 Merge: add inline entries not already present
-                merged = merged + [m for m in inline_overrides if m not in merged]
-        # No up-front validation; malformed entries are handled at use time
+            merged = self._apply_merge_mode(merged, inline_overrides, merge_mode)
+            
         return merged
     
-    def get_packet_dictionaries(self, packet: Packet) -> List[str]:
+    def _apply_merge_mode(self, current: list, new_data: list, merge_mode: str) -> list:
+        if merge_mode == 'override':
+            return list(new_data)
+        return current + [m for m in new_data if m not in current]
+    
+    def get_packet_dictionaries(self, packet) -> List[str]:
         """
         Get dictionary paths for packet-level fuzzing.
         
-        Args:
-            packet: Scapy packet instance
-            
-        Returns:
-            List of dictionary file paths
+        Extracts dictionary configuration from the packet's fuzz_config and 
+        resolves all paths to absolute file paths.
         """
-        # Check packet embedded configuration
         if hasattr(packet, 'get_fuzz_config'):
             packet_config = packet.get_fuzz_config()
             if packet_config and packet_config.dictionary:
                 return [self._resolve_path(path) for path in packet_config.dictionary]
-        
         return []
     
     def get_dictionary_entries(self, dictionary_paths: List[str]) -> List[bytes]:
         """
         Load and combine dictionary entries from multiple files.
         
-        This method loads dictionary entries and deduplicates within each call,
-        but allows the same entries to be returned to different mutators.
-        
-        Args:
-            dictionary_paths: List of dictionary file paths
-            
-        Returns:
-            Combined list of dictionary entries (deduplicated within this call)
+        Reads all specified dictionary files, combines their entries, and 
+        removes duplicates while preserving order. Skips comments and empty lines.
         """
         if not dictionary_paths:
+            logger.info("No dictionary paths provided for field.")
             return []
-            
+        
         combined_entries = []
         for dict_path in dictionary_paths:
-            entries = self._load_dictionary_file(dict_path)  # Let any error propagate
+            entries = self._load_dictionary_file(dict_path)
             combined_entries.extend(entries)
-        # Remove duplicates within this batch while preserving order
-        unique_entries = list(dict.fromkeys(combined_entries))
-        return unique_entries
+        return list(dict.fromkeys(combined_entries))
     
     def _load_dictionary_file(self, dict_path: str) -> List[bytes]:
-        """Load entries from a single dictionary file"""
-        try:
-            if not Path(dict_path).exists():
-                return []
-            with open(dict_path, 'rb') as f:
-                entries = []
-                for line in f:
-                    line = line.strip()
-                    if line and not line.startswith(b'#'):  # Skip empty lines and comments
-                        entries.append(line)
-                return entries
-        except (IOError, OSError) as e:
-            logger.error(f"Error loading dictionary file {dict_path}: {e}")
+        if not Path(dict_path).exists():
+            logger.warning(f"Dictionary file not found: {dict_path}")
             return []
+        with open(dict_path, 'rb') as f:
+            entries = []
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith(b'#'):
+                    entries.append(line)
+            return entries
+

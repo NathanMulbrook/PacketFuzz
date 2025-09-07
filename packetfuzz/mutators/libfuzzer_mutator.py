@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 from scapy.fields import Field
 
 # Local imports
-from .base import BaseMutator
+from .base import BaseMutator, MutatorRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +39,11 @@ class LibFuzzerMutator(BaseMutator):
     
     Requires the C extension to be compiled and available.
     """
+    
+    @classmethod
+    def get_name(cls) -> str:
+        """Override to maintain backward compatibility with 'libfuzzer' name"""
+        return "libfuzzer"
     
     def __init__(self, seed: Optional[int] = None):
         """
@@ -504,3 +509,6 @@ class LibFuzzerMutator(BaseMutator):
         """Clean up LibFuzzer resources."""
         self._dictionaries_loaded = False
         return True
+
+
+# Removed manual registration - now uses auto-discovery

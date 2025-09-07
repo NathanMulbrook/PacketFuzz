@@ -9,7 +9,8 @@ This package provides tools for network packet fuzzing, including:
 - Field-level and layer-level fuzzing
 """
 
-from .fuzzing_framework import FuzzingCampaign, FuzzField, FuzzMutator, CallbackResult, CampaignContext
+from .fuzzing_framework import FuzzingCampaign, FuzzField, CallbackResult, CampaignContext
+from .mutators import MutatorRegistry
 from .pcapfuzz import PcapFuzzCampaign
 from .mutator_manager import MutatorManager, FuzzConfig, FuzzMode
 from .dictionary_manager import DictionaryManager
@@ -18,7 +19,7 @@ __version__ = "1.0.0"
 __all__ = [
     "FuzzingCampaign",
     "FuzzField", 
-    "FuzzMutator",
+    "MutatorRegistry",
     "CallbackResult",
     "CampaignContext",
     "PcapFuzzCampaign",

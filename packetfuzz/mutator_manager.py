@@ -23,21 +23,11 @@ from scapy.packet import Packet, NoPayload
 # Local imports
 from .dictionary_manager import DictionaryManager
 from .packet_extensions import install_packet_extensions
-from .mutator_manager_data import MutatorManagerData, FuzzConfig, FuzzMode, FieldMetadata    
+from .mutator_manager_data import MutatorManagerData, FuzzConfig, FuzzMode, FieldMetadata
+from .mutators import MutatorRegistry
 
-# Mutator imports (with graceful fallback)
-try:
-    from .mutators.dictionary_only_mutator import DictionaryOnlyMutator
-except Exception:
-    DictionaryOnlyMutator = None  # type: ignore
-try:
-    from .mutators.libfuzzer_mutator import LibFuzzerMutator
-except Exception:
-    LibFuzzerMutator = None  # type: ignore
-try:
-    from .mutators.scapy_mutator import ScapyMutator
-except Exception:
-    ScapyMutator = None  # type: ignore
+# Ensure mutators are registered by importing the mutators package
+from . import mutators
 
 # Default mappings import - CRITICAL: Must succeed or fail fast
 from .default_mappings import LAYER_WEIGHT_SCALING as DEFAULT_LAYER_SCALING
@@ -58,6 +48,9 @@ VERBOSITY_LEVEL = 1  # Default; can be set by campaign or CLI
 DEFAULT_MAX_OUTPUT_SIZE = 1024
 DEFAULT_MAX_MUTATIONS = 1000
 DEFAULT_FUZZ_WEIGHT = 0.7
+DEFAULT_MUTATOR_PREFERENCE = {"libfuzzer": 1.0}
+CRITICAL_FIELDS = {'ihl', 'len', 'chksum', 'dataofs', 'sport', 'dport', 'seq', 'ack', 'flags', 'window', 'src', 'dst'}
+
 
 
 class MutatorManager:
@@ -69,7 +62,6 @@ class MutatorManager:
     """
     
     # Critical fields to track for debugging
-    CRITICAL_FIELDS = {'ihl', 'len', 'chksum', 'dataofs', 'sport', 'dport', 'seq', 'ack', 'flags', 'window', 'src', 'dst'}
     
     # =========================
     # Initialization & Configuration
@@ -95,35 +87,14 @@ class MutatorManager:
         # Initialize MutatorManagerData
         self.data = MutatorManagerData(self.fuzz_config)
         self.data.preprocess_packets(self.dictionary_manager)
-        self.mutators: Dict[str, Any] = {
-            "dictionary_only": None,
-            "libfuzzer": None,
-            "scapy": None
-        }
+        
+        # Initialize mutator instances dictionary with available mutators
+        self.mutators: Dict[str, Any] = {}
+        for mutator_name in MutatorRegistry.get_available_mutators():
+            self.mutators[mutator_name] = None
         if self.fuzz_config.global_dict_config_path:
             config_path = Path(self.fuzz_config.global_dict_config_path)
             user_config_file = str(config_path) if config_path.exists() else None
-
-
-
-
-    def __del__(self) -> None:
-        """Automatic cleanup when MutatorManager is destroyed."""
-        self.teardown()
-
-    def teardown(self) -> None:
-        """
-        Clean up all mutator resources.
-        
-        This method should be called when the MutatorManager is no longer needed
-        to ensure proper cleanup of mutator resources.
-        """
-       
-        logger.debug("MutatorManager teardown completed")
-
-
-
-
 
     def get_field_mutation_failures(self) -> Dict[str, Dict[Tuple[str, str], int]]:
         """Get field mutation failure counts for all fields"""
@@ -134,45 +105,26 @@ class MutatorManager:
                     all_failures[field_key] = self.data.get_field_mutation_failures(field_key)
         return all_failures
 
-    def _field_value_changed(self, original_value: Any, new_value: Any) -> bool:
-        """Check if a field value actually changed from its original value."""
-        # Handle None and empty string cases - be more strict about meaningful changes
-        if original_value is None:
-            # For None -> empty string, don't consider this a meaningful change
-            if new_value in ("", b""):
-                return False
-            # Any other non-None value is considered a change
-            return new_value is not None
-        if original_value in ("", b"") and new_value in (None, "", b""):
-            return False
-        
-        # For meaningful comparison, convert both to same type if possible
-        try:
-            if isinstance(original_value, bytes) and isinstance(new_value, str):
-                return original_value != new_value.encode()
-            elif isinstance(original_value, str) and isinstance(new_value, bytes):
-                return original_value.encode() != new_value
-        except (UnicodeEncodeError, UnicodeDecodeError):
-            # Can't safely convert between string and bytes due to encoding issues
-            pass
-        
-        return original_value != new_value
-
     def get_mutator_type(self, mutator_obj: Any) -> str:
-        """Record mutator usage and return the mutator name for field tracking"""
+        """Return the registered mutator name for field tracking."""
         if mutator_obj is None:
             return "unknown"
+
+        # Check if the mutator class is a known BaseMutator subclass
+        for mutator_name in MutatorRegistry.get_available_mutators():
+            mutator_class = MutatorRegistry.get_mutator_class(mutator_name)
+            if mutator_class and isinstance(mutator_obj, mutator_class):
+                return mutator_name
         
-        # Extract class name and map to readable name
-        cls_name = str(type(mutator_obj)).lower()
-        if "dictionary" in cls_name:
-            return "dictionary"
-        elif "libfuzzer" in cls_name:
-            return "libfuzzer"
-        elif "scapy" in cls_name:
-            return "scapy"
-        else:
-            return cls_name
+        # Fallback to class name normalization if not found in registry
+        cls = type(mutator_obj)
+        name = getattr(cls, "__name__", str(cls))
+        name = name.lower()
+        # Remove common suffixes like 'mutator' or 'fuzzer' for normalization
+        for suffix in ("mutator", "fuzzer"):
+            if name.endswith(suffix):
+                name = name[: -len(suffix)]
+        return name.strip('_')
 
     
     def set_global_dictionary_config(self, config_path: str) -> None:
@@ -248,7 +200,7 @@ class MutatorManager:
         
         # Diagnostic logging for fuzzing results
         if VERBOSITY_LEVEL >= 2:
-            fuzzed_count = len(self.data.packet_list) if self.data.packet_list else 0
+            fuzzed_count = len(self.data.fuzzed_packets) if self.data.fuzzed_packets else 0
             logger.info(f"[FUZZ] Field fuzzing complete: generated {fuzzed_count} fuzzed packets")
         
         # Write debug report of all fuzzed packets (only in debug mode)
@@ -256,7 +208,7 @@ class MutatorManager:
             #TODO update reporting
             log_dir = Path(DEFAULT_LOG_DIR)
             log_dir.mkdir(parents=True, exist_ok=True)
-            write_debug_packet_log(self.data.packet_list, file_path=str(log_dir / "fuzz_fields_output_report.txt"), title="Fuzz Fields Output")
+            write_debug_packet_log(self.data.fuzzed_packets, file_path=str(log_dir / "fuzz_fields_output_report.txt"), title="Fuzz Fields Output")
         
         # Return the fuzzed packets from the data object
         return self.data
@@ -344,18 +296,11 @@ class MutatorManager:
             Initialized mutator instance or None if not available
         """
         mutator = None
-        if mutator_selection == "dictionary_only" and DictionaryOnlyMutator:
-            if self.mutators["dictionary_only"] is None:
-                self.mutators["dictionary_only"] = DictionaryOnlyMutator()
-            mutator = self.mutators["dictionary_only"]
-        elif mutator_selection == "libfuzzer" and LibFuzzerMutator:
-            if self.mutators["libfuzzer"] is None:
-                self.mutators["libfuzzer"] = LibFuzzerMutator()
-            mutator = self.mutators["libfuzzer"]
-        elif mutator_selection == "scapy" and ScapyMutator:
-            if self.mutators["scapy"] is None:
-                self.mutators["scapy"] = ScapyMutator()
-            mutator = self.mutators["scapy"]
+        mutator_class = MutatorRegistry.get_mutator_class(mutator_selection)
+        if mutator_class:
+            if self.mutators[mutator_selection] is None:
+                self.mutators[mutator_selection] = mutator_class()
+            mutator = self.mutators[mutator_selection]
         else:
             logger.debug(f"No valid mutator found for selection: {mutator_selection}")
 
@@ -476,19 +421,19 @@ class MutatorManager:
             if original_value is not None:
                 # Try to revert to original value
                 revert_success = self.data.validate_and_assign(field_info, original_value)
-                if field_info.field_name in self.CRITICAL_FIELDS:
+                if field_info.field_name in CRITICAL_FIELDS:
                     if revert_success:
                         logger.debug(f"Reverted {field_info.field_key} to {original_value} (mutation fallback)")
                     else:
                         logger.debug(f"Failed to revert {field_info.field_key} to {original_value} (mutation fallback)")
             else:
-                if field_info.field_name in self.CRITICAL_FIELDS:
+                if field_info.field_name in CRITICAL_FIELDS:
                     logger.debug(f"No original value to revert for {field_info.field_key} (mutation fallback)")
         else:
             # Record successful mutation using centralized tracking
             self.data.record_field_mutation(field_info.field_key, field_info.packet_index, True, mutator_type if 'mutator_type' in locals() else "unknown")
             
-            if field_info.field_name in self.CRITICAL_FIELDS:
+            if field_info.field_name in CRITICAL_FIELDS:
                 logger.debug(f"Mutate with retries result for {field_info.field_key}: {field_info.current_value}")
                 logger.debug(f"Mutate with retries result for {field_info.field_key}: {field_info.current_value}")
 
@@ -503,10 +448,14 @@ class MutatorManager:
         """
         # Select mutator using preference system with weighted selection
         mutator = None
-        prefs = self.fuzz_config.mutator_preference  # Will be resolved via default mappings if None
+        prefs = self.fuzz_config.mutator_preference or DEFAULT_MUTATOR_PREFERENCE
         
-        # Prefs is always dict format after normalization (type assertion for static analysis)
-        assert isinstance(prefs, dict), f"mutator_preference should be dict after normalization, got {type(prefs)}"
+        # Ensure prefs is in dict format 
+        if isinstance(prefs, list):
+            # Convert list to dict with equal weights
+            prefs = {name: 1.0 for name in prefs}
+        elif not isinstance(prefs, dict):
+            prefs = DEFAULT_MUTATOR_PREFERENCE
         
         # Use weighted selection
         mutator_names = list(prefs.keys())
@@ -514,28 +463,21 @@ class MutatorManager:
         selected_mutator_name = random.choices(mutator_names, weights=weights, k=1)[0]
         
         # Initialize and get the selected mutator
-        if selected_mutator_name == 'libfuzzer' and LibFuzzerMutator:
-            if self.mutators["libfuzzer"] is None:
-                self.mutators["libfuzzer"] = LibFuzzerMutator()
-            mutator = self.mutators["libfuzzer"]
-        elif selected_mutator_name == 'dictionary_only' and DictionaryOnlyMutator:
-            if self.mutators["dictionary_only"] is None:
-                self.mutators["dictionary_only"] = DictionaryOnlyMutator()
-            mutator = self.mutators["dictionary_only"]
-        elif selected_mutator_name == 'scapy' and ScapyMutator:
-            if self.mutators["scapy"] is None:
-                self.mutators["scapy"] = ScapyMutator()
-            mutator = self.mutators["scapy"]
+        mutator_class = MutatorRegistry.get_mutator_class(selected_mutator_name)
+        if mutator_class:
+            if self.mutators[selected_mutator_name] is None:
+                self.mutators[selected_mutator_name] = mutator_class()
+            mutator = self.mutators[selected_mutator_name]
         
         # Fallback if no mutator was selected
         if mutator is None:
-            if LibFuzzerMutator and self.mutators["libfuzzer"] is None:
-                self.mutators["libfuzzer"] = LibFuzzerMutator()
-            if DictionaryOnlyMutator and self.mutators["dictionary_only"] is None:
-                self.mutators["dictionary_only"] = DictionaryOnlyMutator()
-            if ScapyMutator and self.mutators["scapy"] is None:
-                self.mutators["scapy"] = ScapyMutator()
-            mutator = self.mutators["libfuzzer"] or self.mutators["dictionary_only"] or self.mutators["scapy"]
+            for fallback_name in MutatorRegistry.get_available_mutators():
+                fallback_class = MutatorRegistry.get_mutator_class(fallback_name)
+                if fallback_class and self.mutators[fallback_name] is None:
+                    self.mutators[fallback_name] = fallback_class()
+                if self.mutators[fallback_name] is not None:
+                    mutator = self.mutators[fallback_name]
+                    break
 
         mutator_name = self.get_mutator_type(mutator)
 
@@ -543,37 +485,17 @@ class MutatorManager:
         iters_cfg = getattr(self.fuzz_config, 'iterations', None)
         iterations = int(iters_cfg) if isinstance(iters_cfg, int) and iters_cfg > 0 else 1
         mutated_packets = []
-        for packet in self.data.original_packets:
+        for packet_index, packet in enumerate(self.data.original_packets):
             # Get packet-level dictionaries using consolidated API
             dictionary_paths = self.dictionary_manager.get_packet_dictionaries(packet)
             if not dictionary_paths:
+                # Collect dictionary paths from processed field metadata
                 all_paths = set()
-                current_layer = packet
-                while current_layer and not isinstance(current_layer, NoPayload):
-                    layer_name = current_layer.__class__.__name__
-                    if hasattr(current_layer, 'fields_desc'):
-                            for field_desc in current_layer.fields_desc:
-                                field_name = field_desc.name
-                                from .mutator_manager_data import FieldMetadata
-                                field_meta = FieldMetadata(
-                                    field_key=f"{layer_name}[0].{field_name}",
-                                    field_name=field_name,
-                                    layer_name=layer_name,
-                                    layer_index=0,
-                                    packet_index=0,
-                                        field_type=field_desc.__class__.__name__,
-                                        field_kind="unknown",
-                                        current_value=getattr(current_layer, field_name, None),
-                                        max_length=getattr(field_desc, 'sz', None)
-                                    )
-                                field_dicts = self.data._resolve_field_dictionaries(
-                                    field_meta, current_layer, self.dictionary_manager
-                                )
-                                all_paths.update(field_dicts)
-                    if hasattr(current_layer, 'payload'):
-                        current_layer = current_layer.payload
-                    else:
-                        break
+                if packet_index < len(self.data.packet_data):
+                    packet_data = self.data.packet_data[packet_index]
+                    for field_metadata in packet_data.fields.values():
+                        if field_metadata.dictionary_paths:
+                            all_paths.update(field_metadata.dictionary_paths)
                 dictionary_paths = list(all_paths)
             dictionaries = self.dictionary_manager.get_dictionary_entries(dictionary_paths)
 
@@ -589,17 +511,7 @@ class MutatorManager:
                 mutated_packets.append(fuzzed_packet)
 
         # Update MutatorManagerData with mutated packets
-        self.data.packet_list = mutated_packets
+        self.data.fuzzed_packets = mutated_packets
         return self.data
     
-
-
-
-
-
-
-
-
-
-
 

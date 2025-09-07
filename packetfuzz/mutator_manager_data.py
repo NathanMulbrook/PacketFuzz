@@ -14,6 +14,8 @@ Design Principles:
 
 # Standard library imports
 from __future__ import annotations
+import copy
+import fnmatch
 import logging
 import random
 from dataclasses import dataclass, field
@@ -45,72 +47,30 @@ class FuzzMode(Enum):
 
 @dataclass
 class FuzzConfig:
-    """Configuration for fuzzing operations
-    mutator_preference can be a list of strings or dict of {mutator: weight}.
+    """Campaign-level fuzzing configuration.
     
-    Extended to include packet and iteration information for complete fuzzing configuration.
-    This creates a single source of truth for all fuzzing parameters.
+    This represents the campaign settings - clear defaults with Optional only where None is meaningful.
     """
-    mode: FuzzMode = FuzzMode.BOTH
+    # Core fuzzing parameters - always have defaults
     max_mutations: int = DEFAULT_MAX_MUTATIONS
     use_dictionaries: bool = True
-    fuzz_weight: float = DEFAULT_FUZZ_WEIGHT  # Probability of fuzzing a field
-    simple_field_fuzz_weight: Optional[float] = None  # Probability of fuzzing simple fields
-    fuzz_weight_scale: float = 1.0  # Global scaling factor for fuzz probabilities
-    # Layer-based scaling configuration (multiplier per layer distance from innermost)
-    layer_weight_scaling: Optional[float] = None  # None = use default mapping constant
+    fuzz_weight: float = DEFAULT_FUZZ_WEIGHT
+    fuzz_weight_scale: float = 1.0  # Global scaling factor
     enable_layer_weight_scaling: bool = True
-    mutator_preference: Optional[Union[List[str], Dict[str, float]]] = field(default_factory=lambda: None)
-    global_dict_config_path: Optional[str] = None  # Path to global dictionary configuration #TODO make sure this is never none
-    rng: Optional[random.Random] = None  # Optional random generator for reproducibility
     
-    # Packet and iteration configuration (for complete fuzzing setup)
-    packets: Optional[Union[Packet, List[Packet]]] = None  # Packet(s) to fuzz
-    iterations: Optional[int] = None  # Number of fuzzing iterations
+    # Optional parameters - None has meaning
+    mode: Optional[FuzzMode] = None  # None = auto-detect
+    layer_weight_scaling: Optional[float] = None  # None = use default constant
+    mutator_preference: Optional[Union[List[str], Dict[str, float]]] = None
+    global_dict_config_path: Optional[str] = None
+    rng: Optional[random.Random] = None
     
-    # Campaign-level field mapping overrides (for field inclusion/exclusion)
+    # Required for processing - not Optional
+    packets: Union[Packet, List[Packet]] = None  # Must be provided
+    iterations: Optional[int] = None  # None = use max_mutations
+    
+    # Campaign-level field overrides
     advanced_field_mapping_overrides: Optional[List[Dict[str, Any]]] = None
-
-    def __str__(self) -> str:
-        """String representation of FuzzConfig."""
-        packet_info = ""
-        if self.packets is not None:
-            if isinstance(self.packets, list):
-                packet_info = f", packets={len(self.packets)} packets"
-            else:
-                packet_info = f", packets=1 packet"
-        iter_info = f", iterations={self.iterations}" if self.iterations else ""
-        return f"FuzzConfig(mode={self.mode.value}, max_mutations={self.max_mutations}{packet_info}{iter_info})"
-
-    def __repr__(self) -> str:
-        """Detailed representation of FuzzConfig."""
-        return (f"FuzzConfig(mode={self.mode}, max_mutations={self.max_mutations}, "
-                f"use_dictionaries={self.use_dictionaries}, mutator_preference={self.mutator_preference}, "
-                f"packets={type(self.packets).__name__ if self.packets else None}, "
-                f"iterations={self.iterations})")
-    
-    def has_packets(self) -> bool:
-        """Check if configuration includes packet information."""
-        return self.packets is not None
-    
-    def get_packet_count(self) -> int:
-        """Get the number of packets in configuration."""
-        if self.packets is None:
-            return 0
-        elif isinstance(self.packets, list):
-            return len(self.packets)
-        else:
-            return 1
-    
-    def get_packets_as_list(self) -> List[Packet]:
-        """Get packets as a list, converting single packet if needed."""
-        if self.packets is None:
-            return []
-        elif isinstance(self.packets, list):
-            return self.packets
-        else:
-            return [self.packets]
-
 
 # =========================
 # Field and Packet Metadata Classes  
@@ -119,8 +79,7 @@ class FuzzConfig:
 @dataclass
 class FieldMetadata:
     """
-    Complete metadata for a single field with direct storage approach.
-    Contains all resolved configuration data needed for field-level operations.
+    Complete metadata for a single field with resolved configuration.
     """
     # Core identification
     field_key: str  # Format: "Layer[index].field" (e.g., "TCP[0].dport", "TCP[1].sport")
@@ -133,26 +92,18 @@ class FieldMetadata:
     field_type: str  # Scapy field type (e.g., "ShortField", "StrField")
     field_kind: str  # Categorized type (e.g., "numeric", "string", "enum")
     current_value: Any  # Current field value
+
+    # Resolved fuzzing configuration
+    fuzz_weight: float = DEFAULT_FUZZ_WEIGHT
+    dictionary_paths: List[str] = field(default_factory=list)
+    default_values: List[Any] = field(default_factory=list)
+    mutator_preferences: List[str] = field(default_factory=list)  # Legacy
+    mutator_weights: Dict[str, float] = field(default_factory=dict)
     
-    # Fuzzing configuration (direct storage - resolved from all sources)
-    fuzz_weight: float = 1.0  # Final resolved weight
-    dictionary_paths: List[str] = field(default_factory=list)  # Resolved dictionary file paths
-    default_values: List[Any] = field(default_factory=list)  # Default values for fuzzing
-    mutator_preferences: List[str] = field(default_factory=list)  # Preferred mutators (legacy)
-    mutator_weights: Dict[str, float] = field(default_factory=dict)  # Mutator weights for weighted selection
-    
-    # Weight tracking for transparency and debugging
-    base_weight: float = 1.0                     # Original weight before any scaling
-    layer_scaled_weight: float = 1.0             # After layer weight scaling
-    campaign_scaled_weight: float = 1.0          # After campaign scaling (final)
-    layer_scaling_factor: float = 1.0            # Layer scaling multiplier applied
-    campaign_scaling_factor: float = 1.0         # Campaign scaling multiplier applied
-    final_scaling_factor: float = 1.0            # Combined scaling factor (layer * campaign)
-    
-    # Advanced configuration
+    # Advanced fuzzing configuration
     scapy_fuzz_weight: float = 0.1  # Weight for Scapy's fuzz() method
-    dictionary_only_weight: float = 0.0  # Weight for dictionary-only mutations
-    use_scapy_fuzz: bool = False  # Whether to use Scapy's built-in fuzz
+    dictionary_only_weight: float = 0.2  # Weight for dictionary-only mutations
+    use_scapy_fuzz: bool = True  # Whether to use Scapy's built-in fuzz
     
     # Field constraints (extracted from Scapy field descriptors)
     min_value: Optional[int] = None
@@ -161,18 +112,17 @@ class FieldMetadata:
     max_length: Optional[int] = None
     enum_values: Optional[Dict[str, Any]] = None
     is_signed: bool = False
-
     
     # Processing metadata
-    is_fuzzable: bool = True  # Whether this field can be fuzzed
-    exclusion_reason: Optional[str] = None  # Why field was excluded (if any)
-    config_source: str = "default"  # Source of configuration ("embedded", "campaign", "default")
+    is_fuzzable: bool = True
+    exclusion_reason: Optional[str] = None
+    config_source: str = "default"
     
     # Statistics tracking
-    mutation_count: int = 0  # Number of times this field was mutated
-    successful_mutations: int = 0  # Number of successful mutations
-    failed_mutations: int = 0  # Number of failed mutations
-    last_mutated: Optional[datetime] = None  # Timestamp of last mutation
+    mutation_count: int = 0
+    successful_mutations: int = 0
+    failed_mutations: int = 0
+    last_mutated: Optional[datetime] = None
 
 
 @dataclass  
@@ -206,11 +156,6 @@ class PacketData:
         return [field for field in self.fields.values() 
                 if field.layer_name == layer_name]
     
-    def get_fuzzable_fields_by_layer(self, layer_name: str) -> List[FieldMetadata]:
-        """Get all fuzzable fields belonging to a specific layer type."""
-        return [field for field in self.fields.values() 
-                if field.layer_name == layer_name and field.is_fuzzable]
-    
     def has_layer_collisions(self) -> bool:
         """Check if packet has any layer name collisions (multiple instances)."""
         return any(count > 1 for count in self.layer_collision_map.values())
@@ -219,77 +164,46 @@ class PacketData:
 @dataclass
 class ConfigurationSources:
     """
-    Container for all configuration sources collected for a field.
-    
-    This separates data collection from calculation logic, making the system
-    more testable and maintainable. Each source is collected independently.
+    Container for the 3 configuration sources: FuzzField → Campaign → Defaults.
+    Clean separation with no embedded config complexity.
     """
-    # Default/fallback configuration (Priority 5)
-    default_weight: float = 0.0
+    # Default configuration (lowest priority)
+    default_weight: float = DEFAULT_FUZZ_WEIGHT
+    default_dictionaries: List[str] = field(default_factory=list)
+    default_values: List[Any] = field(default_factory=list)
+    default_mutator_weights: Dict[str, float] = field(default_factory=dict)
     
-    # Dictionary Manager sources - separated by priority level
-    # Priority 3: Advanced/campaign-level mapping
-    # Priority 4: Global defaults (name/type-based)
-    manager_weight: Optional[float] = None
-    manager_dictionaries: List[str] = field(default_factory=list)
-    manager_values: List[Any] = field(default_factory=list)
-    manager_source_type: Optional[str] = None  # "advanced" or "global"
+    # Campaign configuration (middle priority)
+    campaign_weight: Optional[float] = None
+    campaign_dictionaries: List[str] = field(default_factory=list)
+    campaign_values: List[Any] = field(default_factory=list)
+    campaign_mutator_weights: Dict[str, float] = field(default_factory=dict)
     
-    # Embedded packet configuration (priority 2)
-    embedded_weight: Optional[float] = None
-    embedded_dictionaries: List[str] = field(default_factory=list)
-    embedded_values: List[Any] = field(default_factory=list)
-    
-    # FuzzField configuration (priority 1 - highest)
+    # FuzzField configuration (highest priority)
     fuzzfield_weight: Optional[float] = None
     fuzzfield_dictionaries: List[str] = field(default_factory=list)
     fuzzfield_values: List[Any] = field(default_factory=list)
-    fuzzfield_mutators: List[str] = field(default_factory=list)  # Legacy list format
-    fuzzfield_mutator_weights: Dict[str, float] = field(default_factory=dict)  # New dict format
+    fuzzfield_mutator_weights: Dict[str, float] = field(default_factory=dict)
     fuzzfield_scapy_weight: Optional[float] = None
     fuzzfield_dictionary_only_weight: Optional[float] = None
     fuzzfield_use_scapy_fuzz: Optional[bool] = None
-    fuzzfield_dictionary_override: bool = False
     fuzzfield_object: Optional[Any] = None  # For materialization
     
     # Collection metadata
     collection_errors: List[str] = field(default_factory=list)
-    collection_successful: bool = True
-
-
-@dataclass
-class ResolvedConfiguration:
-    """
-    Final resolved configuration after priority-based calculation.
-    
-    This is the output of the calculation phase and input to the application phase.
-    """
-    final_weight: float
-    final_dictionaries: List[str]
-    final_values: List[Any]
-    config_source: str  # Which priority level was used
-    
-    # Weight tracking for transparency and debugging
-    base_weight: float = 0.0                    # Original weight before any scaling
-    layer_scaled_weight: float = 0.0            # After layer weight scaling
-    campaign_scaled_weight: float = 0.0         # After campaign scaling (final)
-    layer_scaling_factor: float = 1.0           # Layer scaling multiplier applied
-    campaign_scaling_factor: float = 1.0        # Campaign scaling multiplier applied
-    final_scaling_factor: float = 1.0           # Combined scaling factor (layer * campaign)
-    
-    # FuzzField-specific properties (if applicable)
-    scapy_fuzz_weight: Optional[float] = None
-    dictionary_only_weight: Optional[float] = None
-    use_scapy_fuzz: Optional[bool] = None
-    mutator_preferences: List[str] = field(default_factory=list)  # Legacy list format
-    mutator_weights: Dict[str, float] = field(default_factory=dict)  # New dict format
-    
-    # Resolution metadata
-    priority_level: int = 5  # 1=highest (FuzzField), 5=lowest (default)
-    resolution_notes: List[str] = field(default_factory=list)
 
 
 class MutatorManagerData:
+
+    def get_field_dictionaries(self, field_metadata: 'FieldMetadata') -> list:
+        """
+        Public API to get all dictionary paths for a field.
+        Args:
+            field_metadata: The FieldMetadata object for the field.
+        Returns:
+            List of dictionary paths (strings) for the field.
+        """
+        return getattr(field_metadata, 'dictionary_paths', [])
     """
     Self-contained data tracking system for MutatorManager operations.
     
@@ -333,26 +247,14 @@ class MutatorManagerData:
         """
         self.fuzz_config = fuzz_config
         self.creation_time = datetime.now()
-        
-        # Extract packet and iteration information
-        self.packets = fuzz_config.packets
-        self.iterations = fuzz_config.iterations or DEFAULT_MAX_MUTATIONS # Default if not specified
-        
-        # Validate inputs
-        if self.packets is None:
-            raise ValueError("FuzzConfig must include packets for data tracking")
-        
-        # Normalize packet input to list
-        if isinstance(self.packets, Packet):
-            self.packet_list = [self.packets]
-            self.is_single_packet = True
-        elif isinstance(self.packets, list):
-            if not self.packets:
-                raise ValueError("Packet list cannot be empty")
-            self.packet_list = list(self.packets)
-            self.is_single_packet = False
-        else:
-            raise ValueError("Packets must be a Packet instance or list of Packets")
+
+        self.iterations = fuzz_config.iterations or fuzz_config.max_mutations
+
+        # Extract packet information - validate packets are provided
+        if fuzz_config.packets is None:
+            raise ValueError("FuzzConfig.packets must be provided")
+        self.original_packets = fuzz_config.packets
+        self.fuzzed_packets: List[Packet] = []  # Will be populated during preprocessing
         
         # Initialize data structures
         self.packet_data: List[PacketData] = []
@@ -361,8 +263,8 @@ class MutatorManagerData:
         # Mutator tracking per iteration
         self.iteration_mutator_usage: Dict[int, Dict[str, str]] = {}  # iteration -> {field_key: mutator_name}
         
-        # Processing statistics
-        self.total_packets = len(self.packet_list)
+        # Processing statistics - will be updated during preprocessing
+        self.total_packets = 0  # Will be set during preprocessing
         self.total_fields = 0
         self.fuzzable_field_count = 0
         self.excluded_field_count = 0
@@ -371,10 +273,23 @@ class MutatorManagerData:
         # Processing state
         self.is_preprocessed = False
         self.preprocessing_errors: List[str] = []
-        
-        logger.info(f"MutatorManagerData initialized: {self.total_packets} packets, "
-                   f"{self.iterations} iterations, single_packet={self.is_single_packet}")
+
+    def __str__(self) -> str:
+        """String representation of MutatorManagerData."""
+        return (f"MutatorManagerData({self.total_packets} packets, "
+                f"{self.total_fields} fields, {self.fuzzable_field_count} fuzzable)")
     
+    def __repr__(self) -> str:
+        """Detailed representation of MutatorManagerData."""
+        return (f"MutatorManagerData(packets={self.total_packets}, "
+                f"fields={self.total_fields}, fuzzable={self.fuzzable_field_count}, "
+                f"iterations={self.iterations}, preprocessed={self.is_preprocessed})")
+    
+# ===========================
+# PROCESSING & COMPUTATION
+# ===========================
+# Complex preprocessing, configuration resolution, and field analysis logic
+
     def preprocess_packets(self, dictionary_manager: Optional[Any] = None) -> None:
         """
         Analyze all packets and build complete field metadata.
@@ -391,34 +306,32 @@ class MutatorManagerData:
         
         logger.info(f"Preprocessing {self.total_packets} packets...")
         start_time = datetime.now()
+    
+        # CRITICAL: Create deep copies with iteration logic during preprocessing
+        # USER REQUIREMENT: ITERATION MULTIPLICATION MUST HAPPEN DURING PREPROCESSING
+        # DO NOT MOVE THIS LOGIC TO A LATER PHASE!
+        self._create_packet_copies()
         
-        try:
-            # CRITICAL: Create deep copies with iteration logic during preprocessing
-            # USER REQUIREMENT: ITERATION MULTIPLICATION MUST HAPPEN DURING PREPROCESSING
-            # DO NOT MOVE THIS LOGIC TO A LATER PHASE!
-            self._create_packet_copies()
+        # Process each packet to extract field metadata
+        for packet_idx, packet in enumerate(self.fuzzed_packets):
+            packet_data = self._process_single_packet(packet, packet_idx, dictionary_manager)
+            self.packet_data.append(packet_data)
             
-            # Process each packet to extract field metadata
-            for packet_idx, packet in enumerate(self.packet_list):
-                packet_data = self._process_single_packet(packet, packet_idx, dictionary_manager)
-                self.packet_data.append(packet_data)
-                
-                # Update global statistics
-                self.total_fields += packet_data.total_fields
-                self.fuzzable_field_count += len(packet_data.fuzzable_fields)
-                self.excluded_field_count += len(packet_data.excluded_fields)
-                
-                if packet_data.has_layer_collisions():
-                    self.layer_collision_count += 1
+            # Update global statistics
+            self.total_fields += packet_data.total_fields
+            self.fuzzable_field_count += len(packet_data.fuzzable_fields)
+            self.excluded_field_count += len(packet_data.excluded_fields)
             
-            # Build global field index for cross-packet analysis
-            self._build_global_field_index()
-            
-            # Finalize preprocessing
-            self._finalize_preprocessing()
-            
-        except Exception as e:
-            raise
+            if packet_data.has_layer_collisions():
+                self.layer_collision_count += 1
+        
+        # Build global field index for cross-packet analysis
+        self._build_global_field_index()
+        
+        # Finalize preprocessing
+        self._finalize_preprocessing()
+        
+
     
     def _finalize_preprocessing(self) -> None:
         """
@@ -437,40 +350,26 @@ class MutatorManagerData:
     def _create_packet_copies(self) -> None:
         """
         Create deep copies of packets with proper iteration logic during preprocessing.
-        
-        ITERATION LOGIC APPLIED DURING PREPROCESSING:
-        - Single packet + iterations: Create `iterations` copies of that packet
-        - Packet list shorter than iterations: Cycle through list until we have `iterations` packets  
-        - Packet list longer than iterations: Use only the first `iterations` packets
-        - Single iteration: Use original packets as-is
-        
-        THIS MUST HAPPEN DURING PREPROCESSING - DO NOT CHANGE THIS AGAIN!
         """
-        import copy
-        
         # Normalize packets from config to a list
-        if isinstance(self.fuzz_config.packets, list):
-            self.original_packets = list(self.fuzz_config.packets)
+        if isinstance(self.original_packets, list):
+            packets_list = list(self.original_packets)
         else:
-            self.original_packets = [self.fuzz_config.packets]
+            packets_list = [self.original_packets]
         
-        if not self.iterations or self.iterations <= 1:
-            # Single iteration: use original packets as-is
-            self.packet_list = [copy.deepcopy(pkt) for pkt in self.original_packets]
-            logger.debug(f"Single iteration: created {len(self.packet_list)} packet copies")
-            return
-            
-        # Multiple iterations: implement cycling logic DURING PREPROCESSING
-        self.packet_list = []
-        num_original = len(self.original_packets)
+        self.fuzzed_packets = []
+        num_original = len(packets_list)
         
         for i in range(self.iterations):
             # Cycle through original packets using modulo
             packet_index = i % num_original
-            self.packet_list.append(copy.deepcopy(self.original_packets[packet_index]))
+            self.fuzzed_packets.append(copy.deepcopy(packets_list[packet_index]))
         
-        logger.debug(f"PREPROCESSING: Created {len(self.packet_list)} packet copies for {self.iterations} iterations "
+        logger.debug(f"PREPROCESSING: Created {len(self.fuzzed_packets)} packet copies for {self.iterations} iterations "
                     f"(cycling through {num_original} original packets)")
+        
+        # Update total_packets now that we have the final count
+        self.total_packets = len(self.fuzzed_packets)
 
     def _process_single_packet(self, packet: Packet, packet_idx: int,
                               dictionary_manager: Optional[Any]) -> PacketData:
@@ -552,42 +451,20 @@ class MutatorManagerData:
         for field_desc in layer.fields_desc:
             field_name = field_desc.name
             
-            try:
-                # Create field metadata
-                field_metadata = self._create_field_metadata(
-                    layer, field_desc, layer_name, layer_index, packet_index, dictionary_manager
-                )
-                
-                # Add to packet data
-                packet_data.fields[field_metadata.field_key] = field_metadata
-                
-                if field_metadata.is_fuzzable:
-                    packet_data.fuzzable_fields.append(field_metadata.field_key)
-                else:
-                    packet_data.excluded_fields.append(field_metadata.field_key)
+            # Create field metadata
+            field_metadata = self._create_field_metadata(
+                layer, field_desc, layer_name, layer_index, packet_index, dictionary_manager
+            )
+            
+            # Add to packet data
+            packet_data.fields[field_metadata.field_key] = field_metadata
+            
+            if field_metadata.is_fuzzable:
+                packet_data.fuzzable_fields.append(field_metadata.field_key)
+            else:
+                packet_data.excluded_fields.append(field_metadata.field_key)
                     
-            except Exception as e:
-                error_msg = f"Failed to process field {layer_name}[{layer_index}].{field_name}: {e}"
-                self.preprocessing_errors.append(error_msg)
-                logger.warning(error_msg)
-                
-                # Create minimal metadata for failed field
-                field_key = self._generate_field_key(layer_name, field_name, layer_index)
-                failed_field = FieldMetadata(
-                    field_key=field_key,
-                    layer_name=layer_name,
-                    field_name=field_name,
-                    layer_index=layer_index,
-                    packet_index=packet_index,
-                    field_type="unknown",
-                    field_kind="unknown",
-                    current_value=None,
-                    is_fuzzable=False,
-                    exclusion_reason=f"Processing error: {e}"
-                )
-                packet_data.fields[field_key] = failed_field
-                packet_data.excluded_fields.append(field_key)
-    
+
     def _create_field_metadata(self, layer: Packet, field_desc: Field, 
                               layer_name: str, layer_index: int, packet_index: int,
                               dictionary_manager: Optional[Any]) -> FieldMetadata:
@@ -755,23 +632,7 @@ class MutatorManagerData:
                 constraints['min_length'] = 4     # Encourage non-trivial content
                 
         # Add field-specific constraints using MutatorManager logic
-        from scapy.fields import (BitField, ByteField, ShortField, IntField, 
-                                 EnumField, IntEnumField, StrField)
-        
-        # Numeric field constraints (consistent with MutatorManager._build_field_info)
-        if isinstance(field_desc, BitField):
-            bits = getattr(field_desc, 'size', 8)
-            constraints['min_value'] = 0
-            constraints['max_value'] = (1 << bits) - 1
-        elif isinstance(field_desc, ByteField):
-            constraints['min_value'] = 0
-            constraints['max_value'] = 0xFF
-        elif isinstance(field_desc, ShortField):
-            constraints['min_value'] = 0
-            constraints['max_value'] = 0xFFFF
-        elif isinstance(field_desc, IntField):
-            constraints['min_value'] = 0
-            constraints['max_value'] = 0xFFFFFFFF
+        from scapy.fields import EnumField, IntEnumField, StrField
         
         # Enum field constraints
         if isinstance(field_desc, (EnumField, IntEnumField)):
@@ -790,723 +651,124 @@ class MutatorManagerData:
     def _resolve_field_configuration(self, field_metadata: FieldMetadata, 
                                     layer: Packet, dictionary_manager: Optional[Any]) -> None:
         """
-        Centralized field configuration resolution with clear separation of concerns.
-        
-        This method orchestrates the three-phase configuration resolution:
-        1. Collection: Gather all available configuration sources
-        2. Calculation: Apply priority-based resolution logic  
-        3. Application: Apply resolved configuration and handle side effects
-        
-        This separation makes the system more testable, maintainable, and debuggable.
+        Simple 3-level configuration resolution: FuzzField → Campaign → Defaults.
+        Clean merge approach with no complex priority system.
         """
-        # Phase 1: Data Collection - Pure data gathering, no business logic
+        # Collect sources
         sources = self._collect_configuration_sources(field_metadata, layer, dictionary_manager)
         
-        # Phase 2: Resolution & Calculation - Pure priority logic, no side effects
-        # Phase 2: Calculate configuration priority and apply scaling
-        resolved = self._resolve_configuration_priority(sources, layer)
+        # Merge in priority order (later overwrites earlier)
+        config = self._merge_configurations(sources, layer)
         
-        # Phase 3: Application - Apply configuration and handle side effects
-        self._apply_resolved_configuration(field_metadata, layer, resolved, sources)
+        # Apply to field metadata
+        self._apply_merged_configuration(field_metadata, layer, config, sources)
     
     def _collect_configuration_sources(self, field_metadata: FieldMetadata, 
                                       layer: Packet, dictionary_manager: Optional[Any]) -> ConfigurationSources:
         """
-        Phase 1: Collect all available configuration sources.
-        
-        This is pure data collection with no business logic or side effects.
-        Each source is collected independently and errors are captured.
-        
-        Args:
-            field_metadata: Field to collect configuration for
-            layer: Scapy layer containing the field
-            dictionary_manager: DictionaryManager for configuration sources
-            
-        Returns:
-            ConfigurationSources object with all collected data
+        Collect the 3 configuration sources: Defaults → Campaign → FuzzField.
+        Simple data collection with no complex logic.
         """
         sources = ConfigurationSources()
         
-        # Default configuration (always available)
+        # 1. Default configuration (always available)
         sources.default_weight = self.fuzz_config.fuzz_weight
-        
-        # Dictionary Manager sources - separate priority 3 & 4
         if dictionary_manager:
-            try:
-                # Get separated dictionary manager sources
-                advanced_config = self._get_advanced_manager_config(dictionary_manager, field_metadata)
-                global_config = self._get_global_manager_config(dictionary_manager, field_metadata)
-                
-                # Priority 3: Advanced/campaign-level mapping
-                if advanced_config['weight'] is not None:
-                    sources.manager_weight = advanced_config['weight'] 
-                    sources.manager_source_type = "advanced"
-                if advanced_config['dictionaries']:
-                    sources.manager_dictionaries = advanced_config['dictionaries']
-                if advanced_config['values']:
-                    sources.manager_values = advanced_config['values']
-                
-                # Priority 4: Global defaults (only if no advanced config)
-                if sources.manager_weight is None and global_config['weight'] is not None:
-                    sources.manager_weight = global_config['weight']
-                    sources.manager_source_type = "global"
-                if not sources.manager_dictionaries and global_config['dictionaries']:
-                    sources.manager_dictionaries = global_config['dictionaries']
-                if not sources.manager_values and global_config['values']:
-                    sources.manager_values = global_config['values']
-                    
-            except Exception as e:
-                sources.collection_errors.append(f"Dictionary manager error: {e}")
-                sources.collection_successful = False
-                logger.warning(f"Failed to collect dictionary manager configuration for {field_metadata.field_key}: {e}")
+            sources.default_dictionaries, sources.default_values = self._get_default_config(
+                field_metadata, dictionary_manager)
+            sources.default_mutator_weights = self._get_default_mutator_weights(field_metadata)
         
-        # Embedded packet configuration (priority 2)
-        if hasattr(layer, 'get_field_fuzz_config'):
-            try:
-                embedded_config = layer.get_field_fuzz_config(field_metadata.field_name)
-                if embedded_config:
-                    sources.embedded_weight = embedded_config.fuzz_weight
-                    sources.embedded_dictionaries = embedded_config.dictionary.copy()
-                    sources.embedded_values = embedded_config.default_values.copy()
-            except Exception as e:
-                sources.collection_errors.append(f"Embedded config error: {e}")
-                logger.warning(f"Failed to collect embedded configuration for {field_metadata.field_key}: {e}")
+        # 2. Campaign configuration (from FuzzConfig + overrides)
+        if self.fuzz_config.advanced_field_mapping_overrides:
+            campaign_config = self._get_campaign_config(field_metadata)
+            sources.campaign_weight = campaign_config.get('weight')
+            sources.campaign_dictionaries = campaign_config.get('dictionaries', [])
+            sources.campaign_values = campaign_config.get('values', [])
         
-        # FuzzField configuration (priority 1 - highest)
+        # 3. FuzzField configuration (highest priority)
         field_value = getattr(layer, field_metadata.field_name, None)
         fuzzfield_config = self._extract_fuzzfield_configuration(field_value)
         if fuzzfield_config['is_fuzzfield']:
-            sources.fuzzfield_weight = fuzzfield_config['fuzz_weight']
-            sources.fuzzfield_dictionaries = fuzzfield_config['dictionaries']
-            sources.fuzzfield_values = fuzzfield_config['values']
-            sources.fuzzfield_mutators = fuzzfield_config['mutators']  # Legacy list
-            sources.fuzzfield_mutator_weights = fuzzfield_config['mutator_weights']  # New dict
-            sources.fuzzfield_scapy_weight = fuzzfield_config['scapy_fuzz_weight']
-            sources.fuzzfield_dictionary_only_weight = fuzzfield_config['dictionary_only_weight']
-            sources.fuzzfield_use_scapy_fuzz = fuzzfield_config['use_scapy_fuzz']
-            sources.fuzzfield_dictionary_override = fuzzfield_config['dictionary_override']
-            sources.fuzzfield_object = field_value  # Store for materialization
+            sources.fuzzfield_weight = fuzzfield_config.get('fuzz_weight')
+            sources.fuzzfield_dictionaries = fuzzfield_config.get('dictionaries', [])
+            sources.fuzzfield_values = fuzzfield_config.get('values', [])
+            sources.fuzzfield_mutator_weights = fuzzfield_config.get('mutator_weights', {})
+            sources.fuzzfield_scapy_weight = fuzzfield_config.get('scapy_fuzz_weight')
+            sources.fuzzfield_dictionary_only_weight = fuzzfield_config.get('dictionary_only_weight')
+            sources.fuzzfield_use_scapy_fuzz = fuzzfield_config.get('use_scapy_fuzz')
+            sources.fuzzfield_object = field_value
         
         return sources
     
-    def _get_advanced_manager_config(self, dictionary_manager: Any, field_metadata: FieldMetadata) -> Dict[str, Any]:
+    def _merge_configurations(self, sources: ConfigurationSources, layer: Packet) -> Dict[str, Any]:
         """
-        Get Priority 3 configuration: Campaign-level advanced field mapping.
-        
-        FIXED: Campaign overrides now take absolute precedence over default mappings.
-        Checks campaign overrides FIRST, then falls back to defaults only if no override exists.
+        Simple merge: Defaults → Campaign → FuzzField (later wins).
+        Apply layer scaling at the end.
         """
-        from .default_mappings import FIELD_ADVANCED_WEIGHTS, FIELD_ADVANCED_DICTIONARIES
+        # Start with defaults
+        config = {
+            'weight': sources.default_weight,
+            'dictionaries': sources.default_dictionaries.copy(),
+            'values': sources.default_values.copy(),
+            'mutator_weights': sources.default_mutator_weights.copy(),
+            'scapy_fuzz_weight': 0.1,
+            'dictionary_only_weight': 0.2,
+            'use_scapy_fuzz': True,
+            'config_source': 'default'
+        }
         
-        field_name = field_metadata.field_name
-        layer_name = field_metadata.layer_name  
-        field_type = field_metadata.field_type
-        key = f"{layer_name}.{field_name}"
+        # Merge campaign (overwrites defaults)
+        if sources.campaign_weight is not None:
+            config['weight'] = sources.campaign_weight
+            config['config_source'] = 'campaign'
+        if sources.campaign_dictionaries:
+            config['dictionaries'].extend(sources.campaign_dictionaries)
+        if sources.campaign_values:
+            config['values'].extend(sources.campaign_values)
+        if sources.campaign_mutator_weights:
+            config['mutator_weights'].update(sources.campaign_mutator_weights)
         
-        config = {'weight': None, 'dictionaries': [], 'values': []}
-        properties = {'length': field_metadata.max_length, 'context': None}
-        
-        # CAMPAIGN OVERRIDES FIRST - absolute precedence
-        if (hasattr(self.fuzz_config, 'advanced_field_mapping_overrides') and 
-            self.fuzz_config.advanced_field_mapping_overrides):
-            
-            # Check for direct field match first
-            for override in self.fuzz_config.advanced_field_mapping_overrides:
-                # Direct match: Layer.field
-                if (override.get('layer') == layer_name and 
-                    override.get('field') == field_name):
-                    if 'fuzz_weight' in override:
-                        config['weight'] = override['fuzz_weight']
-                        return config  # Return immediately - campaign override found
-                
-                # Wildcard match: *.field  
-                elif (override.get('field') == field_name and 
-                      'layer' not in override):
-                    if 'fuzz_weight' in override:
-                        config['weight'] = override['fuzz_weight']
-                        return config  # Return immediately - campaign override found
-                
-                # Layer wildcard: Layer.*
-                elif (override.get('layer') == layer_name and 
-                      'field' not in override):
-                    if 'fuzz_weight' in override:
-                        config['weight'] = override['fuzz_weight']
-                        return config  # Return immediately - campaign override found
-                
-                # Enhanced wildcard patterns
-                elif 'pattern' in override and 'pattern_type' in override:
-                    if self._matches_enhanced_pattern(layer_name, field_name, override):
-                        if 'fuzz_weight' in override:
-                            config['weight'] = override['fuzz_weight']
-                            return config  # Return immediately - campaign override found
-        
-        # DEFAULT MAPPINGS (only if no campaign override found)
-        # Use DictionaryManager's advanced resolution methods on default mappings
-        if hasattr(dictionary_manager, '_resolve_advanced_weight'):
-            adv_weight = dictionary_manager._resolve_advanced_weight(
-                FIELD_ADVANCED_WEIGHTS,
-                field_name=key,
-                field_type=field_type,
-                properties=properties,
-                global_mode="override"
-            )
-            if adv_weight is not None:
-                config['weight'] = adv_weight
-        
-        # Use DictionaryManager's advanced dictionary resolution
-        if hasattr(dictionary_manager, '_resolve_advanced_dictionary'):
-            adv_dictionaries = dictionary_manager._resolve_advanced_dictionary(
-                FIELD_ADVANCED_DICTIONARIES.get(key, []) if isinstance(FIELD_ADVANCED_DICTIONARIES.get(key), list) else [],
-                field_name=key,
-                field_type=field_type,
-                properties=properties,
-                global_mode="merge"
-            )
-            if adv_dictionaries:
-                resolved_paths = [dictionary_manager._resolve_path(path) for path in adv_dictionaries]
-                config['dictionaries'] = resolved_paths
-        
-        # Use DictionaryManager's advanced values resolution
-        if hasattr(dictionary_manager, '_resolve_advanced_values'):
-            adv_values = dictionary_manager._resolve_advanced_values(
-                FIELD_ADVANCED_DICTIONARIES.get(key, []) if isinstance(FIELD_ADVANCED_DICTIONARIES.get(key), list) else [],
-                field_name=key,
-                field_type=field_type,
-                properties=properties,
-                global_mode="override"
-            )
-            if adv_values:
-                config['values'] = adv_values
-        
-        # Fallback to simple dictionary mapping if advanced resolution not available
-        if not config['dictionaries'] and key in FIELD_ADVANCED_DICTIONARIES:
-            adv_config = FIELD_ADVANCED_DICTIONARIES[key]
-            
-            # Handle dictionary configuration (dict format)
-            if isinstance(adv_config, dict) and 'dictionaries' in adv_config:
-                adv_dicts = adv_config['dictionaries']
-                resolved_paths = [dictionary_manager._resolve_path(path) for path in adv_dicts]
-                config['dictionaries'] = resolved_paths
-                
-                # Load dictionary entries as values - CRITICAL: Must succeed
-                dict_entries = dictionary_manager.get_dictionary_entries(adv_dicts)
-                config['values'] = [entry.decode('utf-8', errors='ignore') for entry in dict_entries]
-            
-            # Handle direct values list (list format)
-            elif isinstance(adv_config, list):
-                config['values'] = adv_config.copy()
-        
-        return config
-    
-    def _get_global_manager_config(self, dictionary_manager: Any, field_metadata: FieldMetadata) -> Dict[str, Any]:
-        """
-        Get Priority 4 configuration: Global dictionary manager defaults.
-        
-        CORRECTED: Uses raw mapping lookups during collection phase, not processed FieldMetadata.
-        This preserves name-based and type-based mapping logic during collection.
-        """
-        from .default_mappings import (FIELD_NAME_WEIGHTS, FIELD_TYPE_WEIGHTS, 
-                                      FIELD_NAME_DICTIONARIES, FIELD_TYPE_DICTIONARIES)
-        
-        field_name = field_metadata.field_name
-        layer_name = field_metadata.layer_name
-        field_type = field_metadata.field_type
-        key = f"{layer_name}.{field_name}"
-        
-        config = {'weight': None, 'dictionaries': [], 'values': []}
-        dictionary_paths = []
-        
-        # Check name-based weight (higher priority within global)
-        if key in FIELD_NAME_WEIGHTS:
-            config['weight'] = FIELD_NAME_WEIGHTS[key]
-        # Check type-based weight (lower priority within global)
-        elif field_type in FIELD_TYPE_WEIGHTS:
-            config['weight'] = FIELD_TYPE_WEIGHTS[field_type]
-        
-        # Type-based dictionaries
-        if field_type in FIELD_TYPE_DICTIONARIES:
-            type_dicts = FIELD_TYPE_DICTIONARIES[field_type]
-            for d in type_dicts:
-                dictionary_paths.extend(dictionary_manager.expand_macro(d))
-        
-        # Name-based dictionaries
-        if key in FIELD_NAME_DICTIONARIES:
-            for d in FIELD_NAME_DICTIONARIES[key]:
-                dictionary_paths.extend(dictionary_manager.expand_macro(d))
-        
-        # Resolve paths using DictionaryManager utilities
-        if dictionary_paths:
-            config['dictionaries'] = [dictionary_manager._resolve_path(path) for path in set(dictionary_paths)]
-        
-        return config
-    
-    def _resolve_field_weight(self, field_metadata: FieldMetadata, layer: Packet, 
-                             dictionary_manager: Optional[Any]) -> float:
-        """
-        Centralized weight resolution with proper priority handling.
-        
-        Priority Order (highest to lowest):
-        1. FuzzField configuration
-        2. Embedded packet configuration  
-        3. Advanced mapping (campaign/user overrides)
-        4. Name-based mapping
-        5. Type-based mapping
-        6. Default fallback
-        
-        Args:
-            field_metadata: Field to resolve weight for
-            layer: Scapy layer containing the field
-            dictionary_manager: DictionaryManager for mapping operations
-            
-        Returns:
-            Resolved weight value
-        """
-        from .default_mappings import FIELD_ADVANCED_WEIGHTS, FIELD_NAME_WEIGHTS, FIELD_TYPE_WEIGHTS
-        
-        field_name = field_metadata.field_name
-        layer_name = field_metadata.layer_name
-        field_type = field_metadata.field_type
-        key = f"{layer_name}.{field_name}"
-        properties = {'length': field_metadata.max_length, 'context': None}
-        
-        # Priority 1: FuzzField configuration (highest)
-        field_value = getattr(layer, field_name, None)
-        fuzzfield_config = self._extract_fuzzfield_configuration(field_value)
-        if fuzzfield_config['is_fuzzfield'] and fuzzfield_config['fuzz_weight'] is not None:
-            return fuzzfield_config['fuzz_weight']
-        
-        # Priority 2: Embedded packet configuration
-        if hasattr(layer, 'get_field_fuzz_config'):
-            embedded_config = layer.get_field_fuzz_config(field_name)
-            if embedded_config and embedded_config.fuzz_weight is not None:
-                return embedded_config.fuzz_weight
-        
-        # Priority 3: Advanced mapping (campaign/user overrides)
-        if dictionary_manager and hasattr(dictionary_manager, '_resolve_advanced_weight'):
-            adv_weight = dictionary_manager._resolve_advanced_weight(
-                FIELD_ADVANCED_WEIGHTS, field_name=key, field_type=field_type, 
-                properties=properties, global_mode="override"
-            )
-            if adv_weight is not None:
-                return adv_weight
-        
-        # Priority 4: Name-based mapping
-        if key in FIELD_NAME_WEIGHTS:
-            return FIELD_NAME_WEIGHTS[key]
-        
-        # Priority 5: Type-based mapping
-        if field_type in FIELD_TYPE_WEIGHTS:
-            return FIELD_TYPE_WEIGHTS[field_type]
-        
-        # Priority 6: Default fallback
-        return self.fuzz_config.fuzz_weight  # Campaign default weight
-    
-    def _resolve_field_dictionaries(self, field_metadata: FieldMetadata, layer: Packet,
-                                   dictionary_manager: Optional[Any]) -> List[str]:
-        """
-        Centralized dictionary resolution with proper priority handling.
-        
-        Priority Order (highest to lowest):
-        1. FuzzField configuration
-        2. Embedded packet configuration
-        3. Advanced mapping (campaign/user overrides)  
-        4. Name-based mapping
-        5. Type-based mapping
-        
-        Args:
-            field_metadata: Field to resolve dictionaries for
-            layer: Scapy layer containing the field
-            dictionary_manager: DictionaryManager for mapping operations
-            
-        Returns:
-            List of resolved dictionary file paths
-        """
-        from .default_mappings import (FIELD_ADVANCED_DICTIONARIES, FIELD_NAME_DICTIONARIES, 
-                                      FIELD_TYPE_DICTIONARIES)
-        
-        field_name = field_metadata.field_name
-        layer_name = field_metadata.layer_name
-        field_type = field_metadata.field_type
-        key = f"{layer_name}.{field_name}"
-        properties = {'length': field_metadata.max_length, 'context': None}
-        
-        dictionary_paths = []
-        
-        # Priority 1: FuzzField configuration (highest)
-        field_value = getattr(layer, field_name, None)
-        fuzzfield_config = self._extract_fuzzfield_configuration(field_value)
-        if fuzzfield_config['is_fuzzfield']:
-            if fuzzfield_config['dictionaries']:
-                # If FuzzField has dictionary override, use only those
-                if fuzzfield_config['dictionary_override']:
-                    if dictionary_manager:
-                        return [dictionary_manager._resolve_path(path) for path in fuzzfield_config['dictionaries']]
-                    return fuzzfield_config['dictionaries']
-                else:
-                    dictionary_paths.extend(fuzzfield_config['dictionaries'])
-        
-        # Priority 2: Embedded packet configuration
-        if hasattr(layer, 'get_field_fuzz_config'):
-            embedded_config = layer.get_field_fuzz_config(field_name)
-            if embedded_config and embedded_config.dictionary:
-                dictionary_paths.extend(embedded_config.dictionary)
-        
-        # Priority 3: Advanced mapping (campaign/user overrides)
-        if dictionary_manager and hasattr(dictionary_manager, '_resolve_advanced_dictionary'):
-            # Get advanced mappings for this field from constants
-            adv_mappings = FIELD_ADVANCED_DICTIONARIES.get(key, [])
-            if adv_mappings:
-                adv_dicts = dictionary_manager._resolve_advanced_dictionary(
-                    adv_mappings, field_name=key, field_type=field_type, 
-                    properties=properties, global_mode="merge"
-                )
-                if adv_dicts:
-                    dictionary_paths.extend(adv_dicts)
-
-        # Use existing name and type based mapping from constants
-        if key in FIELD_NAME_DICTIONARIES:
-            for d in FIELD_NAME_DICTIONARIES[key]:
-                if dictionary_manager:
-                    dictionary_paths.extend(dictionary_manager.expand_macro(d))
-                else:
-                    dictionary_paths.append(d)
-
-        if field_type in FIELD_TYPE_DICTIONARIES:
-            type_dicts = FIELD_TYPE_DICTIONARIES[field_type]
-            for d in type_dicts:
-                if dictionary_manager:
-                    dictionary_paths.extend(dictionary_manager.expand_macro(d))
-                else:
-                    dictionary_paths.append(d)
-
-        # Remove duplicates and resolve paths
-        unique_paths = list(dict.fromkeys(dictionary_paths))
-        if dictionary_manager:
-            return [dictionary_manager._resolve_path(path) for path in unique_paths]
-        return unique_paths
-
-    def _calculate_layer_depth(self, layer):
-        """
-        Calculate the depth of a layer from the innermost layer.
-        Uses consolidated utility for layer depth calculation.
-        
-        Returns:
-            int: Depth below the current layer (0 = innermost, 1+ = outer layers)
-        """
-        from packetfuzz.utils.field_utils import calculate_layer_depth_below
-        return calculate_layer_depth_below(layer)
-    
-    def _resolve_field_mutator_weights(self, sources: ConfigurationSources, layer: Packet) -> Dict[str, float]:
-        """
-        Resolve mutator weights for a field from default mappings.
-        
-        Args:
-            sources: Configuration sources collected for this field
-            layer: The packet layer containing the field
-            
-        Returns:
-            Dict mapping mutator names to weights
-        """
-        # Import the default mappings - CRITICAL: Must succeed
-        from .default_mappings import (
-            FIELD_TYPE_MUTATOR_WEIGHTS, 
-            FIELD_NAME_MUTATOR_WEIGHTS, 
-            FIELD_ADVANCED_MUTATOR_WEIGHTS
-        )
-        
-        # Extract field information for lookup
-        field_name = getattr(sources, 'manager_source_type', None) or "unknown"
-        field_type = getattr(layer, '__class__', object).__name__
-        layer_name = layer.__class__.__name__
-        
-        # Build field key similar to how it's done elsewhere
-        key = f"{layer_name}.{field_name}"
-        
-        # Priority 1: Advanced mappings (most specific)
-        for rule in FIELD_ADVANCED_MUTATOR_WEIGHTS:
-            condition = rule.get('condition', {})
-            
-            # Check layer name condition
-            if 'layer_name' in condition and condition['layer_name'] != layer_name:
-                continue
-                
-            # Check field name contains condition
-            if 'field_name_contains' in condition:
-                if condition['field_name_contains'].lower() not in field_name.lower():
-                    continue
-                    
-            # Check field type condition
-            if 'field_type' in condition and condition['field_type'] != field_type:
-                continue
-                
-            # If all conditions match, return the mutator weights
-            return rule.get('mutator_weights', {}).copy()
-        
-        # Priority 2: Name-based mapping
-        if key in FIELD_NAME_MUTATOR_WEIGHTS:
-            return FIELD_NAME_MUTATOR_WEIGHTS[key].copy()
-        
-        # Priority 3: Type-based mapping
-        if field_type in FIELD_TYPE_MUTATOR_WEIGHTS:
-            return FIELD_TYPE_MUTATOR_WEIGHTS[field_type].copy()
-        
-        # Priority 4: Campaign-level default (if available)
-        if hasattr(self.fuzz_config, 'mutator_preference') and self.fuzz_config.mutator_preference:
-            if isinstance(self.fuzz_config.mutator_preference, dict):
-                return self.fuzz_config.mutator_preference.copy()
-            elif isinstance(self.fuzz_config.mutator_preference, list):
-                # Convert list to equal weights
-                equal_weight = 1.0 / len(self.fuzz_config.mutator_preference)
-                return {mutator: equal_weight for mutator in self.fuzz_config.mutator_preference}
-        
-        # Priority 5: Fallback to libfuzzer (only if no other source available)
-        return {"libfuzzer": 1.0}
-    
-    def _apply_layer_weight_scaling(self, base_weight: float, layer: Packet) -> Tuple[float, float]:
-        """
-        Apply layer weight scaling to the base weight.
-        
-        Args:
-            base_weight: Original weight before scaling
-            layer: Scapy layer for depth calculation
-            
-        Returns:
-            Tuple[scaled_weight, scaling_factor]: The scaled weight and the scaling factor applied
-        """
-        # Check if layer weight scaling is enabled
-        if not getattr(self.fuzz_config, 'enable_layer_weight_scaling', True):
-            return base_weight, 1.0
-        
-        # Get layer scaling factor from config or default
-        layer_scaling_factor = getattr(self.fuzz_config, 'layer_weight_scaling', None)
-        if layer_scaling_factor is None:
-            # Import default scaling constant - CRITICAL: Must succeed
-            from .default_mappings import LAYER_WEIGHT_SCALING
-            layer_scaling_factor = LAYER_WEIGHT_SCALING
-        
-        # Calculate depth and apply scaling
-        depth_below = self._calculate_layer_depth(layer)
-        
-        # Apply scaling: base * (scale ** depth_below)
-        # Lower scale means outer layers (higher depth_below) get reduced more
-        if isinstance(layer_scaling_factor, (int, float)) and layer_scaling_factor > 0:
-            scaling_multiplier = layer_scaling_factor ** depth_below
-            scaled_weight = base_weight * scaling_multiplier
-            return scaled_weight, scaling_multiplier
-        
-        return base_weight, 1.0
-    
-    def _apply_campaign_scaling(self, weight: float) -> Tuple[float, float]:
-        """
-        Apply campaign-level weight scaling.
-        
-        Args:
-            weight: Weight before campaign scaling
-            
-        Returns:
-            Tuple[scaled_weight, scaling_factor]: The scaled weight and the scaling factor applied
-        """
-        campaign_scaling_factor = getattr(self.fuzz_config, 'fuzz_weight_scale', 1.0)
-        
-        if isinstance(campaign_scaling_factor, (int, float)) and campaign_scaling_factor > 0:
-            scaled_weight = weight * campaign_scaling_factor
-            return scaled_weight, campaign_scaling_factor
-        
-        return weight, 1.0
-    
-    def _resolve_configuration_priority(self, sources: ConfigurationSources, layer: Packet) -> ResolvedConfiguration:
-        """
-        Phase 2: Apply priority-based resolution logic.
-        
-        This is pure calculation logic with no side effects. The priority system
-        is clearly implemented with explicit precedence rules.
-        
-        Priority levels (highest to lowest):
-        1. FuzzField configuration (inline packet field config)
-        2. Embedded packet field configuration (field_fuzz())
-        3. Campaign-level advanced field mapping (via dictionary manager)
-        4. Global dictionary manager defaults (name/type-based)
-        5. FuzzConfig fallback defaults
-        
-        Args:
-            sources: All collected configuration sources
-            
-        Returns:
-            ResolvedConfiguration with final calculated values
-        """
-        resolved = ResolvedConfiguration(
-            final_weight=sources.default_weight,
-            final_dictionaries=[],
-            final_values=[],
-            config_source="default",
-            priority_level=5
-        )
-        
-        # Apply sources in reverse priority order (lowest to highest)
-        
-        # Priority 5: Default (already applied above)
-        
-        # Priority 4: Global dictionary manager defaults (only if advanced didn't provide)
-        if sources.manager_weight is not None and sources.manager_source_type == "global":
-            resolved.final_weight = sources.manager_weight
-            resolved.config_source = "dictionary_manager"  # Simplified for backward compatibility
-            resolved.priority_level = 4
-            resolved.resolution_notes.append("Applied global dictionary manager weight")
-        
-        if sources.manager_dictionaries and sources.manager_source_type == "global":
-            resolved.final_dictionaries = sources.manager_dictionaries.copy()
-            resolved.resolution_notes.append("Applied global dictionary manager dictionaries")
-        
-        if sources.manager_values and sources.manager_source_type == "global":
-            resolved.final_values = sources.manager_values.copy()
-            resolved.resolution_notes.append("Applied global dictionary manager values")
-        
-        # Priority 3: Advanced/campaign-level dictionary manager configuration
-        if sources.manager_weight is not None and sources.manager_source_type == "advanced":
-            resolved.final_weight = sources.manager_weight
-            resolved.config_source = "dictionary_manager"  # Simplified for backward compatibility
-            resolved.priority_level = 3
-            resolved.resolution_notes.append("Applied advanced dictionary manager weight")
-        
-        if sources.manager_dictionaries and sources.manager_source_type == "advanced":
-            resolved.final_dictionaries = sources.manager_dictionaries.copy()
-            resolved.resolution_notes.append("Applied advanced dictionary manager dictionaries")
-        
-        if sources.manager_values and sources.manager_source_type == "advanced":
-            resolved.final_values = sources.manager_values.copy()
-            resolved.resolution_notes.append("Applied advanced dictionary manager values")
-        
-        # Priority 2: Embedded configuration
-        if sources.embedded_weight is not None:
-            resolved.final_weight = sources.embedded_weight
-            resolved.final_dictionaries = sources.embedded_dictionaries.copy()
-            resolved.final_values = sources.embedded_values.copy()
-            resolved.config_source = "embedded"
-            resolved.priority_level = 2
-            resolved.resolution_notes.append("Applied embedded configuration")
-        
-        # Priority 1: FuzzField configuration (highest)
+        # Merge FuzzField (overwrites everything)
         if sources.fuzzfield_weight is not None:
-            resolved.final_weight = sources.fuzzfield_weight
-            resolved.config_source = "fuzzfield"
-            resolved.priority_level = 1
-            resolved.resolution_notes.append("Applied FuzzField weight")
-        
+            config['weight'] = sources.fuzzfield_weight
+            config['config_source'] = 'fuzzfield'
         if sources.fuzzfield_dictionaries:
-            # Handle dictionary override vs merge
-            if sources.fuzzfield_dictionary_override:
-                resolved.final_dictionaries = sources.fuzzfield_dictionaries.copy()
-                resolved.resolution_notes.append("FuzzField dictionaries (override)")
-            else:
-                # Merge with existing
-                existing_set = set(resolved.final_dictionaries)
-                fuzzfield_set = set(sources.fuzzfield_dictionaries)
-                resolved.final_dictionaries = list(existing_set.union(fuzzfield_set))
-                resolved.resolution_notes.append("FuzzField dictionaries (merged)")
-        
+            config['dictionaries'] = sources.fuzzfield_dictionaries  # Replace, don't extend
         if sources.fuzzfield_values:
-            resolved.final_values = sources.fuzzfield_values.copy()
-            resolved.resolution_notes.append("Applied FuzzField values")
-        
-        # Apply FuzzField-specific properties
-        if sources.fuzzfield_scapy_weight is not None:
-            resolved.scapy_fuzz_weight = sources.fuzzfield_scapy_weight
-        if sources.fuzzfield_dictionary_only_weight is not None:
-            resolved.dictionary_only_weight = sources.fuzzfield_dictionary_only_weight
-        if sources.fuzzfield_use_scapy_fuzz is not None:
-            resolved.use_scapy_fuzz = sources.fuzzfield_use_scapy_fuzz
-        if sources.fuzzfield_mutators:
-            resolved.mutator_preferences = sources.fuzzfield_mutators.copy()
+            config['values'] = sources.fuzzfield_values  # Replace, don't extend
         if sources.fuzzfield_mutator_weights:
-            resolved.mutator_weights = sources.fuzzfield_mutator_weights.copy()
-            resolved.resolution_notes.append("Applied FuzzField mutator weights")
-        else:
-            # Resolve mutator weights from default mappings
-            resolved.mutator_weights = self._resolve_field_mutator_weights(sources, layer)
-            if resolved.mutator_weights:
-                resolved.resolution_notes.append("Applied default mutator weights")
-        
-        # === WEIGHT SCALING PHASE ===
-        # Apply layer weight scaling first, then campaign scaling
-        
-        # Store the base weight before any scaling
-        resolved.base_weight = resolved.final_weight
+            config['mutator_weights'] = sources.fuzzfield_mutator_weights
+        if sources.fuzzfield_scapy_weight is not None:
+            config['scapy_fuzz_weight'] = sources.fuzzfield_scapy_weight
+        if sources.fuzzfield_dictionary_only_weight is not None:
+            config['dictionary_only_weight'] = sources.fuzzfield_dictionary_only_weight
+        if sources.fuzzfield_use_scapy_fuzz is not None:
+            config['use_scapy_fuzz'] = sources.fuzzfield_use_scapy_fuzz
         
         # Apply layer weight scaling
-        layer_scaled_weight, layer_scaling_factor = self._apply_layer_weight_scaling(
-            resolved.final_weight, layer
-        )
-        resolved.layer_scaled_weight = layer_scaled_weight
-        resolved.layer_scaling_factor = layer_scaling_factor
+        if self.fuzz_config.enable_layer_weight_scaling:
+            config['weight'] *= self._calculate_layer_scaling_factor(layer)
         
-        # Apply campaign scaling
-        campaign_scaled_weight, campaign_scaling_factor = self._apply_campaign_scaling(
-            layer_scaled_weight
-        )
-        resolved.campaign_scaled_weight = campaign_scaled_weight
-        resolved.campaign_scaling_factor = campaign_scaling_factor
+        # Apply campaign global scaling
+        config['weight'] *= self.fuzz_config.fuzz_weight_scale
         
-        # Calculate final scaling factor and update final weight
-        # Handle None values gracefully to avoid NoneType multiplication errors
-        if layer_scaling_factor is None:
-            layer_scaling_factor = 1.0
-        if campaign_scaling_factor is None:
-            campaign_scaling_factor = 1.0
-            
-        resolved.final_scaling_factor = layer_scaling_factor * campaign_scaling_factor
-        resolved.final_weight = campaign_scaled_weight
-        
-        # Add resolution notes for scaling
-        if layer_scaling_factor != 1.0:
-            resolved.resolution_notes.append(f"Applied layer scaling: {layer_scaling_factor:.3f}")
-        if campaign_scaling_factor != 1.0:
-            resolved.resolution_notes.append(f"Applied campaign scaling: {campaign_scaling_factor:.3f}")
-        if resolved.final_scaling_factor != 1.0:
-            resolved.resolution_notes.append(f"Total scaling: {resolved.final_scaling_factor:.3f}")
-        
-        return resolved
+        return config
     
-    def _apply_resolved_configuration(self, field_metadata: FieldMetadata, layer: Packet, 
-                                     resolved: ResolvedConfiguration, sources: ConfigurationSources) -> None:
+    def _apply_merged_configuration(self, field_metadata: FieldMetadata, layer: Packet, 
+                                   config: Dict[str, Any], sources: ConfigurationSources) -> None:
         """
-        Phase 3: Apply resolved configuration and handle side effects.
-        
-        This phase takes the calculated configuration and applies it to the field metadata.
-        It also handles FuzzField materialization and other side effects.
-        
-        Args:
-            field_metadata: FieldMetadata to update
-            layer: Scapy layer for FuzzField materialization
-            resolved: Final resolved configuration
-            sources: Original sources (for FuzzField materialization)
+        Apply merged configuration to field metadata and handle FuzzField materialization.
         """
-        # Apply resolved configuration to field metadata
-        field_metadata.fuzz_weight = resolved.final_weight
-        field_metadata.dictionary_paths = resolved.final_dictionaries
-        field_metadata.default_values = resolved.final_values
-        field_metadata.config_source = resolved.config_source
+        field_metadata.fuzz_weight = config['weight']
+        field_metadata.dictionary_paths = config['dictionaries']
+        field_metadata.default_values = config['values']
+        field_metadata.mutator_weights = config['mutator_weights']
+        field_metadata.scapy_fuzz_weight = config['scapy_fuzz_weight']
+        field_metadata.dictionary_only_weight = config['dictionary_only_weight']
+        field_metadata.use_scapy_fuzz = config['use_scapy_fuzz']
+        field_metadata.config_source = config['config_source']
         
-        # Apply weight tracking information
-        field_metadata.base_weight = resolved.base_weight
-        field_metadata.layer_scaled_weight = resolved.layer_scaled_weight
-        field_metadata.campaign_scaled_weight = resolved.campaign_scaled_weight
-        field_metadata.layer_scaling_factor = resolved.layer_scaling_factor
-        field_metadata.campaign_scaling_factor = resolved.campaign_scaling_factor
-        field_metadata.final_scaling_factor = resolved.final_scaling_factor
-        
-        # Apply FuzzField-specific properties if available
-        if resolved.scapy_fuzz_weight is not None:
-            field_metadata.scapy_fuzz_weight = resolved.scapy_fuzz_weight
-        if resolved.dictionary_only_weight is not None:
-            field_metadata.dictionary_only_weight = resolved.dictionary_only_weight
-        if resolved.use_scapy_fuzz is not None:
-            field_metadata.use_scapy_fuzz = resolved.use_scapy_fuzz
-        if resolved.mutator_preferences:
-            field_metadata.mutator_preferences = resolved.mutator_preferences
-        if resolved.mutator_weights:
-            field_metadata.mutator_weights = resolved.mutator_weights
-        
-        # Handle FuzzField materialization (side effect)
+        # Handle FuzzField materialization
         if sources.fuzzfield_object is not None:
             self._materialize_fuzzfield_in_packet(layer, field_metadata.field_name, sources.fuzzfield_object)
         
@@ -1516,52 +778,116 @@ class MutatorManagerData:
             field_metadata.field_kind != "unknown"
         )
         
-        # Set exclusion reason if not fuzzable
-        if not field_metadata.is_fuzzable and not field_metadata.exclusion_reason:
+        if not field_metadata.is_fuzzable:
             if field_metadata.fuzz_weight <= 0:
                 field_metadata.exclusion_reason = "Zero fuzz weight"
             elif field_metadata.field_kind == "unknown":
                 field_metadata.exclusion_reason = "Unknown field type"
-        
-        # Debug logging (only at highest verbosity to reduce overhead)
-        # Import verbosity level from mutator_manager to avoid performance issues
-        from .mutator_manager import VERBOSITY_LEVEL
-        if VERBOSITY_LEVEL >= 4:  # Only log at very high verbosity
-            logger.debug(f"Applied config for {field_metadata.field_key}: "
-                        f"weight={field_metadata.fuzz_weight}, "
-                        f"dictionaries={len(field_metadata.dictionary_paths)}, "
-                        f"values={len(field_metadata.default_values)}, "
-                        f"source={resolved.config_source} (priority {resolved.priority_level})")
-            
-            if resolved.resolution_notes:
-                logger.debug(f"Resolution notes for {field_metadata.field_key}: {', '.join(resolved.resolution_notes)}")
     
-    def _materialize_fuzzfield_in_packet(self, layer: Packet, field_name: str, fuzzfield_object: Any) -> None:
-        """
-        Replace FuzzField with a chosen value in the packet layer.
+    def _get_default_config(self, field_metadata: FieldMetadata, 
+                           dictionary_manager: Any) -> Tuple[List[str], List[Any]]:
+        """Get default dictionaries and values for a field."""
+        from .default_mappings import (FIELD_NAME_DICTIONARIES, FIELD_TYPE_DICTIONARIES)
         
-        This is separated from the main configuration logic to clearly isolate
-        side effects (packet modification) from pure configuration calculation.
-        """
-        try:
-            chosen_value = fuzzfield_object.choose_value()
-            if chosen_value is not None:
-                setattr(layer, field_name, chosen_value)
-                logger.debug(f"Materialized FuzzField {field_name} to value: {chosen_value}")
-            else:
-                # If no value chosen, remove the attribute to let Scapy resolve defaults
-                if hasattr(layer, field_name):
-                    delattr(layer, field_name)
-                    logger.debug(f"Removed FuzzField {field_name} attribute (no value chosen)")
-        except Exception as e:
-            logger.warning(f"Failed to materialize FuzzField {field_name}: {e}")
-            # Leave the field as-is on error
+        field_name = field_metadata.field_name
+        layer_name = field_metadata.layer_name
+        field_type = field_metadata.field_type
+        key = f"{layer_name}.{field_name}"
+        
+        dictionary_paths = []
+        
+        # Name-based dictionaries
+        if key in FIELD_NAME_DICTIONARIES:
+            for d in FIELD_NAME_DICTIONARIES[key]:
+                dictionary_paths.extend(dictionary_manager.expand_macro(d))
+        
+        # Type-based dictionaries
+        if field_type in FIELD_TYPE_DICTIONARIES:
+            for d in FIELD_TYPE_DICTIONARIES[field_type]:
+                dictionary_paths.extend(dictionary_manager.expand_macro(d))
+        
+        # Remove duplicates and resolve paths
+        unique_paths = list(dict.fromkeys(dictionary_paths))
+        resolved_paths = [dictionary_manager._resolve_path(path) for path in unique_paths]
+        
+        # Load dictionary values
+        values = []
+        if resolved_paths:
+            dict_entries = dictionary_manager.get_dictionary_entries(unique_paths)
+            values = [entry.decode('utf-8', errors='ignore') for entry in dict_entries]
+        
+        return resolved_paths, values
+    
+    def _get_default_mutator_weights(self, field_metadata: FieldMetadata) -> Dict[str, float]:
+        """Get default mutator weights for a field."""
+        from .default_mappings import (FIELD_TYPE_MUTATOR_WEIGHTS, FIELD_NAME_MUTATOR_WEIGHTS)
+        
+        field_name = field_metadata.field_name
+        layer_name = field_metadata.layer_name
+        field_type = field_metadata.field_type
+        key = f"{layer_name}.{field_name}"
+        
+        # Name-based weights (higher priority)
+        if key in FIELD_NAME_MUTATOR_WEIGHTS:
+            return FIELD_NAME_MUTATOR_WEIGHTS[key].copy()
+        
+        # Type-based weights
+        if field_type in FIELD_TYPE_MUTATOR_WEIGHTS:
+            return FIELD_TYPE_MUTATOR_WEIGHTS[field_type].copy()
+        
+        # Fallback
+        return {"libfuzzer": 1.0}
+    
+    def _get_campaign_config(self, field_metadata: FieldMetadata) -> Dict[str, Any]:
+        """Get campaign-level overrides for a field with enhanced pattern matching."""
+        if not self.fuzz_config.advanced_field_mapping_overrides:
+            return {}
+        
+        field_name = field_metadata.field_name
+        layer_name = field_metadata.layer_name
+        
+        for override in self.fuzz_config.advanced_field_mapping_overrides:
+            # Direct match: Layer.field
+            if (override.get('layer') == layer_name and 
+                override.get('field') == field_name):
+                return override
+            
+            # Wildcard match: *.field  
+            elif (override.get('field') == field_name and 
+                  'layer' not in override):
+                return override
+            
+            # Layer wildcard: Layer.*
+            elif (override.get('layer') == layer_name and 
+                  'field' not in override):
+                return override
+            
+            # Enhanced wildcard patterns
+            elif 'pattern' in override and 'pattern_type' in override:
+                if self._matches_enhanced_pattern(layer_name, field_name, override):
+                    return override
+        
+        return {}
+    
+    def _calculate_layer_scaling_factor(self, layer: Packet) -> float:
+        """Calculate layer weight scaling factor."""
+        if not self.fuzz_config.enable_layer_weight_scaling:
+            return 1.0
+        
+        depth_below = self._calculate_layer_depth(layer)
+        
+        if self.fuzz_config.layer_weight_scaling is not None:
+            scaling_factor = self.fuzz_config.layer_weight_scaling
+        else:
+            from .default_mappings import LAYER_WEIGHT_SCALING
+            scaling_factor = LAYER_WEIGHT_SCALING
+        
+        return scaling_factor ** depth_below
     
     def _extract_fuzzfield_configuration(self, field_value: Any) -> Dict[str, Any]:
         """
         Extract configuration from a FuzzField object if present.
-        
-        Returns a dictionary with FuzzField configuration or empty config if not a FuzzField.
+        Returns a dictionary with FuzzField configuration or indicates not a FuzzField.
         """
         # Import FuzzField
         from .fuzzing_framework import FuzzField
@@ -1569,10 +895,57 @@ class MutatorManagerData:
         if not isinstance(field_value, FuzzField):
             return {'is_fuzzfield': False}
         
-        return {
-            'is_fuzzfield': True,
-            'field_value': field_value
-        }
+        # Extract configuration from FuzzField
+        config: Dict[str, Any] = {'is_fuzzfield': True}
+        
+        # Get basic properties safely
+        if hasattr(field_value, 'fuzz_weight'):
+            config['fuzz_weight'] = field_value.fuzz_weight
+        if hasattr(field_value, 'dictionaries'):
+            config['dictionaries'] = field_value.dictionaries or []
+        if hasattr(field_value, 'values'):
+            config['values'] = field_value.values or []
+        
+        # Use getattr for optional attributes that may not exist
+        mutator_weights = getattr(field_value, 'mutator_weights', None)
+        if mutator_weights:
+            config['mutator_weights'] = mutator_weights
+            
+        scapy_fuzz_weight = getattr(field_value, 'scapy_fuzz_weight', None)
+        if scapy_fuzz_weight is not None:
+            config['scapy_fuzz_weight'] = scapy_fuzz_weight
+            
+        dictionary_only_weight = getattr(field_value, 'dictionary_only_weight', None)
+        if dictionary_only_weight is not None:
+            config['dictionary_only_weight'] = dictionary_only_weight
+            
+        use_scapy_fuzz = getattr(field_value, 'use_scapy_fuzz', None)
+        if use_scapy_fuzz is not None:
+            config['use_scapy_fuzz'] = use_scapy_fuzz
+        
+        return config
+
+    def _materialize_fuzzfield_in_packet(self, layer: Packet, field_name: str, fuzzfield_object: Any) -> None:
+        """
+        Replace FuzzField with a chosen value in the packet layer.
+        """
+        chosen_value = fuzzfield_object.choose_value()
+        if chosen_value is not None:
+            setattr(layer, field_name, chosen_value)
+            logger.debug(f"Materialized FuzzField {field_name} to value: {chosen_value}")
+        else:
+            # If no value chosen, remove the attribute to let Scapy resolve defaults
+            if hasattr(layer, field_name):
+                delattr(layer, field_name)
+                logger.debug(f"Removed FuzzField {field_name} attribute (no value chosen)")
+
+
+    def _calculate_layer_depth(self, layer):
+        """
+        Calculate the depth of a layer from the innermost layer.
+        """
+        from packetfuzz.utils.field_utils import calculate_layer_depth_below
+        return calculate_layer_depth_below(layer)
 
     def _build_global_field_index(self) -> None:
         """
@@ -1609,6 +982,61 @@ class MutatorManagerData:
                 )
         except Exception as e:
             raise
+
+        
+    def _matches_enhanced_pattern(self, layer_name: str, field_name: str, override: Dict[str, Any]) -> bool:
+        """
+        Check if a layer.field matches an enhanced wildcard pattern.
+        
+        Supports pattern types:
+        - layer_field_wildcard: Both layer and field have wildcards (e.g., HTTP*.port*)
+        - layer_wildcard: Only layer has wildcards (e.g., HTTP*.dport)
+        - field_wildcard: Only field has wildcards (e.g., TCP.port*)
+        
+        Args:
+            layer_name: Name of the layer (e.g., "HTTP", "TCP")
+            field_name: Name of the field (e.g., "dport", "version")
+            override: Override entry with pattern information
+            
+        Returns:
+            True if the layer.field matches the pattern
+        """
+        import fnmatch
+        
+        pattern = override.get('pattern', '')
+        pattern_type = override.get('pattern_type', '')
+        
+        if pattern_type == 'layer_field_wildcard':
+            # Pattern like "HTTP*.port*" - both layer and field have wildcards
+            if '.' in pattern:
+                pattern_layer, pattern_field = pattern.split('.', 1)
+                layer_match = fnmatch.fnmatch(layer_name, pattern_layer)
+                field_match = fnmatch.fnmatch(field_name, pattern_field)
+                return layer_match and field_match
+            else:
+                # Fallback to simple field matching
+                return fnmatch.fnmatch(field_name, pattern)
+        
+        elif pattern_type == 'layer_wildcard':
+            # Pattern like "HTTP*" with specific field
+            pattern_layer = pattern.split('.')[0] if '.' in pattern else pattern
+            specific_field = override.get('field', '')
+            layer_match = fnmatch.fnmatch(layer_name, pattern_layer)
+            field_match = (field_name == specific_field)
+            return layer_match and field_match
+        
+        elif pattern_type == 'field_wildcard':
+            # Pattern like "port*" with specific layer
+            specific_layer = override.get('layer', '')
+            pattern_field = pattern.split('.')[1] if '.' in pattern else pattern
+            layer_match = (layer_name == specific_layer)
+            field_match = fnmatch.fnmatch(field_name, pattern_field)
+            return layer_match and field_match
+        
+        # Fallback: try to match the full pattern against layer.field
+        full_field_name = f"{layer_name}.{field_name}"
+        return fnmatch.fnmatch(full_field_name, pattern)
+
     
     # =========================
     # Public Query Interface
@@ -1624,7 +1052,6 @@ class MutatorManagerData:
         Returns:
             True if assignment succeeded, False otherwise
         """
-        import copy
         # Resolve FieldMetadata
         if isinstance(field, str):
             field_metadata = self.get_field_by_key(field, packet_index)
@@ -1917,8 +1344,7 @@ class MutatorManagerData:
             'is_preprocessed': self.is_preprocessed,
             'preprocessing_errors': len(self.preprocessing_errors),
             'iterations': self.iterations,
-            'creation_time': self.creation_time.isoformat(),
-            'single_packet_mode': self.is_single_packet
+            'creation_time': self.creation_time.isoformat()
         }
     
     def record_field_mutation(self, field_key: str, packet_index: int, 
@@ -1943,108 +1369,3 @@ class MutatorManagerData:
                 field_metadata.failed_mutations += 1
             field_metadata.last_mutated = datetime.now()
     
-    def __str__(self) -> str:
-        """String representation of MutatorManagerData."""
-        return (f"MutatorManagerData({self.total_packets} packets, "
-                f"{self.total_fields} fields, {self.fuzzable_field_count} fuzzable)")
-    
-    def __repr__(self) -> str:
-        """Detailed representation of MutatorManagerData."""
-        return (f"MutatorManagerData(packets={self.total_packets}, "
-                f"fields={self.total_fields}, fuzzable={self.fuzzable_field_count}, "
-                f"iterations={self.iterations}, preprocessed={self.is_preprocessed})")
-    
-    def get_final_field_weight(self, field_key: str, packet_index: int = 0) -> float:
-        """
-        Get the final effective weight for a field, including all scaling factors.
-        
-        Args:
-            field_key: The field identifier (e.g., "IP[0].dst")
-            packet_index: Index of the packet containing the field
-            
-        Returns:
-            Final effective weight for the field (0.0 to 1.0)
-        """
-        field_metadata = self.get_field_by_key(field_key, packet_index)
-        if not field_metadata:
-            return 0.0
-            
-        if not field_metadata.is_fuzzable:
-            return 0.0
-            
-        # Start with base field weight
-        weight = field_metadata.fuzz_weight
-        
-        # Apply global weight scaling
-        weight *= self.fuzz_config.fuzz_weight_scale
-        
-        # Apply layer-based scaling if enabled
-        if self.fuzz_config.enable_layer_weight_scaling:
-            # Use layer_index as a proxy for layer distance
-            # Higher layer_index means further from innermost layer
-            layer_distance = field_metadata.layer_index
-            
-            if self.fuzz_config.layer_weight_scaling is not None:
-                # Custom layer scaling factor
-                scaling_factor = self.fuzz_config.layer_weight_scaling ** layer_distance
-            else:
-                # Default layer scaling (inner layers get higher weight)
-                # Distance 0 = innermost layer (full weight), distance increases outward
-                scaling_factor = 0.8 ** layer_distance
-            weight *= scaling_factor
-        
-        # Ensure weight stays in valid range
-        return max(0.0, min(1.0, weight))
-
-    def _matches_enhanced_pattern(self, layer_name: str, field_name: str, override: Dict[str, Any]) -> bool:
-        """
-        Check if a layer.field matches an enhanced wildcard pattern.
-        
-        Supports pattern types:
-        - layer_field_wildcard: Both layer and field have wildcards (e.g., HTTP*.port*)
-        - layer_wildcard: Only layer has wildcards (e.g., HTTP*.dport)
-        - field_wildcard: Only field has wildcards (e.g., TCP.port*)
-        
-        Args:
-            layer_name: Name of the layer (e.g., "HTTP", "TCP")
-            field_name: Name of the field (e.g., "dport", "version")
-            override: Override entry with pattern information
-            
-        Returns:
-            True if the layer.field matches the pattern
-        """
-        import fnmatch
-        
-        pattern = override.get('pattern', '')
-        pattern_type = override.get('pattern_type', '')
-        
-        if pattern_type == 'layer_field_wildcard':
-            # Pattern like "HTTP*.port*" - both layer and field have wildcards
-            if '.' in pattern:
-                pattern_layer, pattern_field = pattern.split('.', 1)
-                layer_match = fnmatch.fnmatch(layer_name, pattern_layer)
-                field_match = fnmatch.fnmatch(field_name, pattern_field)
-                return layer_match and field_match
-            else:
-                # Fallback to simple field matching
-                return fnmatch.fnmatch(field_name, pattern)
-        
-        elif pattern_type == 'layer_wildcard':
-            # Pattern like "HTTP*" with specific field
-            pattern_layer = pattern.split('.')[0] if '.' in pattern else pattern
-            specific_field = override.get('field', '')
-            layer_match = fnmatch.fnmatch(layer_name, pattern_layer)
-            field_match = (field_name == specific_field)
-            return layer_match and field_match
-        
-        elif pattern_type == 'field_wildcard':
-            # Pattern like "port*" with specific layer
-            specific_layer = override.get('layer', '')
-            pattern_field = pattern.split('.')[1] if '.' in pattern else pattern
-            layer_match = (layer_name == specific_layer)
-            field_match = fnmatch.fnmatch(field_name, pattern_field)
-            return layer_match and field_match
-        
-        # Fallback: try to match the full pattern against layer.field
-        full_field_name = f"{layer_name}.{field_name}"
-        return fnmatch.fnmatch(full_field_name, pattern)

@@ -11,7 +11,7 @@ from typing import Any, List, Optional
 from scapy.packet import Packet, fuzz
 
 # Local imports
-from .base import BaseMutator
+from .base import BaseMutator, MutatorRegistry
 
 # Configure logger for this module
 logger = logging.getLogger(__name__)
@@ -174,3 +174,7 @@ class ScapyMutator(BaseMutator):
                 mutated_value = rng.choice(boundaries)
                 logger.debug(f"ScapyMutator: Fallback boundary value: {int_val} -> {mutated_value}")
                 return mutated_value
+
+
+# Register this mutator
+# Removed manual registration - now uses auto-discovery
