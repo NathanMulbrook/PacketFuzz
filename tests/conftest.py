@@ -49,7 +49,7 @@ def cleanup_test_files():
         if filepath.exists():
             try:
                 filepath.unlink()
-            except Exception:
+            except (OSError, PermissionError):
                 pass  # Ignore cleanup errors
     
     # Clean up crash log directories and their contents
@@ -69,10 +69,10 @@ def cleanup_test_files():
                         elif crash_file.is_dir():
                             # Remove subdirectories recursively  
                             shutil.rmtree(crash_file)
-                    except Exception:
+                    except (OSError, PermissionError):
                         # Ignore permission errors
                         pass
-            except Exception:
+            except (OSError, PermissionError):
                 # Ignore permission errors on directory access
                 pass
     
@@ -89,7 +89,7 @@ def cleanup_test_files():
             if log_path.exists():
                 try:
                     log_path.unlink()
-                except Exception:
+                except (OSError, PermissionError):
                     # Ignore permission errors
                     pass
 

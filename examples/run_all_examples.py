@@ -69,8 +69,8 @@ def run_campaign_file_cli(file_path, args):
         cmd.extend(["--report-formats"] + formats)
     
     print(f"\n{'='*60}")
-    print(f"🚀 Running: {file_path.name}")
-    print(f"📋 Command: {' '.join(cmd)}")
+    print(f"Running: {file_path.name}")
+    print(f"Command: {' '.join(cmd)}")
     print(f"{'='*60}")
     
     start_time = time.time()
@@ -80,13 +80,13 @@ def run_campaign_file_cli(file_path, args):
         end_time = time.time()
         
         if result.returncode == 0:
-            print(f"✅ SUCCESS: {file_path.name} completed in {end_time - start_time:.2f}s")
+            print(f"SUCCESS: {file_path.name} completed in {end_time - start_time:.2f}s")
         else:
-            print(f"❌ FAILED: {file_path.name} (exit code: {result.returncode})")
+            print(f"FAILED: {file_path.name} (exit code: {result.returncode})")
             return False
             
-    except Exception as e:
-        print(f"💥 ERROR: Failed to run {file_path.name}: {e}")
+    except (OSError, subprocess.SubprocessError, FileNotFoundError) as e:
+        print(f"ERROR: Failed to run {file_path.name}: {e}")
         return False
     
     return True
@@ -96,14 +96,9 @@ def main():
         description="PacketFuzz Example Runner - Showcasing Enhanced Features",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-🎯 Feature Showcase:
-  • 250x Performance Improvement: Optimized fuzzing with reduced execution time
-  • Hierarchical Packet Breakdown: Beautiful IP → TCP → HTTP visualization  
-  • Enhanced Mutator Identification: Clear [libfuzzer], [scapy], [dict] indicators
-  • Multiple Report Formats: Comprehensive analysis in JSON, HTML, Markdown, YAML, SARIF
-  • Advanced CLI Features: Modern command-line options for better control
 
-🔧 Recommended Usage:
+
+Recommended Usage:
   python run_all_examples.py --quick --disable-network --verbose
         """
     )
@@ -124,7 +119,7 @@ def main():
     # Define example categories and their purposes
     example_categories = [
         {
-            "name": "🔰 Basic Examples",
+            "name": "Basic Examples",
             "description": "Core PacketFuzz functionality and new features",
             "path": examples_dir / "basic",
             "files": [
@@ -136,7 +131,7 @@ def main():
             ]
         },
         {
-            "name": "🔧 Intermediate Examples", 
+            "name": "Intermediate Examples", 
             "description": "Advanced configuration and reporting features",
             "path": examples_dir / "intermediate",
             "files": [
@@ -146,7 +141,7 @@ def main():
             ]
         },
         {
-            "name": "🚀 Advanced Examples",
+            "name": "Advanced Examples",
             "description": "Complex scenarios and custom implementations", 
             "path": examples_dir / "advanced",
             "files": [
@@ -157,20 +152,15 @@ def main():
         }
     ]
     
-    print("🎪 PacketFuzz Enhanced Example Runner")
-    print("=====================================")
-    print("Showcasing 250x performance improvement, hierarchical packet breakdown,")
-    print("enhanced mutator identification, and comprehensive reporting features!")
-    print()
     
     if args.quick:
-        print("⚡ Quick mode: Running with reduced iterations for fast demonstration")
+        print("Quick mode: Running with reduced iterations for fast demonstration")
     if args.disable_network:
-        print("🔒 Safe mode: Network transmission disabled")
+        print("Safe mode: Network transmission disabled")
     if args.verbose:
-        print("🔍 Debug mode: Maximum verbosity enabled for hierarchical packet breakdown")
+        print("Debug mode: Maximum verbosity enabled for hierarchical packet breakdown")
     
-    print(f"📊 Report formats: {args.report_formats}")
+    print(f"Report formats: {args.report_formats}")
     print()
     
     total_examples = 0
@@ -179,7 +169,7 @@ def main():
     
     for category in example_categories:
         print(f"\n{category['name']}")
-        print(f"📝 {category['description']}")
+        print(f"{category['description']}")
         print("-" * 50)
         
         for file_name in category['files']:
@@ -194,27 +184,27 @@ def main():
                 if not args.quick:
                     time.sleep(1)
             else:
-                print(f"⚠️  SKIP: {file_name} not found")
+                print(f"SKIP: {file_name} not found")
     
     end_time = time.time()
     
     # Final summary
     print(f"\n{'='*60}")
-    print("🎯 EXECUTION SUMMARY")
+    print("EXECUTION SUMMARY")
     print(f"{'='*60}")
-    print(f"📋 Total Examples: {total_examples}")
-    print(f"✅ Successful: {successful_examples}")
-    print(f"❌ Failed: {total_examples - successful_examples}")
-    print(f"⏱️  Total Time: {end_time - start_time:.2f} seconds")
+    print(f"Total Examples: {total_examples}")
+    print(f"Successful: {successful_examples}")
+    print(f"Failed: {total_examples - successful_examples}")
+    print(f"Total Time: {end_time - start_time:.2f} seconds")
     
     if successful_examples == total_examples:
-        print("🎉 All examples completed successfully!")
-        print("\n🔍 Check the following directories for outputs:")
-        print("   📁 artifacts/pcaps/     - Captured packets")
-        print("   📁 artifacts/reports/   - Analysis reports") 
-        print("   📁 artifacts/logs/      - Fuzz history with hierarchical breakdown")
+        print("All examples completed successfully!")
+        print("\nCheck the following directories for outputs:")
+        print("   artifacts/pcaps/     - Captured packets")
+        print("   artifacts/reports/   - Analysis reports") 
+        print("   artifacts/logs/      - Fuzz history with hierarchical breakdown")
     else:
-        print(f"⚠️  {total_examples - successful_examples} examples failed")
+        print(f"WARNING: {total_examples - successful_examples} examples failed")
         return 1
     
     return 0

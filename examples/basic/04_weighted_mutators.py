@@ -125,23 +125,23 @@ def run_example_campaigns():
     
     print("\n=== Running Example Campaigns ===\n")
     
-    print("🌐 Running HTTP Weighted Mutator Campaign...")
+    print("Running HTTP Weighted Mutator Campaign...")
     http_campaign = HTTPWeightedMutatorCampaign()
     try:
         result = http_campaign.execute()
-        print(f"   ✓ HTTP Campaign completed: {result}")
-    except Exception as e:
-        print(f"   ⚠ HTTP Campaign failed: {e}")
+        print(f"   HTTP Campaign completed: {result}")
+    except (OSError, RuntimeError) as e:
+        print(f"   WARNING: HTTP Campaign failed: {e}")
     
-    print("\n🔍 Running TCP Port Scan with Default Weights...")
+    print("\nRunning TCP Port Scan with Default Weights...")
     tcp_campaign = TCPPortScanCampaign()
     try:
         result = tcp_campaign.execute()
-        print(f"   ✓ TCP Campaign completed: {result}")
-    except Exception as e:
-        print(f"   ⚠ TCP Campaign failed: {e}")
+        print(f"   TCP Campaign completed: {result}")
+    except (OSError, RuntimeError) as e:
+        print(f"   WARNING: TCP Campaign failed: {e}")
 
 if __name__ == "__main__":
     demonstrate_mutator_weights()
     run_example_campaigns()
-    print("\n✅ Demo completed! Check the logs above to see weighted mutator selection in action.")
+    print("\nDemo completed! Check the logs above to see weighted mutator selection in action.")

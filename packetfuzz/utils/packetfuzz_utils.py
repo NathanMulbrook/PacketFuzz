@@ -1,51 +1,110 @@
-#!/usr/bin/env python3
-"""
-Field Analysis Utilities for PacketFuzz
 
-Consolidated field type resolution with embedded config support and Scapy inheritance.
-Provides single source of truth for field type analysis across the fuzzing framework.
-"""
-
+from typing import Set, Optional, Dict, Union, List
 import logging
-from typing import List, Optional
+from .scapy_utils import get_layer_names_from_packets, get_scapy_layer_names, find_field_descriptor
 
 logger = logging.getLogger(__name__)
 
+# Cache for layer names to avoid repeated Scapy registry lookups
+_layer_cache: Dict[str, Optional[Set[str]]] = {
+    'all_layers': None,
+    'scapy_layers': None, 
+    'fuzzing_categories': None
+}
 
-def calculate_layer_depth_below(layer) -> int:
+def get_smart_layer_names(packets=None, include_fuzzing_categories=True) -> Set[str]:
     """
-    Calculate the depth of layers below the current layer.
+    Smart layer name extraction with packet-first approach.
+    
+    Strategy (in order of preference):
+    1. Extract from actual packets (most accurate and efficient)
+    2. Add fuzzing categories from FIELD_NAME_WEIGHTS
+    3. Add common fallback layers if needed
     
     Args:
-        layer: The current layer to calculate depth from
+        packets: Single packet, list of packets, or None
+        include_fuzzing_categories: Whether to include logical fuzzing categories
         
     Returns:
-        int: Number of layers below the current layer (0 = innermost, 1+ = outer layers)
+        Set of relevant layer names
     """
-    depth_below = 0
-    cursor = layer
-    while hasattr(cursor, 'payload') and cursor.payload.__class__.__name__ != 'NoPayload':
-        depth_below += 1
-        cursor = cursor.payload
-    return depth_below
+    all_layer_names = set()
+    
+    # Method 1: Extract from actual packets (preferred)
+    if packets is not None:
+        packet_layers = get_layer_names_from_packets(packets)
+        all_layer_names.update(packet_layers)
+        logger.debug(f"Found {len(packet_layers)} layers from packets: {packet_layers}")
+    
+    # Method 2: Add fuzzing categories (for logical groupings like "Auth", "Debug")
+    if include_fuzzing_categories:
+        try:
+            from ..default_mappings import FIELD_NAME_WEIGHTS
+            fuzzing_categories = {
+                field_key.split('.', 1)[0] 
+                for field_key in FIELD_NAME_WEIGHTS.keys() 
+                if '.' in field_key
+            }
+            all_layer_names.update(fuzzing_categories)
+            logger.debug(f"Added {len(fuzzing_categories)} fuzzing categories")
+        except ImportError as e:
+            logger.warning(f"Could not import default_mappings: {e}")
+    
+    # If we have very few layers, this indicates a real configuration problem
+    if len(all_layer_names) < 10:
+        logger.error(f"Only {len(all_layer_names)} layers detected. This may indicate a configuration issue.")
+    
+    logger.debug(f"Total layer names: {len(all_layer_names)}")
+    return all_layer_names
 
 
-def find_field_descriptor(packet, field_name: str):
+
+def get_fuzzing_category_names() -> Set[str]:
     """
-    Look up field descriptor by name in packet's field definitions.
+    Get fuzzing category names from FIELD_NAME_WEIGHTS (excludes real Scapy layers).
+    
+    These are logical groupings like "Auth", "Debug", "File" that represent
+    fuzzing categories rather than actual packet layers.
+    
+    Returns:
+        Set of fuzzing category names
+    """
+    # Import mappings - fail loud if mappings are missing (misconfiguration)
+    from ..default_mappings import FIELD_NAME_WEIGHTS
+
+    # Get all layer names from field keys
+    all_from_weights = set()
+    for field_key in FIELD_NAME_WEIGHTS.keys():
+        if '.' in field_key:
+            all_from_weights.add(field_key.split('.', 1)[0])
+
+    # Subtract real Scapy layer names to get only fuzzing categories
+    scapy_layers = get_scapy_layer_names()
+    fuzzing_categories = all_from_weights - scapy_layers
+    return fuzzing_categories
+
+
+def is_valid_layer_name(layer_name: str) -> bool:
+    """
+    Check if a layer name is valid (either real Scapy layer or fuzzing category).
     
     Args:
-        packet: The packet object
-        field_name: Name of the field to find
+        layer_name: Layer name to validate
         
     Returns:
-        Field descriptor object if found, None otherwise
+        True if the layer name is recognized
     """
-    for field_desc in packet.__class__.fields_desc:
-        if field_desc.name == field_name:
-            return field_desc
-    return None
+    # Check if it's a real Scapy layer
+    scapy_layers = get_scapy_layer_names()
+    if layer_name in scapy_layers:
+        return True
+    
+    # Check if it's a fuzzing category
+    fuzzing_categories = get_fuzzing_category_names()
+    return layer_name in fuzzing_categories
 
+
+##Field functions
 
 def get_field_type_chain(packet, field_name: str) -> List[str]:
     """
@@ -227,10 +286,11 @@ def extract_field_properties(packet, field_name: str) -> dict:
             
         # Add layer position context
         packet_layers = []
+        from .scapy_utils import get_layer_name, get_payload
         current = packet
-        while current and current.__class__.__name__ != 'NoPayload':
-            packet_layers.append(current.__class__.__name__)
-            current = current.payload if hasattr(current, 'payload') else None
+        while current and get_layer_name(current) != 'NoPayload':
+            packet_layers.append(get_layer_name(current))
+            current = get_payload(current)
         
         if packet_layers:
             layer_index = next((i for i, layer in enumerate(packet_layers) 

@@ -8,6 +8,7 @@ control systems, PLCs, and SCADA devices that communicate using the Modbus proto
 from __future__ import annotations
 
 import logging
+import socket
 import time
 from typing import Optional, Dict, Any, TYPE_CHECKING, List, Union, Tuple
 from dataclasses import dataclass, field
@@ -138,7 +139,7 @@ class ModbusClientSocket(FuzzSocket):
             self._sock = getattr(self._modbus_client, 'socket', None)
             
             return self
-        except Exception as e:
+        except (ConnectionError, OSError, socket.error, ImportError) as e:
             self.logger.error(f"Failed to connect to Modbus server: {e}")
             self.close()
             raise
@@ -155,7 +156,7 @@ class ModbusClientSocket(FuzzSocket):
                 time.sleep(self.socket_cfg.reconnect_delay)
                 self.open()
                 return self._connected
-            except Exception as e:
+            except (ConnectionError, OSError, socket.error) as e:
                 self.logger.error(f"Failed to reconnect: {e}")
                 return False
         return False
@@ -205,7 +206,7 @@ class ModbusClientSocket(FuzzSocket):
                     self._response_history.pop(0)
                 if self.debug_mode and response:
                     self.logger.debug(f"Received {len(response)} bytes: {response.hex(' ')}")
-            except Exception as recv_err:
+            except (ConnectionError, OSError, socket.error, EOFError) as recv_err:
                 self.logger.error(f"Error receiving response: {recv_err}")
             finally:
                 self.close()
@@ -252,8 +253,8 @@ class ModbusClientSocket(FuzzSocket):
                     self.logger.debug(f"Received {len(response)} bytes: {response.hex(' ')}")
             
             return response
-        except Exception as e:
-            self.logger.error(f"Failed to receive data: {e}")
+        except (ConnectionError, OSError, socket.error, EOFError) as e:
+            self.logger.error(f"Network error receiving data: {e}")
             return None
 
     def send_modbus_request(self, 
@@ -349,7 +350,7 @@ class ModbusClientSocket(FuzzSocket):
         except ModbusException as e:
             self.logger.error(f"Modbus protocol error: {e}")
             return {"error": str(e)}
-        except Exception as e:
+        except (ConnectionError, OSError, socket.error, ImportError) as e:
             self.logger.error(f"Error sending Modbus request: {e}")
             return None
 
@@ -358,7 +359,7 @@ class ModbusClientSocket(FuzzSocket):
         if self._modbus_client:
             try:
                 self._modbus_client.close()
-            except Exception as e:
+            except (OSError, socket.error) as e:
                 self.logger.error(f"Error closing Modbus connection: {e}")
             finally:
                 self._modbus_client = None

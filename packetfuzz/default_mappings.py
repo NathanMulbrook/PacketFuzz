@@ -36,13 +36,13 @@ MACROS = {
         "fuzzdb/attack/unicode/two-byte-chars.txt",
         "fuzzdb/attack/unicode/regionalindicators.txt",
         "fuzzdb/attack/control-chars/NullByteRepresentations.txt",
-        "fuzzdb/wordlists-misc/accidental_profanity.txt",
         "fuzzdb/attack/control-chars/terminal-escape-codes.txt",
 
     ],
     "numeric": [
         "fuzzdb/wordlists-misc/numeric.txt",
         "fuzzdb/attack/integer-overflow/integer-overflows.txt",
+        "@enhanced_numeric"
     ],
     "payload": [
         "fuzzdb/attack/all-attacks/all-attacks-unix.txt",
@@ -60,7 +60,8 @@ MACROS = {
         "fuzzdb/attack/http-protocol/http-request-header-field-names.txt",
         "fuzzdb/attack/http-protocol/http-response-header-field-names.txt",
         "fuzzdb/attack/http-protocol/http-header-cache-poison.txt",
-        "fuzzdb/attack/http-protocol/crlf-injection.txt"
+        "fuzzdb/attack/http-protocol/crlf-injection.txt",
+        "@enhanced_http_methods"
     ],
     "useragent": [
         "fuzzdb/attack/http-protocol/user-agents.txt",
@@ -72,18 +73,23 @@ MACROS = {
         "fuzzdb/attack/email/invalid-email-addresses.txt"
     ],
     "auth_user": [
-        "fuzzdb/wordlists-user-passwd/names/namelist.txt",
         "fuzzdb/wordlists-user-passwd/db2/db2_default_user.txt",
         "fuzzdb/wordlists-user-passwd/oracle/oracle_logins.txt",
-        "fuzzdb/wordlists-user-passwd/tomcat/tomcat_mgr_default_users.txt"
+        "fuzzdb/wordlists-user-passwd/tomcat/tomcat_mgr_default_users.txt",
+        "@common_users"
     ],
     "auth_pass": [
-        "fuzzdb/wordlists-user-passwd/passwds/john.txt",
-        "fuzzdb/wordlists-user-passwd/passwds/phpbb.txt",
-        "fuzzdb/wordlists-user-passwd/passwds/twitter.txt",
         "fuzzdb/wordlists-user-passwd/passwds/weaksauce.txt",
         "fuzzdb/wordlists-user-passwd/oracle/oracle_passwords.txt",
-        "fuzzdb/wordlists-user-passwd/tomcat/tomcat_mgr_default_pass.txt"
+        "fuzzdb/wordlists-user-passwd/tomcat/tomcat_mgr_default_pass.txt",
+        "@common_passwords"
+    ],
+    "common_users": [
+        "SecLists/Usernames/top-usernames-shortlist.txt"
+    ],
+    "common_passwords": [
+        "SecLists/Passwords/Common-Credentials/top-passwords-shortlist.txt",
+        "SecLists/Passwords/stupid-ones-in-production.txt"
     ],
     "file_name": [
         "fuzzdb/attack/file-upload/invalid-filenames-linux.txt",
@@ -97,7 +103,6 @@ MACROS = {
         "fuzzdb/attack/file-upload/alt-extensions-perl.txt"
     ],
     "dns_name": [
-        "fuzzdb/discovery/dns/alexaTop1mAXFRcommonSubdomains.txt",
         "fuzzdb/discovery/dns/dnsmapCommonSubdomains.txt",
         "fuzzdb/discovery/dns/gTLD.txt",
         "fuzzdb/discovery/dns/CcTLD.txt"
@@ -110,7 +115,8 @@ MACROS = {
     ],
     "json": [
         "fuzzdb/attack/json/JSON_Fuzzing.txt",
-        "fuzzdb/attack/business-logic/DebugParams.Json.fuzz.txt"
+        "fuzzdb/attack/business-logic/DebugParams.Json.fuzz.txt",
+        "@enhanced_json"
     ],
     "xml": [
         "fuzzdb/attack/xml/xml-attacks.txt"
@@ -125,11 +131,16 @@ MACROS = {
     ],
     "sql_injection": [
         "fuzzdb/attack/sql-injection/detect/Generic_SQLI.txt",
-        "fuzzdb/attack/sql-injection/detect/MySQL.txt"
+        "fuzzdb/attack/sql-injection/detect/MySQL.txt",
+        "@sqli_polyglot",
+        "@sqli_bypass",
+        "@sqli_auth_bypass"
     ],
     "xss": [
         "fuzzdb/attack/xss/xss-rsnake.txt",
-        "fuzzdb/attack/xss/XSSPolyglot.txt"
+        "fuzzdb/attack/xss/XSSPolyglot.txt",
+        "@xss_polyglot",
+        "@xss_bypass_filters"
     ],
     "unicode": [
         "fuzzdb/attack/unicode/naughty-unicode.txt",
@@ -144,11 +155,76 @@ MACROS = {
     ],
     "traversal": [
         "fuzzdb/attack/path-traversal/path-traversal-windows.txt",
-        "fuzzdb/attack/path-traversal/traversals-8-deep-exotic-encoding.txt"
+        "fuzzdb/attack/path-traversal/traversals-8-deep-exotic-encoding.txt",
+        "@lfi_linux_specific"
     ],
     "shell": [
         "fuzzdb/attack/os-cmd-execution/shell-operators.txt",
         "fuzzdb/attack/os-cmd-execution/shell-delimiters.txt"
+    ],
+    "xss_polyglot": [
+        "SecLists/Fuzzing/XSS/Polyglots/XSS-Polyglots-Dmiessler.txt"
+    ],
+    "sqli_polyglot": [
+        "SecLists/Fuzzing/Databases/SQLi/SQLi-Polyglots.txt"
+    ],
+    "nosql_injection": [
+        "SecLists/Fuzzing/Databases/SQLi/NoSQL.txt"
+    ],
+    "template_injection": [
+        "SecLists/Fuzzing/template-engines-expression.txt"
+    ],
+    "sqli_bypass": [
+        "SecLists/Fuzzing/Databases/SQLi/MySQL-SQLi-Login-Bypass.fuzzdb.txt",
+        "SecLists/Fuzzing/Databases/SQLi/Generic-BlindSQLi.fuzzdb.txt"
+    ],
+
+    "enhanced_numeric": [
+        "SecLists/Fuzzing/numeric-fields-only.txt"
+    ],
+    "enhanced_http_methods": [
+        "SecLists/Fuzzing/http-request-methods.txt"
+    ],
+    "enhanced_json": [
+        "SecLists/Fuzzing/JSON.Fuzzing.txt"
+    ],
+    "sqli_auth_bypass": [
+        "SecLists/Fuzzing/Databases/SQLi/sqli.auth.bypass.txt"
+    ],
+    "xss_bypass_filters": [
+        "SecLists/Fuzzing/XSS/robot-friendly/XSS-Bypass-Strings-BruteLogic.txt",
+        "SecLists/Fuzzing/XSS/robot-friendly/XSS-Somdev.txt"
+    ],
+    "snmp_communities": [
+        "SecLists/Discovery/SNMP/common-snmp-community-strings.txt"
+    ],
+    "common_http_ports": [
+        "SecLists/Discovery/Infrastructure/common-http-ports.txt"
+    ],
+    "java_servlets": [
+        "SecLists/Discovery/Web-Content/JavaServlets-Common.fuzz.txt"
+    ],
+    "soap_functions": [
+        "SecLists/Discovery/Web-Content/SOAP-functions.txt"
+    ],
+    "lfi_linux_specific": [
+        "SecLists/Fuzzing/LFI/OMI-Agent-Linux.txt"
+    ],
+    "api_endpoints": [
+        "SecLists/Discovery/Web-Content/common-api-endpoints-mazen160.txt",
+        "SecLists/Discovery/Web-Content/api/api-endpoints.txt"
+    ],
+    "secret_keywords": [
+        "SecLists/Discovery/Variables/secret-keywords.txt"
+    ],
+    "mysql_default_creds": [
+        "SecLists/Passwords/Default-Credentials/mysql-betterdefaultpasslist.txt"
+    ],
+    "postgres_default_creds": [
+        "SecLists/Passwords/Default-Credentials/postgres-betterdefaultpasslist.txt"
+    ],
+    "ssh_default_creds": [
+        "SecLists/Passwords/Default-Credentials/ssh-betterdefaultpasslist.txt"
     ],
     # Add more as discovered
 }
@@ -201,22 +277,22 @@ FIELD_TYPE_DICTIONARIES = {
 FIELD_NAME_DICTIONARIES = {
     "TCP.dport": [
         "@numeric",
-        "fuzzdb/wordlists-misc/common-http-ports.txt"
+        "@common_http_ports"
     ],
     "TCP.sport": [
         "@numeric",
-        "fuzzdb/wordlists-misc/common-http-ports.txt"
+        "@common_http_ports"
     ],
     "TCP.flags": [
         "@numeric"
     ],
     "UDP.dport": [
         "@numeric",
-        "fuzzdb/wordlists-misc/common-http-ports.txt"
+        "@common_http_ports"
     ],
     "UDP.sport": [
         "@numeric",
-        "fuzzdb/wordlists-misc/common-http-ports.txt"
+        "@common_http_ports"
     ],
     "IP.dst": [
         "@address",
@@ -248,16 +324,12 @@ FIELD_NAME_DICTIONARIES = {
     "DNSQR.qname": [
         "@dns_name",
         "@string",
-        "fuzzdb/discovery/dns/alexaTop1mAXFRcommonSubdomains.txt",
         "fuzzdb/discovery/dns/dnsmapCommonSubdomains.txt",
         "fuzzdb/attack/unicode/naughty-unicode.txt",
         "fuzzdb/attack/unicode/specialchars.txt"
     ],
     "DNSQR.qtype": [
         "@numeric"
-    ],
-    "DNS.qd": [
-        "fuzzdb/discovery/dns/alexaTop1mAXFRcommonSubdomains.txt"
     ],
     "Raw.load": [
         "@payload",
@@ -306,7 +378,7 @@ FIELD_NAME_DICTIONARIES = {
     "HTTPRequest.Path": [
         "@string",
         "@traversal",
-        "fuzzdb/discovery/predictable-filepaths/filename-dirname-bruteforce/raft-large-files.txt",
+#        "fuzzdb/discovery/predictable-filepaths/filename-dirname-bruteforce/raft-large-files.txt",
         "fuzzdb/attack/path-traversal/path-traversal-windows.txt"
     ],
     "HTTPRequest.Http_Version": [
@@ -321,7 +393,6 @@ FIELD_NAME_DICTIONARIES = {
     "HTTPRequest.Host": [
         "@dns_name",
         "@string",
-        "fuzzdb/discovery/dns/alexaTop1mAXFRcommonSubdomains.txt"
     ],
     "HTTPRequest.Accept": [
         "@string",
@@ -351,7 +422,7 @@ FIELD_NAME_DICTIONARIES = {
     "HTTPRequest.Referer": [
         "@string",
         "@traversal",
-        "fuzzdb/discovery/predictable-filepaths/filename-dirname-bruteforce/raft-large-files.txt"
+#        "fuzzdb/discovery/predictable-filepaths/filename-dirname-bruteforce/raft-small-files.txt"
     ],
     "HTTPRequest.Origin": [
         "@dns_name",
@@ -471,9 +542,7 @@ FIELD_NAME_DICTIONARIES = {
     ],
     "Auth.password": [
         "@auth_pass",
-        "@string",
-        "fuzzdb/wordlists-user-passwd/passwds/john.txt",
-        "fuzzdb/wordlists-user-passwd/passwds/phpbb.txt"
+        "@string"
     ],
     "Auth.hash": [
         "@string",
@@ -578,7 +647,6 @@ FIELD_NAME_DICTIONARIES = {
     "DNS.subdomain": [
         "@string",
         "fuzzdb/discovery/dns/dnsmapCommonSubdomains.txt",
-        "fuzzdb/discovery/dns/alexaTop1mAXFRcommonSubdomains.txt"
     ],
     "DNS.tld": [
         "@string",
@@ -626,6 +694,100 @@ FIELD_NAME_DICTIONARIES = {
     "Data.pii": [
         "@string",
         "fuzzdb/regex/nsa-wordlist.txt"
+    ],
+    # SNMP Fields
+    "SNMP.community": [
+        "@snmp_communities",
+        "@string"
+    ],
+    "SNMP.version": [
+        "@numeric"
+    ],
+    # Additional HTTP Fields
+    "HTTPRequest.Server": [
+        "@string",
+        "@useragent"
+    ],
+    "HTTPResponse.Status": [
+        "@numeric"
+    ],
+    # Additional Database Fields  
+    "MySQL.query": [
+        "@sql_injection",
+        "@string"
+    ],
+    "PostgreSQL.query": [
+        "@sql_injection", 
+        "@string"
+    ],
+    "MongoDB.query": [
+        "@nosql_injection",
+        "@string"
+    ],
+    # Additional Authentication Fields
+    "SSH.username": [
+        "@auth_user",
+        "@common_users"
+    ],
+    "SSH.password": [
+        "@auth_pass",
+        "@common_passwords" 
+    ],
+    "FTP.username": [
+        "@auth_user",
+        "@common_users"
+    ],
+    "FTP.password": [
+        "@auth_pass",
+        "@common_passwords"
+    ],
+    # SOAP Fields
+    "SOAP.method": [
+        "@soap_functions",
+        "@string"
+    ],
+    # API Fields
+    "API.endpoint": [
+        "@api_endpoints",
+        "@string"
+    ],
+    "REST.path": [
+        "@api_endpoints",
+        "@string"
+    ],
+    # Secret/Token Fields
+    "Config.secret": [
+        "@secret_keywords",
+        "@string"
+    ],
+    "Token.value": [
+        "@secret_keywords",
+        "@string"
+    ],
+    # Service-Specific Authentication
+    "MySQL.username": [
+        "@mysql_default_creds",
+        "@auth_user"
+    ],
+    "MySQL.password": [
+        "@mysql_default_creds", 
+        "@auth_pass"
+    ],
+    "PostgreSQL.username": [
+        "@postgres_default_creds",
+        "@auth_user"
+    ],
+    "PostgreSQL.password": [
+        "@postgres_default_creds",
+        "@auth_pass"
+    ],
+    "SSH.user": [
+        "@ssh_default_creds",
+        "@auth_user"
+    ],
+    "SSH.pass": [
+        "@ssh_default_creds",
+        "@auth_pass"
     ],
 }
 
@@ -916,31 +1078,6 @@ FIELD_TYPE_WEIGHTS = {
     "PaddingField": 0.1,                # Padding bytes
     "RawVal": 0.9,                      # Raw binary data (high value)
     
-    # =========================================================================
-    # Legacy Semantic Types (kept for backward compatibility)
-    # =========================================================================
-    "string": 0.6,                      # Legacy - use StrField instead
-    "numeric": 0.4,
-    "payload": 0.9,
-    "address": 0.7,
-    "protocol": 0.8,
-    "email": 0.75,
-    "useragent": 0.6,
-    "auth_user": 0.8,
-    "auth_pass": 0.8,
-    "file_name": 0.7,
-    "file_ext": 0.75,
-    "dns_name": 0.7,
-    "xpath": 0.85,
-    "ldap": 0.85,
-    "json": 0.8,
-    "xml": 0.8,
-    "os_command": 0.95,
-    "sql_injection": 0.9,
-    "xss": 0.9,
-    "unicode": 0.6,
-    "traversal": 0.85,
-    "shell": 0.9,
 }
 
 FIELD_NAME_WEIGHTS = {
@@ -1115,21 +1252,21 @@ Available mutators:
 """
 
 FIELD_TYPE_MUTATOR_WEIGHTS = {
-    # String Fields - Favor dictionary and libfuzzer
-    "StrField": {"dictionary_only": 0.5, "libfuzzer": 0.4, "scapy": 0.1},
-    "XStrField": {"dictionary_only": 0.5, "libfuzzer": 0.4, "scapy": 0.1},
-    "_HTTPHeaderField": {"dictionary_only": 0.7, "libfuzzer": 0.2, "scapy": 0.1},
-    "StrFixedLenField": {"libfuzzer": 0.6, "dictionary_only": 0.3, "scapy": 0.1},
-    "StrLenField": {"libfuzzer": 0.6, "dictionary_only": 0.3, "scapy": 0.1},
-    "StrNullField": {"dictionary_only": 0.4, "libfuzzer": 0.5, "scapy": 0.1},
-    "StrStopField": {"dictionary_only": 0.4, "libfuzzer": 0.5, "scapy": 0.1},
-    
-    # Numeric Fields - Favor libfuzzer for numeric mutations
-    "ByteField": {"libfuzzer": 0.7, "scapy": 0.2, "dictionary_only": 0.1},
-    "ShortField": {"libfuzzer": 0.7, "scapy": 0.2, "dictionary_only": 0.1},
-    "IntField": {"libfuzzer": 0.8, "scapy": 0.2},
-    "LongField": {"libfuzzer": 0.8, "scapy": 0.2},
-    "BitField": {"libfuzzer": 0.6, "scapy": 0.4},
+    # String Fields - Favor libfuzzer and dictionary_only
+    "StrField": {"libfuzzer": 0.5, "dictionary_only": 0.5},
+    "XStrField": {"libfuzzer": 0.5, "dictionary_only": 0.5},
+    "_HTTPHeaderField": {"libfuzzer": 0.4, "dictionary_only": 0.6},
+    "StrFixedLenField": {"libfuzzer": 0.6, "dictionary_only": 0.4},
+    "StrLenField": {"libfuzzer": 0.6, "dictionary_only": 0.4},
+    "StrNullField": {"libfuzzer": 0.5, "dictionary_only": 0.5},
+    "StrStopField": {"libfuzzer": 0.5, "dictionary_only": 0.5},
+
+    # Numeric Fields - Favor scapy and dictionary_only, reduce libfuzzer
+    "ByteField": {"scapy": 0.5, "dictionary_only": 0.4, "libfuzzer": 0.1},
+    "ShortField": {"scapy": 0.5, "dictionary_only": 0.4, "libfuzzer": 0.1},
+    "IntField": {"scapy": 0.5, "dictionary_only": 0.4, "libfuzzer": 0.1},
+    "LongField": {"scapy": 0.5, "dictionary_only": 0.4, "libfuzzer": 0.1},
+    "BitField": {"scapy": 0.6, "dictionary_only": 0.3, "libfuzzer": 0.1},
     
     # Enum Fields - Favor scapy for protocol awareness, dictionary for known values
     "ByteEnumField": {"scapy": 0.4, "dictionary_only": 0.4, "libfuzzer": 0.2},
@@ -1218,7 +1355,7 @@ FIELD_ADVANCED_MUTATOR_WEIGHTS = [
     },
     {
         "condition": {"field_type": "IntField", "min_value": 0, "max_value": 65535},
-        "mutator_weights": {"libfuzzer": 0.8, "scapy": 0.2},
+        "mutator_weights": {"dictionary_only": 0.5, "libfuzzer": 0.3, "scapy": 0.2},
         "description": "Port-range integers favor libfuzzer"
     },
 ]

@@ -5,7 +5,6 @@ Manages mutator selection and orchestrates fuzzing campaigns.
 Delegates all actual mutation logic to specialized mutators in the mutators/ directory.
 """
 
-# Standard library imports
 from __future__ import annotations
 import copy
 import logging
@@ -16,35 +15,25 @@ from enum import Enum
 from typing import Dict, List, Optional, Any, Tuple, Union
 from pathlib import Path
 
-# Third-party imports
 from scapy.fields import Field, BitField, FlagsField, EnumField, StrField, IntField, ByteField, ShortField, IntEnumField
 from scapy.packet import Packet, NoPayload
 
-# Local imports
 from .dictionary_manager import DictionaryManager
 from .packet_extensions import install_packet_extensions
 from .mutator_manager_data import MutatorManagerData, FuzzConfig, FuzzMode, FieldMetadata
 from .mutators import MutatorRegistry
 
-# Ensure mutators are registered by importing the mutators package
 from . import mutators
 
-# Default mappings import - CRITICAL: Must succeed or fail fast
 from .default_mappings import LAYER_WEIGHT_SCALING as DEFAULT_LAYER_SCALING
 
-# Import default directories - use constant directly to avoid circular imports
 DEFAULT_LOG_DIR = "artifacts/logs"
 from .utils.packet_report import write_debug_packet_log
 
 
 logger = logging.getLogger(__name__)
 
-# Verbosity levels: 0=quiet, 1=normal, 2=verbose, 3=debug
-VERBOSITY_LEVEL = 1  # Default; can be set by campaign or CLI
-
-# Removed unused FuzzField import - was not being used anywhere in the code
-
-# Constants
+VERBOSITY_LEVEL = 1
 DEFAULT_MAX_OUTPUT_SIZE = 1024
 DEFAULT_MAX_MUTATIONS = 1000
 DEFAULT_FUZZ_WEIGHT = 0.7
@@ -61,21 +50,13 @@ class MutatorManager:
     Handles field discovery, weight calculation, and mutation orchestration.
     """
     
-    # Critical fields to track for debugging
-    
-    # =========================
-    # Initialization & Configuration
-    # =========================
     def __init__(self, config: Optional[FuzzConfig] = None):
         """Initialize MutatorManager with fuzzing configuration."""
         self.fuzz_config = config or FuzzConfig()
         
-        # Track which fields are fuzzed in the current iteration
         self.current_fuzzed_fields: List[str] = []
-        # Track fuzzed fields metadata for each packet in a batch
         self.fuzzed_fields_per_packet: List[Dict[str, Dict[str, Any]]] = []
         
-        # Initialize packet extensions (monkey patching)
         install_packet_extensions()
 
         #Initialize dictionary manager
@@ -84,11 +65,9 @@ class MutatorManager:
         else:
             self.dictionary_manager = DictionaryManager()
 
-        # Initialize MutatorManagerData
         self.data = MutatorManagerData(self.fuzz_config)
         self.data.preprocess_packets(self.dictionary_manager)
         
-        # Initialize mutator instances dictionary with available mutators
         self.mutators: Dict[str, Any] = {}
         for mutator_name in MutatorRegistry.get_available_mutators():
             self.mutators[mutator_name] = None
@@ -118,8 +97,7 @@ class MutatorManager:
         
         # Fallback to class name normalization if not found in registry
         cls = type(mutator_obj)
-        name = getattr(cls, "__name__", str(cls))
-        name = name.lower()
+        name = getattr(cls, "__name__", str(cls)).lower()
         # Remove common suffixes like 'mutator' or 'fuzzer' for normalization
         for suffix in ("mutator", "fuzzer"):
             if name.endswith(suffix):
@@ -135,9 +113,6 @@ class MutatorManager:
             logger.warning(f"Global dictionary config file not found: {config_path}")
         self.dictionary_manager = DictionaryManager(user_config_file)
 
-    # =========================
-    # Public API (Main Entry Points)
-    # =========================
     def fuzz_packet(self) -> MutatorManagerData:
         """
         Fuzz a complete packet
@@ -149,13 +124,10 @@ class MutatorManager:
         Returns:
             List of fuzzed packet variants
         """
-        # Field-level fuzzing: mutate individual fields in the packet
         if self.fuzz_config.mode == FuzzMode.FIELD_LEVEL:
             return self.fuzz_fields()
-        # Packet-level fuzzing: mutate the entire packet as a byte sequence
         elif self.fuzz_config.mode == FuzzMode.PACKET_LEVEL:
             return self._fuzz_packet_level()
-        # Both field and packet-level fuzzing: start with field-level for now
         elif self.fuzz_config.mode == FuzzMode.BOTH:
             return self.fuzz_fields()  # TODO: implement proper split between field and packet level
         return self.data
@@ -177,18 +149,22 @@ class MutatorManager:
                 logger.info(f"[FUZZ] No iterations requested (iterations={self.data.fuzz_config.iterations})")
             return self.data
             
-        # Debug logging only in verbose mode
         if VERBOSITY_LEVEL >= 3:  # Only in debug mode
             log_dir = Path(DEFAULT_LOG_DIR)
             log_dir.mkdir(parents=True, exist_ok=True)
             write_debug_packet_log(self.data.original_packets, file_path=str(log_dir / "fuzz_fields_input_report.txt"), title="Fuzz Fields Input")
 
-        # Diagnostic logging for fuzzing process
         if VERBOSITY_LEVEL >= 2:
             available_fieldtypes = self.data.get_all_fieldtypes()
             logger.info(f"[FUZZ] Starting field fuzzing: {self.data.fuzz_config.iterations} iterations, {len(available_fieldtypes)} field types available")
             if available_fieldtypes:
                 logger.debug(f"[FUZZ] Available field types: {', '.join(available_fieldtypes)}")
+                
+                # Show a sample of each field type to see what's being processed
+                for ft in available_fieldtypes[:10]:  # Limit to first 10 to avoid spam
+                    sample_fields = self.data.get_all_fields_of_type(ft)
+                    logger.debug(f"[FIELDTYPE_DEBUG] {ft}: {len(sample_fields)} fields, sample keys: {[f.field_key for f in sample_fields[:3]]}")
+        
         
         # Step 2: Initialize tracking for all packets
         
@@ -239,8 +215,9 @@ class MutatorManager:
         failed_indices: List[int] = []
         for field in fields_to_fuzz:
             # Within this block we are fuzzing a single field
-            # Handle default values for the field if present
+            # Always use default values if they exist - these are user-specified, not dictionary-derived
             if field.default_values:
+                # Use deterministic assignment for user-specified default values
                 pick_rng = self.fuzz_config.rng or random
                 pick = pick_rng.choice(field.default_values)
                 self.data.validate_and_assign(field, pick)
@@ -250,6 +227,7 @@ class MutatorManager:
                     getattr(field, 'dictionary_paths', []) or []
                 )
                 mutator_selection = self._select_mutator_for_field(field)
+                
                 if mutator_selection and mutator_selection != "skip":
                     mutator = self.get_mutator_and_initialize(mutator_selection, field, dictionary_entries)
                     failed = self._mutate_with_retries(field, mutator, dictionary_entries)
@@ -276,6 +254,7 @@ class MutatorManager:
             mutator_selection = "libfuzzer"
         
         # Apply legacy weight overrides (deprecated but maintained for compatibility)
+        #TODO consider removing these
         if random.random() < field.dictionary_only_weight:
             mutator_selection = "dictionary_only"
         if random.random() < field.scapy_fuzz_weight:
@@ -396,14 +375,20 @@ class MutatorManager:
                 mutated_value = mutator.mutate_field(field_info, dictionaries=dictionary_entries, rng=self.fuzz_config.rng, layer=None)
                 mutator_type = self.get_mutator_type(mutator)
                 
-                # Apply field type compatibility layer - convert mutator output to expected format
-                # This handles cases where specific field types (like Unknown_Headers) expect different
-                # data formats than what mutators naturally produce, eliminating validation failures
-                # and retry overhead that previously caused significant performance degradation
-                compatible_value = self._apply_field_type_compatibility(field_info, mutated_value)
-                
-                success = self.data.validate_and_assign(field_info, value=compatible_value)
-                last_err = None  # Clear error on success
+                # If mutator returns None, treat as failure - no mutation occurred
+                if mutated_value is None:
+                    success = False
+                    last_err = f"Mutator {mutator_type} returned None - no mutation generated"
+                    logger.warning(f"Mutator {mutator_type} returned None for {field_info.field_key} - mutation failed")
+                else:
+                    # Apply field type compatibility layer - convert mutator output to expected format
+                    # This handles cases where specific field types (like Unknown_Headers) expect different
+                    # data formats than what mutators naturally produce, eliminating validation failures
+                    # and retry overhead that previously caused significant performance degradation
+                    compatible_value = self._apply_field_type_compatibility(field_info, mutated_value)
+                    
+                    success = self.data.validate_and_assign(field_info, value=compatible_value)
+                    last_err = None  # Clear error on success
             except Exception as e:
                 last_err = str(e)
                 success = False

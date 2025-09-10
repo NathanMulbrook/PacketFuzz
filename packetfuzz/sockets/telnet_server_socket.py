@@ -51,8 +51,8 @@ class TelnetConnection:
         """Send data to the client."""
         try:
             return self.sock.send(data)
-        except Exception as e:
-            self.server.logger.error(f"Error sending to {self.address}: {e}")
+        except (ConnectionError, OSError, socket.error) as e:
+            self.server.logger.error(f"Network error sending to {self.address}: {e}")
             self.closed = True
             return 0
     
@@ -64,8 +64,8 @@ class TelnetConnection:
                 self.closed = True
             self.last_activity.set()
             return data
-        except Exception as e:
-            self.server.logger.error(f"Error receiving from {self.address}: {e}")
+        except (ConnectionError, OSError, socket.error) as e:
+            self.server.logger.error(f"Network error receiving from {self.address}: {e}")
             self.closed = True
             return b""
     
@@ -74,8 +74,9 @@ class TelnetConnection:
         try:
             self.socket_file.close()
             self.sock.close()
-        except Exception:
-            pass
+        except (OSError, socket.error) as e:
+            # Log close errors - these are usually benign but should be visible
+            self.server.logger.warning(f"Error closing connection socket/file: {e}")
         finally:
             self.closed = True
 
@@ -155,9 +156,9 @@ class TelnetServerSocket(FuzzSocket):
                     if self._server_sock in readable:
                         client_sock, client_addr = self._server_sock.accept()
                         self._handle_new_connection(client_sock, client_addr)
-                except Exception as e:
+                except (ConnectionError, OSError, socket.error) as e:
                     if self._running:
-                        self.logger.error(f"Error in accept loop: {e}")
+                        self.logger.error(f"Network error in accept loop: {e}")
         except Exception as e:
             self.logger.error(f"Accept loop terminated: {e}")
         finally:
@@ -195,12 +196,12 @@ class TelnetServerSocket(FuzzSocket):
                 daemon=True
             )
             client_thread.start()
-        except Exception as e:
-            self.logger.error(f"Error handling new connection: {e}")
+        except (ConnectionError, OSError, socket.error) as e:
+            self.logger.error(f"Network error handling new connection: {e}")
             try:
                 client_sock.close()
-            except Exception:
-                pass
+            except (OSError, socket.error) as close_e:
+                self.logger.error(f"Error closing client socket after failed handle: {close_e}")
 
     def _handle_client(self, connection: TelnetConnection) -> None:
         """Handle communication with a connected client."""
@@ -244,9 +245,9 @@ class TelnetServerSocket(FuzzSocket):
                 except socket.timeout:
                     # Handle timeout - could implement idle disconnect here
                     continue
-                except Exception as e:
+                except (ConnectionError, OSError, socket.error) as e:
                     if not connection.closed:
-                        self.logger.error(f"Error handling client {connection.address}: {e}")
+                        self.logger.error(f"Network error handling client {connection.address}: {e}")
                     break
         finally:
             # Clean up the connection
@@ -274,7 +275,7 @@ class TelnetServerSocket(FuzzSocket):
             response = f"Received: {cmd_str}\r\n"
             connection.send(response.encode())
             
-        except Exception as e:
+        except (ConnectionError, OSError, socket.error, UnicodeDecodeError) as e:
             self.logger.error(f"Error processing command: {e}")
 
     def send_packet(self, packet_bytes: bytes, context: 'CampaignContext') -> Optional[int]:
@@ -305,7 +306,7 @@ class TelnetServerSocket(FuzzSocket):
                     
                     if self.debug_mode:
                         self.logger.debug(f"Sent {bytes_sent} bytes to {connection.address}")
-            except Exception as e:
+            except (ConnectionError, OSError, socket.error) as e:
                 self.logger.error(f"Failed to send to {connection.address}: {e}")
         
         return total_sent if total_sent > 0 else None
@@ -371,13 +372,13 @@ class TelnetServerSocket(FuzzSocket):
             if timeout is not None:
                 self._server_sock.settimeout(None)
             return None
-        except Exception as e:
-            self.logger.error(f"Error accepting connection: {e}")
+        except (ConnectionError, OSError, socket.error) as e:
+            self.logger.error(f"Network error accepting connection: {e}")
             # Reset to blocking mode if needed
             if timeout is not None:
                 try:
                     self._server_sock.settimeout(None)
-                except Exception:
+                except (OSError, socket.error):
                     pass
             return None
 
@@ -391,7 +392,7 @@ class TelnetServerSocket(FuzzSocket):
             for connection in self._connections:
                 try:
                     connection.close()
-                except Exception:
+                except (OSError, socket.error):
                     pass
             self._connections.clear()
         
@@ -400,7 +401,9 @@ class TelnetServerSocket(FuzzSocket):
             try:
                 self._server_sock.close()
             except Exception as e:
+                # Closing server socket failed - log and re-raise to make caller aware
                 self.logger.error(f"Error closing server socket: {e}")
+                raise
             finally:
                 self._server_sock = None
                 self._sock = None
@@ -409,8 +412,8 @@ class TelnetServerSocket(FuzzSocket):
         if self._server_thread and self._server_thread.is_alive():
             try:
                 self._server_thread.join(2.0)
-            except Exception:
-                pass
+            except RuntimeError as e:
+                self.logger.error(f"Error joining server thread: {e}")
             finally:
                 self._server_thread = None
 

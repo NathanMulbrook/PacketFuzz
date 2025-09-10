@@ -15,22 +15,15 @@ Features:
 - Pure functions for easy testing and reusability
 """
 
-# Standard library imports
 import logging
 from dataclasses import dataclass
 from typing import List, Optional, Union
 
-# Third-party imports
 from scapy.layers.inet import IP, TCP, UDP
 from scapy.layers.l2 import Ether
 from scapy.packet import Packet, Raw
 
 logger = logging.getLogger(__name__)
-
-
-# ============================================================================
-# Configuration Data Structures
-# ============================================================================
 
 @dataclass
 class PacketProcessingConfig:
@@ -40,10 +33,6 @@ class PacketProcessingConfig:
     exclude_layers: Optional[List[str]] = None  # e.g., ["Raw"] - exclude these layers
     repackage_template: Optional[Packet] = None # e.g., IP(dst="192.168.1.1") / UDP(dport=53)
 
-
-# ============================================================================
-# Pure Packet Processing Functions
-# ============================================================================
 
 def extract_layers(packet: Optional[Packet], 
                   extract_at_layer: Optional[str] = None,
@@ -66,12 +55,13 @@ def extract_layers(packet: Optional[Packet],
         
     # Step 1: Find extraction point
     if extract_at_layer:
+        from .packet_utils import get_payload
         layer = packet
         while layer and layer.name != extract_at_layer:
-            layer = layer.payload
+            layer = get_payload(layer)
         if not layer or layer.name != extract_at_layer:
             return None
-        extracted = layer.payload if layer.payload else None
+        extracted = get_payload(layer)
     else:
         extracted = packet
     
@@ -301,25 +291,3 @@ def create_layer_filter_config(include: Optional[List[str]] = None,
         include_layers=include,
         exclude_layers=exclude
     )
-
-
-def get_layer_names_from_packets(packets: Union[Packet, List[Packet], List[Optional[Packet]]]) -> List[str]:
-    """
-    Extract layer names from packets using Scapy's built-in packet.layers() method.
-    
-    Args:
-        packets: Single packet, list of packets, or PacketList to extract layers from
-        
-    Returns:
-        List of unique layer names found in the packets
-    """
-    if not packets:
-        return []
-    
-    # Normalize to list
-    packet_list = packets if isinstance(packets, list) else [packets]
-    
-    # Extract layer names using Scapy's built-in method
-    layer_names = {cls.__name__ for pkt in packet_list if pkt for cls in pkt.layers()}
-    
-    return sorted(layer_names)

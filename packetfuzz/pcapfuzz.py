@@ -35,18 +35,15 @@ Example Usage:
     campaign.execute()
 """
 
-# Standard library imports
 import logging
 import os
 from pathlib import Path
 from typing import Callable, List, Optional
 
-# Third-party imports
 from scapy.all import Raw, rdpcap, sendp
 from scapy.layers.inet import IP, TCP, UDP
 from scapy.packet import Packet
 
-# Local imports
 from .fuzzing_framework import CallbackResult, CampaignContext, FuzzingCampaign
 from .mutator_manager import FuzzConfig, FuzzMode, MutatorManager
 from .utils.packet_processing import PacketProcessingConfig, process_packet, convert_to_scapy
@@ -69,12 +66,10 @@ class PcapFuzzCampaign(FuzzingCampaign):
     def __init__(self):
         """Initialize PcapCampaign with PCAP-specific configuration."""
         super().__init__()
-        # Override default target and packet since we'll get them from PCAP
         self.target = "192.168.1.100"  # Default target, can be overridden
         self.packet = None  # Will be set dynamically from PCAP files
         self.append_pcap = True  # PCAP campaigns aggregate multiple packets, so use append mode
         
-        # Initialize packet processing configuration and attributes
         self._processing_config = PacketProcessingConfig()
         self._extract_at_layer: Optional[str] = None      # e.g., "UDP", "TCP", "IP", "Ethernet"
         self._include_layers: Optional[List[str]] = None  # e.g., ["HTTP", "DNS"] - only these layers
@@ -171,16 +166,6 @@ class PcapFuzzCampaign(FuzzingCampaign):
             template = None
         self.repackage_template = template
     
-    def get_packet_with_embedded_config(self) -> Optional[Packet]:
-        """
-        Override the base campaign method to provide packets from PCAP files.
-        
-        For validation purposes, return a dummy packet. The actual PCAP processing
-        happens in _run_fuzzing_loop().
-        """
-        # Return a dummy packet for validation - actual packets come from PCAP files
-        return IP(dst=str(self.target)) / TCP(dport=80) / Raw(load=b"PCAP-based fuzzing")
-    
     def _process_packet(self, original_pkt: Packet) -> Optional[Packet]:
         """
         Process a single packet according to extraction and repackaging configuration.
@@ -206,41 +191,40 @@ class PcapFuzzCampaign(FuzzingCampaign):
         if not pcap_folder.exists():
             logger.warning(f"PCAP folder not found: {self.pcap_folder}")
             return False
-            # Gather all processed packets from all pcaps (no fuzzing here)
-            all_processed_packets = []
-            for fname in sorted(pcap_folder.iterdir()):
-                if fname.suffix != ".pcap":
-                    continue  # Skip non-PCAP files
-                logger.info(f"Processing PCAP file: {fname.name}")
-                packets = rdpcap(str(fname))
-                for original_pkt in packets:
-                    processed_packet = self._process_packet(original_pkt)
-                    if not processed_packet:
-                        continue  # Skip packets that fail processing
-                    all_processed_packets.append(processed_packet)
-            if not all_processed_packets:
-                logger.warning("No packets found in PCAP(s) after processing.")
-                return False
-                
-            # Create the fuzzer instance with all processed packets
-            config = FuzzConfig(
-                mode = FuzzMode.FIELD_LEVEL,  # Default for PCAP fuzzing
-                use_dictionaries = True,
-                fuzz_weight = 1.0,
-                global_dict_config_path = self.global_dict_config_path,
-                mutator_preference = self.mutator_preference or ["libfuzzer"],
-                enable_layer_weight_scaling = self.enable_layer_weight_scaling,
-                layer_weight_scaling = self.layer_weight_scaling,
-                packets = all_processed_packets,
-                iterations = self.iterations
-            )
             
-            fuzzer = MutatorManager(config)
-            self.context.mutator_data = fuzzer.fuzz_packet()
+        # Gather all processed packets from all pcaps (no fuzzing here)
+        all_processed_packets = []
+        for fname in sorted(pcap_folder.iterdir()):
+            if fname.suffix != ".pcap":
+                continue  # Skip non-PCAP files
+            logger.info(f"Processing PCAP file: {fname.name}")
+            packets = rdpcap(str(fname))
+            for original_pkt in packets:
+                processed_packet = self._process_packet(original_pkt)
+                if not processed_packet:
+                    continue  # Skip packets that fail processing
+                all_processed_packets.append(processed_packet)
+        if not all_processed_packets:
+            logger.warning("No packets found in PCAP(s) after processing.")
+            return False
             
-            # Use the base class's fuzzing loop for execution with all packets
-            return super()._run_fuzzing_loop()
+        # Create the fuzzer instance with all processed packets
+        config = FuzzConfig(
+            mode = FuzzMode.FIELD_LEVEL,  # Default for PCAP fuzzing
+            use_dictionaries = True,
+            fuzz_weight = 1.0,
+            global_dict_config_path = self.global_dict_config_path,
+            mutator_preference = self.mutator_preference or ["libfuzzer"],
+            enable_layer_weight_scaling = self.enable_layer_weight_scaling,
+            layer_weight_scaling = self.layer_weight_scaling,
+            packets = all_processed_packets,
+            iterations = self.iterations
+        )
+        
+        fuzzer = MutatorManager(config)
+        self.context.mutator_data = fuzzer.fuzz_packet()
+        
+        # Use the base class's fuzzing loop for execution with all packets
+        return super()._run_fuzzing_loop()
     
 
-
-# Standalone utility function for backwards compatibility

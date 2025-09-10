@@ -5,17 +5,14 @@ Provides mutation using only raw dictionary entries without additional mutations
 This mutator doesn't require libFuzzer and works purely with dictionary lookups.
 """
 
-# Standard library imports
 import logging
 import random
 import re
 from typing import Any, List, Optional
 
-# Third-party imports
 from scapy.fields import AnyField, Field
 from scapy.packet import Packet
 
-# Local imports
 from .base import BaseMutator, MutatorRegistry
 
 
@@ -50,17 +47,14 @@ class DictionaryOnlyMutator(BaseMutator):
             return data[:max_size]
         if seed is not None:
             random.seed(seed)
-        # Support both bytes and str entries
         selected_entry = random.choice(dictionaries)
         if isinstance(selected_entry, str):
-            result_bytes = selected_entry.encode('utf-8', errors='ignore')
+            return selected_entry.encode('utf-8', errors='ignore')[:max_size]
         elif isinstance(selected_entry, bytes):
-            result_bytes = selected_entry
+            return selected_entry[:max_size]
         else:
             raise TypeError(f"Dictionary entry must be str or bytes, got {type(selected_entry)}")
-        return result_bytes[:max_size]
 
-    # --- Helpers ---
     @staticmethod
     def _pick_entry(dictionaries: Optional[List[Any]], rng: Optional[random.Random] = None) -> Optional[Any]:
         if not dictionaries:
@@ -133,9 +127,14 @@ class DictionaryOnlyMutator(BaseMutator):
             # Apply field size constraints
             min_v = getattr(field_info, 'min_value', 0)
             max_v = getattr(field_info, 'max_value', 0xFFFFFFFF)
+            
+            if min_v is None:
+                min_v = 0
+            if max_v is None:
+                max_v = 0xFFFFFFFF
+                
             val = self._clamp(int(val), int(min_v), int(max_v))
             
-            # Handle enum mapping for enum/flags fields
             if kind in ('enum', 'flags'):
                 enum_map = getattr(field_info, 'enum_map', None)
                 if enum_map and isinstance(enum_map, dict):

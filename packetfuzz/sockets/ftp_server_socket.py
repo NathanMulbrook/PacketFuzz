@@ -63,8 +63,10 @@ class FuzzingFTPHandler(FTPHandler):
                         with open(file_path, 'rb') as f:
                             data = f.read()
                         self.fuzz_socket._capture_uploaded_data(data, file)
-            except Exception:
-                # Don't let capture errors break FTP operation
+            except (OSError, IOError) as e:
+                # Don't let capture errors break FTP operation, but log them
+                if hasattr(self, 'fuzz_socket') and self.fuzz_socket and hasattr(self.fuzz_socket, 'logger'):
+                    self.fuzz_socket.logger.warning(f"Failed to capture uploaded data from {file}: {e}")
                 pass
         
         return result
@@ -104,12 +106,16 @@ class FuzzingFTPHandler(FTPHandler):
                             os.unlink(original_path)
                     
                     return result
-                except Exception:
+                except (OSError, IOError) as e:
                     # Clean up temp file on error
                     try:
                         os.unlink(temp_file.name)
-                    except:
-                        pass
+                    except (OSError, FileNotFoundError) as cleanup_e:
+                        # Log cleanup failures at debug level
+                        if hasattr(self, 'fuzz_socket') and self.fuzz_socket and hasattr(self.fuzz_socket, 'logger'):
+                            self.fuzz_socket.logger.debug(f"Could not clean up temporary file {temp_file.name}: {cleanup_e}")
+                    # Re-raise the original error since this affects functionality
+                    raise e
         
         # Fall back to original implementation
         return super().ftp_RETR(file)
@@ -169,8 +175,8 @@ class FTPServerSocket(FuzzSocket):
             # Try to set passive ports if supported
             try:
                 handler.passive_ports = self.socket_cfg.passive_ports
-            except (AttributeError, TypeError):
-                pass  # Ignore if not supported
+            except (AttributeError, TypeError) as e:
+                self.logger.debug(f"Passive ports configuration not supported by this pyftpdlib version: {e}")
 
             # Create server
             self._server = FTPServer((self.socket_cfg.bind_address, self.socket_cfg.port), handler)
@@ -178,12 +184,12 @@ class FTPServerSocket(FuzzSocket):
             # Try to set connection limits if supported
             try:
                 setattr(self._server, 'max_connections', self.socket_cfg.max_connections)
-            except (AttributeError, TypeError):
-                pass
+            except (AttributeError, TypeError) as e:
+                self.logger.debug(f"max_connections configuration not supported by this pyftpdlib version: {e}")
             try:
                 setattr(self._server, 'max_connections_per_ip', self.socket_cfg.max_connections_per_ip)
-            except (AttributeError, TypeError):
-                pass
+            except (AttributeError, TypeError) as e:
+                self.logger.debug(f"max_connections_per_ip configuration not supported by this pyftpdlib version: {e}")
             
             # Store reference to this socket for handler instances
             setattr(self._server, '_fuzz_socket_ref', self)
@@ -192,9 +198,8 @@ class FTPServerSocket(FuzzSocket):
             return self
             
         except Exception as e:
-            error_msg = f"Failed to create FTP server on {self.socket_cfg.bind_address}:{self.socket_cfg.port}"
-            self.logger.error(error_msg, e)
-            raise OSError(f"{error_msg}: {e}")
+            self.logger.error(f"Failed to create FTP server on {self.socket_cfg.bind_address}:{self.socket_cfg.port}", e)
+            raise OSError(f"Failed to create FTP server on {self.socket_cfg.bind_address}:{self.socket_cfg.port}: {e}")
 
     def start_listening(self, backlog: int = 5) -> None:
         """Start the FTP server in a background thread."""
@@ -278,8 +283,8 @@ class FTPServerSocket(FuzzSocket):
         if self._server:
             try:
                 self._server.close_all()
-            except Exception:
-                pass
+            except Exception as e:
+                self.logger.debug(f"Error during FTP server shutdown (may already be closed): {e}")
         
         if self._server_thread and self._server_thread.is_alive():
             # Give server time to shutdown gracefully

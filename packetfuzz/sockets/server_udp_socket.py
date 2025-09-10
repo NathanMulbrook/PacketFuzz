@@ -60,7 +60,7 @@ class ServerUDPSocket(FuzzSocket):
             
             self._sock = s
             return self
-        except Exception as e:
+        except (OSError, socket.error) as e:
             raise OSError(f"Failed to create/bind UDP listening socket: {e}")
 
 
@@ -73,7 +73,7 @@ class ServerUDPSocket(FuzzSocket):
         try:
             self._listening = True
             logging.getLogger(__name__).info(f"[ServerUDPSocket] Listening on {self.socket_cfg.bind_address}:{self.socket_cfg.port}")
-        except Exception as e:
+        except (OSError, socket.error) as e:
             raise OSError(f"Failed to start listening: {e}")
 
     def accept_connection(self, timeout: Optional[float] = None) -> Optional[tuple['FuzzSocket', tuple[str, int]]]:
@@ -96,8 +96,8 @@ class ServerUDPSocket(FuzzSocket):
         except socket.timeout:
             logging.getLogger(__name__).debug("[ServerUDPSocket] accept timeout")
             return None
-        except Exception as e:
-            logging.getLogger(__name__).error(f"[ServerUDPSocket] accept failed: {e}")
+        except (ConnectionError, OSError, socket.error) as e:
+            logging.getLogger(__name__).error(f"[ServerUDPSocket] network error during accept: {e}")
             return None
         finally:
             if timeout is not None:

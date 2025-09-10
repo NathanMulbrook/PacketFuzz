@@ -8,6 +8,7 @@ received from TFTP clients. TFTP is a simple UDP-based file transfer protocol.
 from __future__ import annotations
 
 import tftpy
+import socket
 import threading
 import tempfile
 import os
@@ -64,28 +65,23 @@ class TFTPServerSocket(FuzzSocket):
 
     def open(self) -> "TFTPServerSocket":
         """Create and configure TFTP server."""
-        try:
-            # Set up root directory
-            if self.socket_cfg.root_directory:
-                root_dir = self.socket_cfg.root_directory
-            else:
-                self._temp_dir = tempfile.mkdtemp(prefix='tftp_server_')
-                root_dir = self._temp_dir
-            
-            # Create TFTP server
-            self._server = tftpy.TftpServer(root_dir)
-            
-            # Note: tftpy server configuration is handled via listen() method parameters
-            # Individual timeout/retry settings are managed per-session
-            
-            self.logger.info(f"TFTP server configured on {self.socket_cfg.bind_address}:{self.socket_cfg.port}")
-            self.logger.info(f"Root directory: {root_dir}")
-            return self
-            
-        except Exception as e:
-            error_msg = f"Failed to create TFTP server on {self.socket_cfg.bind_address}:{self.socket_cfg.port}"
-            self.logger.error(error_msg, e)
-            raise OSError(f"{error_msg}: {e}")
+ 
+        # Set up root directory
+        if self.socket_cfg.root_directory:
+            root_dir = self.socket_cfg.root_directory
+        else:
+            self._temp_dir = tempfile.mkdtemp(prefix='tftp_server_')
+            root_dir = self._temp_dir
+        
+        # Create TFTP server
+        self._server = tftpy.TftpServer(root_dir)
+        
+        # Note: tftpy server configuration is handled via listen() method parameters
+        # Individual timeout/retry settings are managed per-session
+        
+        self.logger.info(f"TFTP server configured on {self.socket_cfg.bind_address}:{self.socket_cfg.port}")
+        self.logger.info(f"Root directory: {root_dir}")
+        return self
 
     def start_listening(self, backlog: int = 5) -> None:
         """Start the TFTP server in a background thread."""
@@ -107,7 +103,7 @@ class TFTPServerSocket(FuzzSocket):
                         self.socket_cfg.port,
                         timeout=timeout_int
                     )
-            except Exception as e:
+            except (OSError, socket.error, ValueError) as e:
                 self.logger.error("TFTP server error", e)
         
         self._server_thread = threading.Thread(target=server_loop, daemon=True)
@@ -177,8 +173,10 @@ class TFTPServerSocket(FuzzSocket):
                             self._captured_uploads.append((data, filename))
                             self.logger.debug(f"Captured new upload: {filename} ({len(data)} bytes)")
                             return data
-            except Exception as e:
-                self.logger.debug(f"Error scanning for uploads: {e}")
+            except OSError as e:
+                # Scanning failure indicates an IO issue - log at error level and re-raise
+                self.logger.error(f"Error scanning for uploads: {e}")
+                raise
         
         return None
 
@@ -204,8 +202,10 @@ class TFTPServerSocket(FuzzSocket):
         if self._server:
             try:
                 self._server.stop()
-            except Exception:
-                pass
+            except Exception as e:
+                # Stopping the server failing is a runtime error - log and re-raise
+                self.logger.error(f"Error stopping TFTP server: {e}")
+                raise
         
         if self._server_thread and self._server_thread.is_alive():
             # Give server time to shutdown gracefully
@@ -217,7 +217,9 @@ class TFTPServerSocket(FuzzSocket):
                 import shutil
                 shutil.rmtree(self._temp_dir)
             except Exception as e:
-                self.logger.warning(f"Failed to clean up temp directory: {e}")
+                # Cleanup failures should be visible
+                self.logger.error(f"Failed to clean up temp directory: {e}")
+                raise
         
         self._server = None
         self._server_thread = None

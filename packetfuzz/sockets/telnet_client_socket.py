@@ -8,6 +8,7 @@ transferred over Telnet connections.
 from __future__ import annotations
 
 import telnetlib
+import socket
 import io
 import logging
 from typing import Optional, TYPE_CHECKING
@@ -135,8 +136,8 @@ class TelnetClientSocket(FuzzSocket):
                 self.logger.debug(f"Received {len(response)} bytes: {response}")
             
             return response
-        except Exception as e:
-            self.logger.error(f"Failed to receive data: {e}")
+        except (ConnectionError, OSError, socket.error, EOFError) as e:
+            self.logger.error(f"Network error receiving data: {e}")
             self._connected = False
             return None
 
@@ -145,7 +146,7 @@ class TelnetClientSocket(FuzzSocket):
         if self._telnet_client:
             try:
                 self._telnet_client.close()
-            except Exception as e:
+            except (OSError, socket.error) as e:
                 self.logger.error(f"Error closing Telnet connection: {e}")
             finally:
                 self._telnet_client = None

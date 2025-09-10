@@ -188,7 +188,7 @@ class CustomModbusServer:
                 self.logger.debug(f"Modbus server started on {self.cfg.bind_address}:{self.cfg.port}")
                 
             return True
-        except Exception as e:
+        except (OSError, ImportError, ConnectionError) as e:
             self.logger.error(f"Failed to start Modbus server: {e}")
             self.running = False
             return False
@@ -205,7 +205,7 @@ class CustomModbusServer:
                 allow_reuse_address=True,
                 timeout=self.cfg.socket_timeout,
             )
-        except Exception as e:
+        except (OSError, ImportError, ConnectionError) as e:
             if self.running:  # Only log if we're not shutting down intentionally
                 self.logger.error(f"Modbus server error: {e}")
         finally:
@@ -227,7 +227,7 @@ class CustomModbusServer:
                 
             if self.debug_mode:
                 self.logger.debug("Modbus server stopped")
-        except Exception as e:
+        except (OSError, RuntimeError) as e:
             self.logger.error(f"Error stopping Modbus server: {e}")
     
     def get_context(self):
@@ -240,7 +240,7 @@ class CustomModbusServer:
             slave_id = self.cfg.unit_id
             self.context[slave_id].setValues(3, address, [value])  # 3 = holding registers
             return True
-        except Exception as e:
+        except (KeyError, ValueError, IndexError) as e:
             self.logger.error(f"Failed to update holding register at {address}: {e}")
             return False
             
@@ -250,7 +250,7 @@ class CustomModbusServer:
             slave_id = self.cfg.unit_id
             self.context[slave_id].setValues(1, address, [value])  # 1 = coils
             return True
-        except Exception as e:
+        except (KeyError, ValueError, IndexError) as e:
             self.logger.error(f"Failed to update coil at {address}: {e}")
             return False
             

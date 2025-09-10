@@ -5,7 +5,6 @@ This module provides the interface to the libFuzzer C extension
 for high-performance mutation operations.
 """
 
-# Standard library imports
 import ctypes
 import logging
 import random
@@ -15,15 +14,12 @@ from typing import Any, List, Optional
 
 logger = logging.getLogger(__name__)
 
-# Third-party imports
 from scapy.fields import Field
 
-# Local imports
 from .base import BaseMutator, MutatorRegistry
 
 logger = logging.getLogger(__name__)
 
-# Constants
 DEFAULT_MAX_OUTPUT_SIZE = 1024
 DEFAULT_OUTPUT_BUFFER_MULTIPLIER = 2
 
@@ -55,7 +51,7 @@ class LibFuzzerMutator(BaseMutator):
         super().__init__(seed)
         self._seed = seed
         self._lib = None
-        self._dictionaries_loaded = False  # Track if dictionaries are already loaded
+        self._dictionaries_loaded = False
         self._rng = random.Random(seed) if seed is not None else random.Random()
         
         self._load_library()
@@ -73,7 +69,6 @@ class LibFuzzerMutator(BaseMutator):
     def _find_library_path(self) -> Optional[str]:
         """Find the compiled libFuzzer extension library (Linux only)."""
         current_dir = Path(__file__).resolve().parent
-        # Only Linux is currently supported
         linux_lib = 'libscapy_libfuzzer.so'
         path = current_dir / linux_lib
         if path.exists():
@@ -143,7 +138,7 @@ class LibFuzzerMutator(BaseMutator):
                     logger.error(f"No dictionaries loaded, but non-empty dictionary list was provided! (entries: {len(dictionaries)})")
                 else:
                     logger.debug("No dictionaries loaded (empty list or None provided).")
-                return True  # Still return True to not block fuzzing
+                return False
 
     
     def mutate_bytes(self, data: bytes, dictionaries: Optional[List[bytes]] = None) -> bytes:

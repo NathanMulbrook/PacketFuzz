@@ -14,7 +14,6 @@ Features:
 - Real-time campaign monitoring
 - Scapy-enhanced protocol coverage analysis
 """
-# Standard library imports
 import base64
 import json
 import logging
@@ -28,37 +27,24 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Union
 
-# Third-party imports
 from scapy.packet import Packet
 from scapy.layers.inet import IP, TCP, UDP, ICMP
 from scapy.layers.l2 import Ether, ARP
 
 logger = logging.getLogger(__name__)
 
-
-# ============================================================================
-# Configuration Constants
-# ============================================================================
-
-# Report generation settings
 DEFAULT_MAX_FINDINGS = 100
 DEFAULT_TOP_MUTATORS_COUNT = 10
 DEFAULT_TOP_FIELDS_COUNT = 10
 MAX_PROTOCOL_ANALYSIS_DEPTH = 50
 VULNERABILITY_CONFIDENCE_THRESHOLD = 0.7
 
-# Performance settings
 METRICS_CALCULATION_TIMEOUT = 30  # seconds
 PROTOCOL_ANALYSIS_TIMEOUT = 60   # seconds
 
-# Export format settings
 MAX_REPORT_SIZE_MB = 50
 DEFAULT_HTML_TEMPLATE_TIMEOUT = 10  # seconds
 
-
-# ============================================================================
-# Report Data Structures
-# ============================================================================
 
 class ReportLevel(Enum):
     """Report detail levels for different audiences"""
@@ -81,28 +67,23 @@ class ReportMetrics:
     error_categories: Dict[str, int] = field(default_factory=dict)
     mutation_effectiveness: Dict[str, int] = field(default_factory=dict)
     
-    # Time-based metrics
     campaign_duration: Optional[timedelta] = None
     packets_per_second: float = 0.0
     
-    # Protocol analysis
     port_coverage: Set[int] = field(default_factory=set)
     payload_sizes: List[int] = field(default_factory=list)
     network_layers: Set[str] = field(default_factory=set)
     
-    # Fuzzed field tracking
-    fuzzed_field_distribution: Dict[str, int] = field(default_factory=dict)  # field_name -> count
+    fuzzed_field_distribution: Dict[str, int] = field(default_factory=dict)
     packets_with_fuzzed_fields: int = 0
     packets_without_fuzzed_fields: int = 0
-    most_fuzzed_fields: List[str] = field(default_factory=list)  # Top fuzzed fields
+    most_fuzzed_fields: List[str] = field(default_factory=list)
     
-    # Enhanced field metadata tracking - direct access to FieldMetadata objects
-    detailed_field_metadata: Dict[str, Any] = field(default_factory=dict)  # field_name -> FieldMetadata dict
+    detailed_field_metadata: Dict[str, Any] = field(default_factory=dict)
     
-    # Mutator usage tracking
-    mutator_usage: Dict[str, int] = field(default_factory=dict)  # mutator_name -> usage_count
+    mutator_usage: Dict[str, int] = field(default_factory=dict)
     total_mutations_applied: int = 0
-    most_used_mutators: List[str] = field(default_factory=list)  # Top mutators by usage
+    most_used_mutators: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -136,10 +117,6 @@ class ProtocolAnalysis:
     scapy_layer_coverage: Set[str]
 
 
-# ============================================================================
-# Core Interfaces for Modularity
-# ============================================================================
-
 class ReportGeneratorInterface:
     """Interface for report content generators"""
     
@@ -162,14 +139,9 @@ class ExporterInterface:
         raise NotImplementedError("Subclasses must implement export()")
     
     def get_file_extension(self) -> str:
-        """Get appropriate file extension for the format type."""
         """Return the file extension for this export format"""
         raise NotImplementedError("Subclasses must implement get_file_extension()")
 
-
-# ============================================================================
-# Core Reporting Engine Components
-# ============================================================================
 
 class MetricsCalculator:
     """Handles calculation of various metrics from campaign data"""
@@ -203,7 +175,6 @@ class MetricsCalculator:
         rather than duplicated in history entries. This function provides
         placeholder values for backward compatibility.
         """
-        # Return empty metrics since field information is tracked in MutatorManagerData
         return {
             'fuzzed_field_distribution': {},
             'packets_with_fuzzed_fields': 0,
@@ -219,14 +190,14 @@ class MetricsCalculator:
         payload_sizes = []
         
         for entry in history_entries:
-            if entry.protocol:
+            if hasattr(entry, 'protocol') and entry.protocol:
                 protocol_distribution[entry.protocol] = protocol_distribution.get(entry.protocol, 0) + 1
-            if entry.target_port:
+            if hasattr(entry, 'target_port') and entry.target_port:
                 port_coverage.add(entry.target_port)
             if entry.payload_size:
                 payload_sizes.append(entry.payload_size)
         
-        unique_targets = len(set(h.target_host for h in history_entries if h.target_host))
+        unique_targets = len(set(getattr(h, 'target_host', 'unknown') for h in history_entries if hasattr(h, 'target_host') and h.target_host))
         
         return {
             'protocol_distribution': protocol_distribution,
@@ -275,21 +246,17 @@ class MutatorAnalyzer:
             total_mutations = 0
             detailed_field_metadata = {}
             
-            # Get mutator usage summary
             if hasattr(mutator_data, 'get_mutator_usage_summary'):
                 mutator_usage = mutator_data.get_mutator_usage_summary()
                 total_mutations = sum(mutator_usage.values())
             
-            # Calculate most used mutators using configuration constant
             sorted_mutators = sorted(mutator_usage.items(), key=lambda x: x[1], reverse=True)
             most_used_mutators = [mutator for mutator, count in sorted_mutators[:DEFAULT_TOP_MUTATORS_COUNT]]
             
-            # Extract detailed field metadata from all fuzzable fields
             if hasattr(mutator_data, 'get_all_fuzzable_fields'):
                 try:
                     fuzzable_fields = mutator_data.get_all_fuzzable_fields()
                     for field_metadata in fuzzable_fields:
-                        # Convert FieldMetadata to a JSON-serializable dict
                         field_dict = {
                             'field_key': field_metadata.field_key,
                             'layer_name': field_metadata.layer_name,
@@ -300,8 +267,8 @@ class MutatorAnalyzer:
                             'field_kind': field_metadata.field_kind,
                             'current_value': str(field_metadata.current_value) if field_metadata.current_value is not None else None,
                             'fuzz_weight': field_metadata.fuzz_weight,
-                            'base_weight': field_metadata.base_weight,
-                            'final_scaling_factor': field_metadata.final_scaling_factor,
+                            'base_weight': getattr(field_metadata, 'base_weight', field_metadata.fuzz_weight),
+                            'final_scaling_factor': getattr(field_metadata, 'final_scaling_factor', 1.0),
                             'dictionary_paths': field_metadata.dictionary_paths.copy() if field_metadata.dictionary_paths else [],
                             'mutator_preferences': field_metadata.mutator_preferences.copy() if field_metadata.mutator_preferences else [],
                             'min_value': field_metadata.min_value,
@@ -322,7 +289,6 @@ class MutatorAnalyzer:
                 except Exception as e:
                     logger.warning(f"Failed to extract field metadata: {e}")
             
-            # Log additional processing info if available
             if hasattr(mutator_data, 'get_processing_summary'):
                 processing_summary = mutator_data.get_processing_summary()
                 logger.debug(f"Mutator processing summary: {processing_summary}")
@@ -336,13 +302,8 @@ class MutatorAnalyzer:
             
         except Exception as e:
             logger.error(f"Failed to extract mutator metrics - this indicates mutator manager issues: {e}")
-            # Let the error propagate to expose the real issue instead of masking it
             raise
 
-
-# ============================================================================
-# Core Reporting Engine
-# ============================================================================
 
 class ReportingEngine:
     """Central reporting engine with pluggable generators and exporters"""
@@ -394,31 +355,24 @@ class ReportingEngine:
         Returns:
             Path to the generated report file
         """
-        # Use provided history_entries or empty list
         if history_entries is None:
             history_entries = []
         if campaign_context is None:
             campaign_context = campaign
             
-        # Validate inputs
         if level not in self.generators:
             raise ValueError(f"Unsupported report level: {level}. Available: {self.get_available_levels()}")
         if output_format not in self.exporters:
             raise ValueError(f"Unsupported output format: {output_format}. Available: {self.get_available_formats()}")
-        # ...existing code...
         metrics = self._calculate_metrics(history_entries, campaign_context)
         
-        # Perform protocol analysis
         protocol_analysis = self.protocol_analyzer.analyze_campaign(history_entries)
         
-        # Generate findings
         findings = self._detect_vulnerabilities(history_entries, protocol_analysis)
         
-        # Generate report content
         generator = self.generators[level]
         content = generator.generate(campaign, metrics, protocol_analysis, findings)
         
-        # Export in requested format
         exporter = self.exporters[output_format]
         if not output_path:
             extension = exporter.get_file_extension()
@@ -442,54 +396,45 @@ class ReportingEngine:
         if not history_entries:
             return metrics
         
-        # Calculate metrics using modular utility classes
         basic_metrics = MetricsCalculator.calculate_basic_metrics(history_entries)
         field_metrics = MetricsCalculator.calculate_field_metrics(history_entries)
         protocol_metrics = MetricsCalculator.calculate_protocol_metrics(history_entries)
         timing_metrics = MetricsCalculator.calculate_timing_metrics(history_entries)
         
-        # Extract mutator data for enhanced analytics (cached to avoid recomputation)
         mutator_data = getattr(campaign_context, 'mutator_data', None)
         if not hasattr(self, '_cached_mutator_metrics'):
             self._cached_mutator_metrics = MutatorAnalyzer.extract_mutator_metrics(mutator_data)
         mutator_metrics = self._cached_mutator_metrics
         
-        # Populate ReportMetrics object
         self._populate_metrics(metrics, basic_metrics, field_metrics, protocol_metrics, timing_metrics, mutator_metrics)
         
         return metrics
     
     def _populate_metrics(self, metrics: ReportMetrics, basic: Dict, field: Dict, protocol: Dict, timing: Dict, mutator: Dict) -> None:
         """Populate ReportMetrics object from calculated metric dictionaries"""
-        # Basic metrics
         metrics.total_packets = basic['total_packets']
         metrics.successful_packets = basic['successful_packets']
         metrics.failed_packets = basic['failed_packets']
         metrics.serialization_failures = basic['serialization_failures']
         metrics.crash_count = basic['crash_count']
         
-        # Field metrics
         metrics.fuzzed_field_distribution = field['fuzzed_field_distribution']
         metrics.packets_with_fuzzed_fields = field['packets_with_fuzzed_fields']
         metrics.packets_without_fuzzed_fields = field['packets_without_fuzzed_fields']
         metrics.most_fuzzed_fields = field['most_fuzzed_fields']
         
-        # Protocol metrics
         metrics.protocol_distribution = protocol['protocol_distribution']
         metrics.port_coverage = protocol['port_coverage']
         metrics.payload_sizes = protocol['payload_sizes']
         metrics.unique_targets = protocol['unique_targets']
         
-        # Timing metrics
         metrics.campaign_duration = timing['campaign_duration']
         metrics.packets_per_second = timing['packets_per_second']
         
-        # Mutator metrics
         metrics.mutator_usage = mutator['mutator_usage']
         metrics.total_mutations_applied = mutator['total_mutations_applied']
         metrics.most_used_mutators = mutator['most_used_mutators']
         
-        # Enhanced field metadata
         metrics.detailed_field_metadata = mutator.get('detailed_field_metadata', {})
     
     def _detect_vulnerabilities(
@@ -528,7 +473,7 @@ class ReportingEngine:
                     severity="high",  # Crashes are serious but we don't know exploitability
                     category="application_crash",
                     description=f"Fuzzing caused application crash - investigate for DoS or memory corruption",
-                    affected_packet=entry.packet,
+                    affected_packet=getattr(entry, 'packet', None),
                     error_message=str(entry.crash_info.exception) if entry.crash_info.exception else None
                 )
                 findings.append(finding)
@@ -558,7 +503,7 @@ class ReportingEngine:
                         severity="info",
                         category="response_anomaly",
                         description=f"Unusually large response ({entry.response_size} bytes vs avg {avg_size:.0f}) - may indicate verbose error disclosure",
-                        affected_packet=entry.packet
+                        affected_packet=getattr(entry, 'packet', None)
                     )
                     findings.append(finding)
         
@@ -571,15 +516,10 @@ class ReportingEngine:
         return f"artifacts/reports/{campaign_name}_{level.value}_{timestamp}.{extension}"
 
 
-# ============================================================================
-# Protocol Intelligence Analyzer
-# ============================================================================
-
 class ProtocolIntelligenceAnalyzer:
     """Generic packet analysis using Scapy's protocol knowledge"""
     
     def __init__(self):
-        # Remove protocol-specific handlers - make it generic
         pass
     
     def analyze_campaign(self, history_entries: List[Any]) -> Dict[str, ProtocolAnalysis]:
@@ -588,7 +528,7 @@ class ProtocolIntelligenceAnalyzer:
         
         # Group entries by protocol (or 'unknown' if not available)
         for entry in history_entries:
-            protocol = entry.protocol or 'unknown'
+            protocol = getattr(entry, 'protocol', None) or 'unknown'
             protocol_groups[protocol].append(entry)
         
         # Analyze each protocol group generically
@@ -608,7 +548,7 @@ class ProtocolIntelligenceAnalyzer:
         
         for entry in entries:
             # Collect port information if available
-            if entry.target_port:
+            if hasattr(entry, 'target_port') and entry.target_port:
                 unique_ports.add(entry.target_port)
             
             # Categorize errors generically
@@ -657,10 +597,6 @@ class ProtocolIntelligenceAnalyzer:
         else:
             return "other_error"
 
-
-# ============================================================================
-# Report Generators
-# ============================================================================
 
 class ExecutiveSummaryGenerator(ReportGeneratorInterface):
     """Generate executive-level summary reports"""
@@ -1302,21 +1238,16 @@ class AdvancedPerformanceGenerator(ReportGeneratorInterface):
         return effectiveness
 
 
-# ============================================================================
-# Export Formatters
-# ============================================================================
 
 class HTMLExporter(ExporterInterface):
     """Export reports as HTML"""
     
     def get_file_extension(self) -> str:
-        """Get appropriate file extension for the format type."""
         """Return the file extension for HTML files"""
         return "html"
     
     def export(self, content: Dict[str, Any], output_path: str) -> str:
         """Export content as HTML report"""
-        # Create directory if path includes one
         output_dir = os.path.dirname(output_path)
         if output_dir:
             os.makedirs(output_dir, exist_ok=True)
@@ -1823,10 +1754,6 @@ class YAMLExporter(ExporterInterface):
         return "\n".join(yaml_lines)
 
 
-# ============================================================================
-# Enhanced Reporting API
-# ============================================================================
-
 def register_custom_exporters(engine: ReportingEngine) -> None:
     """Register additional export formats with the reporting engine"""
     engine.register_exporter('markdown', MarkdownExporter())
@@ -1855,9 +1782,8 @@ def generate_campaign_report(
         Path to generated report file
     """
     engine = ReportingEngine()
-    register_custom_exporters(engine)  # Register markdown and yaml exporters
+    register_custom_exporters(engine)
     
-    # Get history entries from campaign context
     history_entries = getattr(campaign_context, 'fuzz_history', [])
     
     # Map string level to enum
@@ -1907,14 +1833,12 @@ def generate_campaign_reports(
     logger.info(f"Campaign: {getattr(campaign, 'name', 'Unknown')}")
     logger.info(f"Requested output formats: {output_formats}")
     
-    # Ensure we have a valid list
     if not output_formats:
         output_formats = ['json']
     
-    # Handle 'all' format
     if 'all' in output_formats:
         engine = ReportingEngine()
-        register_custom_exporters(engine)  # Add markdown and yaml
+        register_custom_exporters(engine)
         output_formats = list(engine.get_available_formats())
     
     # Ensure output directory exists
@@ -2014,10 +1938,6 @@ def monitor_campaign_progress(
         logger.error(f"Failed to start monitoring: {e}")
         return None
 
-
-# ============================================================================
-# Utility Functions
-# ============================================================================
 
 def analyze_protocol_coverage(history_entries: List[Any]) -> Dict[str, Any]:
     """Analyze protocol coverage from history entries"""
@@ -2211,19 +2131,27 @@ def write_fuzz_history_dump(
                 if hasattr(entry, 'payload_hash') and entry.payload_hash:
                     f.write(f"Payload Hash: {entry.payload_hash}\n")
                 
-                # Fuzzed fields information - get from MutatorManagerData if available
+                # Raw packet bytes (for verbose runs) - moved up for better visibility
+                if verbose_level >= 2 and hasattr(entry, 'packet_bytes') and entry.packet_bytes:
+                    try:
+                        import base64
+                        f.write(f"Raw Packet (base64): {base64.b64encode(entry.packet_bytes).decode()}\n")
+                        f.write(f"Raw Packet (hex): {entry.packet_bytes.hex()}\n")
+                    except Exception as e:
+                        f.write(f"Could not display raw packet bytes: {e}\n")
+                
+                # Fuzzed fields information - prioritize entry's stored data over mutator lookup
                 fuzzed_fields = []
-                if mutator_data and hasattr(mutator_data, 'get_fuzzed_fields_for_packet'):
+                if hasattr(entry, 'fuzzed_fields') and entry.fuzzed_fields:
+                    # Use the stored fuzzed_fields from the history entry (most accurate)
+                    fuzzed_fields = entry.fuzzed_fields
+                elif mutator_data and hasattr(mutator_data, 'get_fuzzed_fields_for_packet'):
+                    # Fallback to querying mutator_data (may be less accurate for per-iteration data)
                     try:
                         iteration_num = getattr(entry, 'iteration', i)
                         fuzzed_fields = mutator_data.get_fuzzed_fields_for_packet(iteration_num)
                     except Exception:
-                        # Fall back to checking if entry has fuzzed_fields (for backward compatibility)
-                        if hasattr(entry, 'fuzzed_fields') and entry.fuzzed_fields:
-                            fuzzed_fields = entry.fuzzed_fields
-                elif hasattr(entry, 'fuzzed_fields') and entry.fuzzed_fields:
-                    # Backward compatibility fallback
-                    fuzzed_fields = entry.fuzzed_fields
+                        pass  # Continue with empty fuzzed_fields
                 
                 if fuzzed_fields:
                     # If we have detailed mutator info, show field -> mutator mapping
@@ -2341,21 +2269,13 @@ def write_fuzz_history_dump(
                 # Packet details (if verbose enough)
                 if verbose_level >= 2 and hasattr(entry, 'packet') and entry.packet:
                     try:
+                        from packetfuzz.utils.packet_utils import get_packet_summary
                         f.write("PACKET DETAILS:\n")
                         f.write("-" * 40 + "\n")
-                        # Use Scapy's show method for detailed packet info
-                        packet_summary = entry.packet.show(dump=True) if hasattr(entry.packet, 'show') else str(entry.packet)
+                        # Use safe packet summary method
+                        packet_summary = entry.packet.show(dump=True) if hasattr(entry.packet, 'show') else get_packet_summary(entry.packet)
                         f.write(packet_summary or "No packet details available\n")
                         f.write("\n")
-                        
-                        # Raw packet bytes (for highest verbosity)
-                        if verbose_level >= 3:
-                            try:
-                                packet_bytes = bytes(entry.packet)
-                                f.write(f"Raw Packet (base64): {base64.b64encode(packet_bytes).decode()}\n")
-                                f.write(f"Raw Packet (hex): {packet_bytes.hex()}\n\n")
-                            except Exception as e:
-                                f.write(f"Could not serialize packet to bytes: {e}\n\n")
                                 
                     except Exception as e:
                         f.write(f"Error displaying packet details: {e}\n\n")

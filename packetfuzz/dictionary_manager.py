@@ -6,11 +6,14 @@ import json
 import logging
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union, Tuple
 
 from .default_mappings import MACROS
 
 logger = logging.getLogger(__name__)
+
+# Deduplication configuration - always use enhanced with case sensitivity
+CASE_SENSITIVE_DEDUP = True
 
 
 class DictionaryManager:
@@ -23,8 +26,11 @@ class DictionaryManager:
         """
         Initialize the DictionaryManager.
         
-        Optional custom dictionary path, FuzzDB installation path, default package name,
-        and maximum dictionary size can be specified during initialization.
+        Args:
+            dictionary_path: Optional custom dictionary path
+            fuzzdb_path: Optional FuzzDB installation path  
+            default_dictionary_package: Default package name
+            max_dictionary_size: Maximum dictionary size
         """
         self.max_dictionary_size = max_dictionary_size
         self.default_dictionary_package = default_dictionary_package
@@ -62,16 +68,44 @@ class DictionaryManager:
         return str(Path(__file__).parent / path)
     
     @staticmethod
-    def expand_macro(entry: str) -> List[str]:
+    def expand_macro(entry: str, visited: Optional[set] = None) -> List[str]:
         """
-        Expand macro references (e.g., '@string') to their dictionary lists.
+        Recursively expand macro references (e.g., '@string') to their dictionary lists.
         
-        Returns the expanded list of dictionary entries, or a single-item list 
+        Returns the expanded list of dictionary file paths, or a single-item list 
         containing the original entry if it's not a macro reference.
+        Handles nested macro references and prevents circular dependencies.
+        
+        Args:
+            entry: The entry to expand (could be a macro reference or file path)
+            visited: Set of visited macros to prevent circular references (internal use)
+            
+        Returns:
+            List of fully resolved file paths
         """
-        if entry.startswith("@"):
-            return MACROS.get(entry[1:], [])
-        return [entry]
+        if visited is None:
+            visited = set()
+            
+        if not entry.startswith("@"):
+            return [entry]
+        
+        macro_name = entry[1:]
+        if macro_name in visited:
+            logger.warning(f"Circular macro reference detected: {macro_name}")
+            return []
+        
+        if macro_name not in MACROS:
+            logger.warning(f"Unknown macro: @{macro_name}")
+            return []
+        
+        visited.add(macro_name)
+        expanded_paths = []
+        
+        for macro_entry in MACROS[macro_name]:
+            sub_expanded = DictionaryManager.expand_macro(macro_entry, visited.copy())
+            expanded_paths.extend(sub_expanded)
+        
+        return expanded_paths
     
     def _match_criteria(self, match: dict, field_name: str, field_type: str, properties: dict) -> bool:
         length = properties.get("length")
@@ -186,7 +220,6 @@ class DictionaryManager:
             else:
                 raise ValueError(f"Unsupported mapping file type: {path}")
 
-        # 1. Start with the default mapping (lowest priority)
         merged = list(default_mapping)
         
         if user_mapping_file:
@@ -223,7 +256,14 @@ class DictionaryManager:
         Load and combine dictionary entries from multiple files.
         
         Reads all specified dictionary files, combines their entries, and 
-        removes duplicates while preserving order. Skips comments and empty lines.
+        removes duplicates using enhanced case-sensitive deduplication while preserving order.
+        Skips comments and empty lines.
+        
+        Args:
+            dictionary_paths: List of dictionary file paths to load
+            
+        Returns:
+            List of deduplicated dictionary entries as bytes
         """
         if not dictionary_paths:
             logger.info("No dictionary paths provided for field.")
@@ -231,9 +271,106 @@ class DictionaryManager:
         
         combined_entries = []
         for dict_path in dictionary_paths:
-            entries = self._load_dictionary_file(dict_path)
-            combined_entries.extend(entries)
-        return list(dict.fromkeys(combined_entries))
+            for resolved_path in self.expand_macro(dict_path):
+                combined_entries.extend(self._load_dictionary_file(resolved_path))
+        
+        original_count = len(combined_entries)
+        combined_entries = self._enhanced_deduplicate_bytes(combined_entries)
+        deduplicated_count = len(combined_entries)
+        if original_count != deduplicated_count:
+            logger.debug(f"Enhanced deduplication: {original_count} -> {deduplicated_count} entries "
+                       f"({original_count - deduplicated_count} duplicates removed)")
+        return combined_entries
+    
+    def _enhanced_deduplicate_bytes(self, entries: List[bytes]) -> List[bytes]:
+        """
+        Enhanced deduplication of byte entries with case-sensitive comparison.
+        
+        Removes duplicates while preserving order, with:
+        - Case-sensitive comparison (preserves case differences)
+        - Whitespace normalization
+        - Empty entry removal
+        - Proper Unicode handling
+        
+        Args:
+            entries: List of byte entries to deduplicate
+            
+        Returns:
+            List of deduplicated entries as bytes
+        """
+        if not entries:
+            return []
+        
+        seen_normalized = set()
+        deduplicated = []
+        
+        for entry in entries:
+            if not entry or not entry.strip():
+                continue  # Skip empty or whitespace-only entries
+                
+            try:
+                entry_str = entry.decode('utf-8', errors='ignore').strip()
+            except (UnicodeDecodeError, AttributeError):
+                # If decoding fails, treat as bytes directly
+                entry_str = str(entry).strip()
+            
+            if not entry_str:
+                continue  # Skip entries that become empty after normalization
+                
+            # Use case-sensitive comparison (no .lower() transformation)
+            normalized = entry_str
+            
+            if normalized not in seen_normalized:
+                seen_normalized.add(normalized)
+                if isinstance(entry, bytes):
+                    deduplicated.append(entry.strip())
+                else:
+                    deduplicated.append(entry_str.encode('utf-8'))
+        
+        return deduplicated
+    
+    def get_dictionary_entries_with_stats(self, dictionary_paths: List[str]) -> Tuple[List[bytes], Dict[str, int]]:
+        """
+        Load dictionary entries and return both entries and deduplication statistics.
+        
+        Uses enhanced case-sensitive deduplication.
+        
+        Args:
+            dictionary_paths: List of dictionary file paths to load
+            
+        Returns:
+            Tuple of (deduplicated_entries, stats_dict) where stats_dict contains:
+            - 'original_count': Number of entries before deduplication
+            - 'final_count': Number of entries after deduplication  
+            - 'duplicates_removed': Number of duplicates removed
+            - 'files_processed': Number of dictionary files processed
+        """
+        if not dictionary_paths:
+            return [], {'original_count': 0, 'final_count': 0, 'duplicates_removed': 0, 'files_processed': 0}
+        
+        combined_entries = []
+        files_processed = 0
+        
+        for dict_path in dictionary_paths:
+            expanded_paths = self.expand_macro(dict_path)
+            for resolved_path in expanded_paths:
+                entries = self._load_dictionary_file(resolved_path)
+                if entries:  # Only count files that actually contributed entries
+                    files_processed += 1
+                combined_entries.extend(entries)
+        
+        original_count = len(combined_entries)
+        final_entries = self._enhanced_deduplicate_bytes(combined_entries)
+        final_count = len(final_entries)
+        
+        stats = {
+            'original_count': original_count,
+            'final_count': final_count,
+            'duplicates_removed': original_count - final_count,
+            'files_processed': files_processed
+        }
+        
+        return final_entries, stats
     
     def _load_dictionary_file(self, dict_path: str) -> List[bytes]:
         if not Path(dict_path).exists():
@@ -242,8 +379,7 @@ class DictionaryManager:
         with open(dict_path, 'rb') as f:
             entries = []
             for line in f:
-                line = line.strip()
-                if line and not line.startswith(b'#'):
-                    entries.append(line)
+                if (stripped_line := line.strip()) and not stripped_line.startswith(b'#'):
+                    entries.append(stripped_line)
             return entries
 

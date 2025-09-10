@@ -331,6 +331,5 @@ class SocketType(str, Enum):
         return self in self.get_listening_socket_types()
 
 
-# Backward compatibility
 VALID_SOCKET_TYPES = SocketType.get_valid_types()
 

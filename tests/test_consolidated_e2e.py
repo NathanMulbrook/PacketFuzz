@@ -49,7 +49,7 @@ class TestCoreUseCasesEndToEnd(unittest.TestCase):
             return result.returncode, result.stdout, result.stderr
         except subprocess.TimeoutExpired:
             return -1, "", "Command timed out"
-        except Exception as e:
+        except (OSError, subprocess.SubprocessError) as e:
             return -2, "", str(e)
     
     def test_quick_start_example_e2e(self):
@@ -184,7 +184,7 @@ class TestPracticalWorkflowsEndToEnd(unittest.TestCase):
             return result.returncode, result.stdout, result.stderr
         except subprocess.TimeoutExpired:
             return -1, "", "Command timed out"
-        except Exception as e:
+        except (OSError, subprocess.SubprocessError) as e:
             return -2, "", str(e)
     
     def create_basic_campaign_file(self, filename: str, iterations: int = 10) -> str:
@@ -277,7 +277,7 @@ class DictTestCampaign(FuzzingCampaign):
             dict_manager = DictionaryManager()
 
             return IP(dst=self.target) / TCP(dport=80)
-        except Exception as e:
+        except ImportError as e:
 
             return IP(dst=self.target) / TCP(dport=80)
 '''

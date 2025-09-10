@@ -2,7 +2,8 @@
 """
 PacketFuzz - Main Entry Point
 
-This script provides a command-line interface for running fuzzing campaigns.
+This script provides a command-line interface for running fuzzing
+campaigns against network protocols and services.
 
 Environment Variable Support:
 The CLI supports environment variables for all major configuration options.
@@ -11,9 +12,8 @@ CLI arguments always take precedence over environment variables.
 
 Supported Environment Variables:
 - PACKETFUZZ_CONFIG_FILE: Path to campaign configuration file
-- PACKETFUZZ_VERBOSE: Verbosity level (0, 1, 2, etc.) for both console and file output
-- PACKETFUZZ_CONSOLE_VERBOSITY: Console verbosity level (overrides PACKETFUZZ_VERBOSE for console)
-- PACKETFUZZ_FILE_VERBOSITY: File verbosity level (overrides PACKETFUZZ_VERBOSE for file)
+- PACKETFUZZ_CONSOLE_VERBOSITY: Console verbosity level
+- PACKETFUZZ_FILE_VERBOSITY: File verbosity level
 - PACKETFUZZ_ENABLE_NETWORK: Set to "true" to enable network transmission
 - PACKETFUZZ_DISABLE_NETWORK: Set to "true" to disable network transmission
 - PACKETFUZZ_PCAP_FILE: Path to PCAP output file
@@ -28,13 +28,10 @@ Example usage with environment variables:
   export PACKETFUZZ_CONFIG_FILE="campaign.py"
   export PACKETFUZZ_DISABLE_NETWORK="true"
   export PACKETFUZZ_PCAP_FILE="output.pcap"
-  export PACKETFUZZ_VERBOSE="2"
+  export PACKETFUZZ_CONSOLE_VERBOSITY="2"
   packetfuzz
 """
 
-# ===========================
-# Standard Library Imports
-# ===========================
 import argparse
 import sys
 import importlib.util
@@ -43,9 +40,6 @@ import os
 from pathlib import Path
 from typing import Any, List, Type
 
-# ===========================
-# Local Imports
-# ===========================
 from .dictionary_manager import DictionaryManager
 from .fuzzing_framework import FuzzingCampaign, logger
 from .mutators.libfuzzer_mutator import LibFuzzerMutator
@@ -109,7 +103,7 @@ def check_components() -> int:
             pass
         else:
             exit()
-    except Exception as e:
+    except ImportError as e:
         libfuzzer_available = False
         print(f"LibFuzzer extension: Not available - {e}")
         exit()
@@ -123,13 +117,15 @@ def check_components() -> int:
         else:
             print("FuzzDB dictionaries: Not found")
             
-    except Exception as e:
+    except (OSError, IOError) as e:
         print(f"Dictionary manager: Error - {e}")
+        exit()
 
 
 def apply_cli_overrides(campaign: Any, args: Any) -> None:
     """
-    Apply CLI flag and environment variable overrides to a campaign instance.
+    Apply command line arguments for network configuration, PCAP recording,
+    PCAP output, dictionary configuration, and logging configuration.
     
     Args:
         campaign: FuzzingCampaign instance to modify
@@ -137,7 +133,7 @@ def apply_cli_overrides(campaign: Any, args: Any) -> None:
         
     This function applies command-line flag overrides to campaign attributes,
     allowing CLI flags to override campaign class defaults for network output,
-    PCAP output, dictionary configuration, and verbose logging.
+    PCAP output, dictionary configuration, and logging configuration.
     """
     if args.enable_network:
         campaign.output_network = True
@@ -167,11 +163,12 @@ def apply_cli_overrides(campaign: Any, args: Any) -> None:
     elif args.enable_offload:
         campaign.disable_interface_offload = False
     
-    if args.verbose:
-        campaign.verbose = max(args.verbose, 
-            getattr(args, 'console_verbosity', 0) or 0,
-            getattr(args, 'file_verbosity', 0) or 0,
-            getattr(args, 'log_verbosity', 0) or 0)
+    # Set campaign verbose attribute based on console verbosity for backwards compatibility
+    campaign.verbose = max(
+        getattr(args, 'console_verbosity', 0) or 0,
+        getattr(args, 'file_verbosity', 0) or 0,
+        getattr(args, 'log_verbosity', 0) or 0
+    )
     
     if args.report_formats:
         if 'all' in args.report_formats:
@@ -184,17 +181,19 @@ def apply_cli_overrides(campaign: Any, args: Any) -> None:
 
 
 ## Logging Configuration
+    # Use explicit verbosity arguments instead of legacy verbose flag
+    
     if args.console_verbosity:
         console_verbosity = args.console_verbosity
     else:
-        console_verbosity = args.verbose or 0
+        console_verbosity = 0
 
     if args.file_verbosity:
         file_verbosity = args.file_verbosity
     elif args.log_verbosity and args.log_verbosity > 0:
         file_verbosity = args.log_verbosity
     else:
-        file_verbosity = args.verbose or 0
+        file_verbosity = 0
     
     # Convert verbosity to log levels (inline to avoid tiny helper)
     console_level = logging.DEBUG if console_verbosity >= 2 else logging.INFO if console_verbosity >= 1 else logging.WARNING
@@ -239,7 +238,6 @@ def main() -> int:
     # Environment variable defaults
     env_defaults = {
         'config_file': os.getenv('PACKETFUZZ_CONFIG_FILE'),
-        'verbose': int(os.getenv('PACKETFUZZ_VERBOSE', '0')),
         'log_verbosity': int(os.getenv('PACKETFUZZ_LOG_VERBOSITY', '0')),
         'console_verbosity': int(os.getenv('PACKETFUZZ_CONSOLE_VERBOSITY', '0')) if os.getenv('PACKETFUZZ_CONSOLE_VERBOSITY') else None,
         'file_verbosity': int(os.getenv('PACKETFUZZ_FILE_VERBOSITY', '0')) if os.getenv('PACKETFUZZ_FILE_VERBOSITY') else None,
@@ -267,20 +265,11 @@ def main() -> int:
         help="Path to campaign configuration file (or set PACKETFUZZ_CONFIG_FILE)"
     )
     parser.add_argument(
-        "-v",
-        "--verbose",
-        action="count",
-        default=env_defaults['verbose'],
-        help="Increase verbosity for both console and file: -v (INFO), -vv (DEBUG), -vvv+ (more detailed). "
-             "Can also set PACKETFUZZ_VERBOSE=1 or PACKETFUZZ_VERBOSE=2"
-    )
-    parser.add_argument(
         "-l",
         action="count",
         default=env_defaults['log_verbosity'],
         dest="log_verbosity",
-        help="Increase log file verbosity: -l (INFO), -ll (DEBUG), -lll+ (more detailed). "
-             "Overrides -v for file output."
+        help="Increase log file verbosity: -l (INFO), -ll (DEBUG), -lll+ (more detailed)."
     )
     parser.add_argument(
         "--console-verbosity",
@@ -288,7 +277,7 @@ def main() -> int:
         choices=range(0, 6),
         metavar="0-5",
         default=env_defaults['console_verbosity'],
-        help="Set console verbosity level (0=WARNING, 1=INFO, 2+=DEBUG). Overrides -v for console output. "
+        help="Set console verbosity level (0=WARNING, 1=INFO, 2+=DEBUG). "
              "Can also set PACKETFUZZ_CONSOLE_VERBOSITY"
     )
     parser.add_argument(
@@ -297,7 +286,7 @@ def main() -> int:
         choices=range(0, 6),
         metavar="0-5",
         default=env_defaults['file_verbosity'],
-        help="Set file verbosity level (0=WARNING, 1=INFO, 2+=DEBUG). Overrides -v for file output. "
+        help="Set file verbosity level (0=WARNING, 1=INFO, 2+=DEBUG). "
              "Can also set PACKETFUZZ_FILE_VERBOSITY"
     )
     parser.add_argument(
@@ -423,11 +412,7 @@ def main() -> int:
             return 1
     
     # Load campaigns from config file
-    try:
-        campaigns = load_campaigns_from_file(args.config_file)
-    except Exception as e:
-        logger.error(f"Failed to load campaigns from {args.config_file}: {e}")
-        return 1
+    campaigns = load_campaigns_from_file(args.config_file)
     
     if not campaigns:
         logger.error("No campaigns found in configuration file")
@@ -451,11 +436,15 @@ def main() -> int:
     
     # Execute campaigns
     success_count = 0
+    total_campaigns = len(campaigns)
     for campaign_class in campaigns:
         campaign = campaign_class()
         apply_cli_overrides(campaign, args)
+        # Determine verbosity for output (use campaign.verbose as proxy for overall verbosity)
+        current_verbosity = getattr(campaign, 'verbose', 0)
+        
         # Level 0: Basic progress via print (always shown)
-        if args.verbose == 0:
+        if current_verbosity == 0:
             print(f"Processing campaign: {campaign_class.__name__}")
         else:
             logger.info(f"Processing campaign: {campaign_class.__name__}")
@@ -465,13 +454,13 @@ def main() -> int:
         dict_config = getattr(campaign, 'dictionary_config_file', None) or 'Default mappings'
         
         # Verbosity level 1: Show campaign configuration details
-        if args.verbose >= 1:
+        if current_verbosity >= 1:
             logger.info(f"  Network transmission: {network_mode}")
             logger.info(f"  PCAP output: {pcap_file}")
             logger.info(f"  Dictionary config: {dict_config}")
         
         # Verbosity level 2+: Show additional campaign details
-        if args.verbose >= 2:
+        if current_verbosity >= 2:
             logger.debug(f"  Campaign class: {campaign_class}")
             logger.debug(f"  Packets to fuzz: {getattr(campaign, 'packets_to_fuzz', 'Unknown')}")
             logger.debug(f"  Mutator: {getattr(campaign, 'mutator_manager', 'Default')}")
@@ -479,20 +468,19 @@ def main() -> int:
         
         # Always execute campaign, but if --disable-network is set, output_network will be False
         if campaign.execute():
-            if args.verbose == 0:
+            if current_verbosity == 0:
                 print(f"Campaign {campaign_class.__name__} completed successfully")
             else:
                 logger.info(f"Campaign {campaign_class.__name__} completed successfully")
             success_count += 1
         else:
-            if args.verbose == 0:
+            if args.console_verbosity == 0:
                 print(f"Campaign {campaign_class.__name__} failed")
             else:
                 logger.error(f"Campaign {campaign_class.__name__} failed")
     
     # Summary
-    total_campaigns = len(campaigns)
-    if args.verbose == 0:
+    if args.console_verbosity == 0:
         print(f"Execution complete: {success_count}/{total_campaigns} campaigns successful")
     else:
         logger.info(f"Execution complete: {success_count}/{total_campaigns} campaigns successful")

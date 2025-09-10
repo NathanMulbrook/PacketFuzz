@@ -58,7 +58,7 @@ class AdvancedHTTPExtractionCampaign(PcapFuzzCampaign):
                 if TCP in packet and hasattr(packet[TCP], 'load'):
                     packet[TCP].load = packet_bytes[packet_bytes.find(b"GET"):]
                     self.attack_patterns.append("SQL injection")
-                    print(f"💉 Injected SQL payload")
+                    print(f"Injected SQL payload")
             
             # Add fuzzing headers
             if b"\r\n\r\n" in packet_bytes:
@@ -145,7 +145,7 @@ class AdvancedBinaryAnalysisCampaign(PcapFuzzCampaign):
                 self.binary_stats['high_entropy'] += 1
                 print(f"High entropy payload ({unique_bytes} unique bytes)")
             
-            print(f"🔢 Binary stats: {len(payload)} bytes, {null_count} nulls, {printable_count} printable")
+            print(f"Binary stats: {len(payload)} bytes, {null_count} nulls, {printable_count} printable")
         
         return CallbackResult.SUCCESS
 
@@ -197,7 +197,7 @@ class AdvancedLayerFuzzCampaign(PcapFuzzCampaign):
             packet = new_packet
             self.protocol_switches += 1
             self.layer_mutations['UDP'] += 1
-            print(f"🔄 Switched TCP to UDP (port {tcp_port})")
+            print(f"Switched TCP to UDP (port {tcp_port})")
         
         elif UDP in packet:
             # DNS-specific modifications
@@ -223,7 +223,7 @@ class AdvancedLayerFuzzCampaign(PcapFuzzCampaign):
         """Track mutation effectiveness."""
         print(f"Mutation stats: {self.layer_mutations}")
         if self.protocol_switches > 0:
-            print(f"🔄 Protocol switches: {self.protocol_switches}")
+            print(f"Protocol switches: {self.protocol_switches}")
         
         return CallbackResult.SUCCESS
 

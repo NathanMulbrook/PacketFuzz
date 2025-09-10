@@ -57,7 +57,7 @@ class CANBusSocket(FuzzSocket):
             return self
         except ImportError:
             raise OSError("CAN socket support not available - missing SocketCAN")
-        except Exception as e:
+        except (OSError, IOError, socket.error) as e:
             raise OSError(f"Failed to create/bind CAN socket: {e}")
 
     def send_packet(self, packet_bytes: bytes, context: "CampaignContext") -> Optional[int]:

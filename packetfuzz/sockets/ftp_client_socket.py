@@ -8,6 +8,7 @@ transferred over FTP connections. Supports both active and passive modes.
 from __future__ import annotations
 
 import ftplib
+import socket
 import io
 import logging
 from typing import Optional, TYPE_CHECKING
@@ -73,10 +74,10 @@ class FTPClientSocket(FuzzSocket):
             self._connected = True
             self.logger.info(f"Connected to FTP server {self.socket_cfg.host}:{self.socket_cfg.port}")
             return self
-        except Exception as e:
-            error_msg = f"Failed to connect to FTP server {self.socket_cfg.host}:{self.socket_cfg.port}"
-            self.logger.error(error_msg, e)
-            raise OSError(f"{error_msg}: {e}")
+        except (ConnectionError, OSError, socket.error, ftplib.Error) as e:
+            self.logger.error(f"Failed to connect to FTP server {self.socket_cfg.host}:{self.socket_cfg.port}", e)
+            raise OSError(f"Failed to connect to FTP server {self.socket_cfg.host}:{self.socket_cfg.port}: {e}")
+        #TODO is this really good?
 
     @property
     def is_open(self) -> bool:
@@ -138,7 +139,7 @@ class FTPClientSocket(FuzzSocket):
             self.logger.debug(f"Downloaded {len(downloaded_data)} bytes from {filename}")
             return downloaded_data
             
-        except Exception as e:
+        except (ConnectionError, OSError, socket.error, ftplib.Error) as e:
             self.logger.error("FTP download failed", e)
             return None
 
@@ -151,8 +152,8 @@ class FTPClientSocket(FuzzSocket):
         try:
             if self._ftp_client:
                 self._ftp_client.quit()
-        except:
-            pass  # Ignore errors during disconnect
+        except (ConnectionError, OSError) as e:
+            self.logger.debug(f"Network error during FTP disconnect (expected during reconnect): {e}")
         
         # Reopen connection
         self.open()
@@ -162,8 +163,8 @@ class FTPClientSocket(FuzzSocket):
         if self._ftp_client:
             try:
                 self._ftp_client.quit()
-            except:
-                pass  # Ignore errors during close
+            except (ConnectionError, OSError) as e:
+                self.logger.debug(f"Network error during FTP close (connection may already be closed): {e}")
         
         self._ftp_client = None
         self._connected = False

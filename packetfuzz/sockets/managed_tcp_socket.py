@@ -83,35 +83,43 @@ class ManagedTCPSocket(FuzzSocket):
             if timeout is not None:
                 self._sock.settimeout(None)  # Reset to blocking
 
-    def prepare_for_pcap_logging(self, raw_bytes: bytes, original_packet=None) -> bytes:
+    def prepare_for_pcap_logging(self, raw_bytes: bytes, original_packet=None, iteration: int = 0) -> bytes:
         """
         Prepare packet for PCAP logging with full TCP/IP/Ethernet stack.
         
         For managed TCP sockets, we create a complete protocol stack suitable
         for PCAP analysis with the raw fuzzed bytes as the TCP payload.
+        The iteration parameter ensures proper sequence number progression.
         """
-        from scapy.layers.l2 import Ether, Raw
+        from scapy.layers.l2 import Ether
+        from scapy.packet import Raw
         from scapy.layers.inet import IP, TCP
-        from scapy.volatile import RandInt, RandShort
         import random
         
-        target_ip = self.config.get_target('127.0.0.1')
-        target_port = self.config.get_port(80)
-        sport = random.randint(49152, 65535)  # Ephemeral port range
+        target_ip = self.socket_config.target if hasattr(self.socket_config, 'target') else '127.0.0.1'
+        target_port = self.socket_config.port if hasattr(self.socket_config, 'port') else 80
+        
+        # Use iteration for consistent but unique source ports
+        base_sport = 49152  # Start of ephemeral port range  
+        sport = base_sport + (iteration % 16384)  # Keep within ephemeral range
         
         # Create complete TCP/IP/Ethernet packet with fuzzed data as payload
         completed = Ether(dst="ff:ff:ff:ff:ff:ff", src="00:00:00:00:00:00") / \
                    IP(dst=target_ip, src="127.0.0.1") / \
                    TCP(dport=target_port, sport=sport) / Raw(load=raw_bytes)
         
-        # Populate connection fields for clean PCAP output
+        # Use iteration for proper sequence number progression and unique IP IDs
+        payload_size = len(raw_bytes)
+        base_seq = 1000  # Starting sequence number
+        completed[TCP].seq = base_seq + (iteration * max(payload_size, 1))
+        completed[IP].id = (1 + iteration) % 65536
+        
+        # Let Scapy recalculate checksums
         try:
-            completed[TCP].seq = RandInt()
-            del completed[TCP].chksum  # Let Scapy recalculate
-            completed[IP].id = RandShort()
-            del completed[IP].chksum  # Let Scapy recalculate
-        except Exception as e:
-            self.logger.debug(f"Could not populate connection fields: {e}")
+            del completed[TCP].chksum
+            del completed[IP].chksum
+        except (AttributeError, KeyError) as e:
+            logging.debug(f"Could not populate connection fields: {e}")
         
         return bytes(completed)
 
@@ -122,5 +130,8 @@ class ManagedTCPSocket(FuzzSocket):
                 # Graceful shutdown
                 self._sock.shutdown(socket.SHUT_RDWR)
             super().close()
+        except (ConnectionError, OSError):
+            self.logger.warning(f"Socket already closed or connection lost during close")
         except Exception as e:
-            self.logger.warning(f"close error: {e}")
+            self.logger.warning(f"Unexpected error during close: {e}")
+            raise  # Re-raise unexpected errors

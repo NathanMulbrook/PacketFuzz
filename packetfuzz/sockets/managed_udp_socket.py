@@ -53,7 +53,7 @@ class ManagedUDPSocket(FuzzSocket):
             
             self._sock = s
             return self
-        except Exception as e:
+        except (OSError, socket.error) as e:
             raise OSError(f"Failed to create UDP socket: {e}")
 
     def send_packet(self, packet_bytes: bytes, context: "CampaignContext") -> Optional[int]:
@@ -83,34 +83,41 @@ class ManagedUDPSocket(FuzzSocket):
             if timeout is not None:
                 self._sock.settimeout(None)  # Reset to blocking
 
-    def prepare_for_pcap_logging(self, raw_bytes: bytes, original_packet=None) -> bytes:
+    def prepare_for_pcap_logging(self, raw_bytes: bytes, original_packet=None, iteration: int = 0) -> bytes:
         """
         Prepare packet for PCAP logging with full UDP/IP/Ethernet stack.
         
         For managed UDP sockets, we create a complete protocol stack suitable
         for PCAP analysis with the raw fuzzed bytes as the UDP payload.
+        The iteration parameter ensures unique packet identifiers.
         """
-        from scapy.layers.l2 import Ether, Raw
+        from scapy.layers.l2 import Ether
+        from scapy.packet import Raw
         from scapy.layers.inet import IP, UDP
         from scapy.volatile import RandShort
         import random
         
-        target_ip = self.config.get_target('127.0.0.1')
-        target_port = self.config.get_port(53)
-        sport = random.randint(49152, 65535)  # Ephemeral port range
+        target_ip = self.socket_config.target if hasattr(self.socket_config, 'target') else '127.0.0.1'
+        target_port = self.socket_config.port if hasattr(self.socket_config, 'port') else 53
+        
+        # Use iteration for consistent but unique source ports
+        base_sport = 49152  # Start of ephemeral port range
+        sport = base_sport + (iteration % 16384)  # Keep within ephemeral range
         
         # Create complete UDP/IP/Ethernet packet with fuzzed data as payload
         completed = Ether(dst="ff:ff:ff:ff:ff:ff", src="00:00:00:00:00:00") / \
                    IP(dst=target_ip, src="127.0.0.1") / \
                    UDP(dport=target_port, sport=sport) / Raw(load=raw_bytes)
         
+        # Use iteration for unique IP identification
+        completed[IP].id = (1 + iteration) % 65536
+        
         # Let Scapy recalculate checksums
         try:
             del completed[UDP].chksum
-            completed[IP].id = RandShort()
             del completed[IP].chksum
-        except Exception as e:
-            self.logger.debug(f"Could not populate UDP fields: {e}")
+        except (AttributeError, KeyError) as e:
+            logger.debug(f"Could not populate UDP fields: {e}")
         
         return bytes(completed)
 

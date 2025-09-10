@@ -63,7 +63,7 @@ class ServerTCPSocket(FuzzSocket):
             
             self._sock = s
             return self
-        except Exception as e:
+        except (OSError, socket.error) as e:
             raise OSError(f"Failed to create/bind TCP listening socket: {e}")
 
 
@@ -77,7 +77,7 @@ class ServerTCPSocket(FuzzSocket):
             self._sock.listen(backlog)
             self._listening = True
             logging.getLogger(__name__).info(f"[ServerTCPSocket] Listening on {self.socket_cfg.bind_address}:{self.socket_cfg.port}")
-        except Exception as e:
+        except (OSError, socket.error) as e:
             raise OSError(f"Failed to start listening: {e}")
 
     def accept_connection(self, timeout: Optional[float] = None) -> Optional[tuple['FuzzSocket', tuple[str, int]]]:
@@ -96,10 +96,9 @@ class ServerTCPSocket(FuzzSocket):
             return client_socket, client_addr
             
         except socket.timeout:
-            logging.getLogger(__name__).debug("[ServerTCPSocket] accept timeout")
             return None
-        except Exception as e:
-            logging.getLogger(__name__).error(f"[ServerTCPSocket] accept failed: {e}")
+        except (ConnectionError, OSError, socket.error) as e:
+            logging.getLogger(__name__).error(f"[ServerTCPSocket] network error during accept: {e}")
             return None
         finally:
             if timeout is not None:
@@ -221,5 +220,5 @@ class ClientTCPSocket(FuzzSocket):
             if self._sock:
                 self._sock.shutdown(socket.SHUT_RDWR)
             super().close()
-        except Exception as e:
+        except (ConnectionError, OSError, socket.error) as e:
             logging.getLogger(__name__).warning(f"[ClientTCPSocket] close error: {e}")

@@ -69,7 +69,7 @@ class TFTPClientSocket(FuzzSocket):
             
             self.logger.info(f"TFTP client configured for {self.socket_cfg.host}:{self.socket_cfg.port}")
             return self
-        except Exception as e:
+        except (OSError, IOError) as e:
             error_msg = f"Failed to create TFTP client for {self.socket_cfg.host}:{self.socket_cfg.port}"
             self.logger.error(error_msg, e)
             raise OSError(f"{error_msg}: {e}")
@@ -153,7 +153,7 @@ class TFTPClientSocket(FuzzSocket):
                 if timeout is not None and original_timeout is not None:
                     self._tftp_client.options['timeout'] = original_timeout
             
-        except Exception as e:
+        except (OSError, IOError, ConnectionError) as e:
             self.logger.error("TFTP download failed", e)
             return None
 
@@ -168,7 +168,7 @@ class TFTPClientSocket(FuzzSocket):
             try:
                 import shutil
                 shutil.rmtree(self._temp_dir)
-            except Exception as e:
+            except (OSError, IOError) as e:
                 self.logger.warning(f"Failed to clean up temp directory: {e}")
         
         self._tftp_client = None

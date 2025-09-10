@@ -114,7 +114,6 @@ class BaseMutator(ABC):
         Returns:
             True if initialization succeeded, False otherwise
         """
-        # Default implementation returns True (successful initialization)
         self.initialized = True
         return True
     
@@ -125,5 +124,4 @@ class BaseMutator(ABC):
         This method is called when the mutator is no longer needed
         and should release any resources (temporary files, memory, etc.)
         """
-        # Default implementation does nothing
         pass

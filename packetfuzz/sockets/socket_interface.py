@@ -42,10 +42,12 @@ class SocketConfig:
             from .raw_udp_socket import RawUDPConfig
             from .raw_ip_socket import RawIPConfig
             from .raw_tcp_socket import RawTCPConfig
-            
+
             config_types["target_configs"] = (ManagedUDPConfig, ManagedTCPConfig, RawUDPConfig, RawIPConfig, RawTCPConfig)
             config_types["port_configs"] = (ManagedUDPConfig, ManagedTCPConfig, RawUDPConfig)
-        except Exception:
+        except ImportError as e:
+            # Config classes not available in this environment; return empty tuples but log the cause.
+            logging.getLogger(__name__).warning(f"Socket config types not available: {e}")
             config_types["target_configs"] = ()
             config_types["port_configs"] = ()
             
@@ -106,7 +108,7 @@ class FuzzSocket(ABC):
     """
 
     def __init__(self, campaign: 'FuzzingCampaign') -> None:
-        self.socket_type: Optional[SocketType] = getattr(campaign, 'socket_type', None)
+        self.socket_type: Optional[SocketType] = None  # Will be set by factory
         self._sock: Optional[socket.socket] = None
         self.socket_config = getattr(campaign, 'socket_config', None)
         self.debug_mode: bool = getattr(campaign, 'debug_mode', False)
@@ -151,7 +153,7 @@ class FuzzSocket(ABC):
         """Accept an incoming connection. Override in listening sockets."""
         raise NotImplementedError("This socket type does not support accepting connections")
 
-    def prepare_for_pcap_logging(self, raw_bytes: bytes, original_packet: Any) -> bytes:
+    def prepare_for_pcap_logging(self, raw_bytes: bytes, original_packet: Any = None, iteration: int = 0) -> bytes:
         """
         Prepare packet for PCAP logging by creating a complete packet with proper lower layers.
         
@@ -184,8 +186,8 @@ class FuzzSocket(ABC):
         if sock is not None:
             try:
                 sock.close()
-            except Exception:
-                pass
+            except (OSError, socket.error):
+                pass  # Benign close failures can be ignored
 
     def __enter__(self) -> 'FuzzSocket':
         return self.open()
@@ -218,10 +220,9 @@ def create(campaign: 'FuzzingCampaign') -> FuzzSocket:
             raise TypeError("socket_provider/socket_factory must return a FuzzSocket")
         return fs
 
-    st = campaign.socket_type
-    
-    # If socket_type is not set, try to infer from socket_config
-    if st is None and hasattr(campaign, 'socket_config') and campaign.socket_config is not None:
+    # Determine socket type from socket_config
+    st = None
+    if hasattr(campaign, 'socket_config') and campaign.socket_config is not None:
         # Import config types to build mapping
         config_to_socket_type = {}
         try:
@@ -250,16 +251,12 @@ def create(campaign: 'FuzzingCampaign') -> FuzzSocket:
             # Find socket type based on config class
             config_class = campaign.socket_config.__class__
             st = config_to_socket_type.get(config_class)
-            
-            if st:
-                # Set the inferred socket type on the campaign
-                campaign.socket_type = st
                 
         except ImportError:
             pass  # Config classes not available
     
     if st is None:
-        raise ValueError(f"Cannot determine socket_type: socket_type=None and socket_config={getattr(campaign, 'socket_config', None)}")
+        raise ValueError(f"Cannot determine socket_type from socket_config={getattr(campaign, 'socket_config', None)}. Please provide a valid socket_config.")
 
     # Registry-based socket creation for cleaner factory pattern
     socket_registry = {

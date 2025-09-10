@@ -89,7 +89,7 @@ class TestSocketIntegration(unittest.TestCase):
         except PermissionError:
             # Raw sockets require root privileges, skip if not available
             self.skipTest("Raw socket creation requires root privileges")
-        except Exception as e:
+        except (OSError, ImportError) as e:
             # Other exceptions might occur in test environment
             self.skipTest(f"Raw socket creation failed: {e}")
     
@@ -115,7 +115,7 @@ class TestSocketIntegration(unittest.TestCase):
             socket = ManagedUDPSocket(bad_campaign)
             # Socket creation itself doesn't validate port, opening does
             self.assertIsNotNone(socket)
-        except Exception:
+        except (ValueError, TypeError):
             # Some validation might occur during creation
             pass
     
@@ -140,7 +140,7 @@ class TestSocketIntegration(unittest.TestCase):
                 if socket.socket_cfg:
                     self.assertEqual(socket.socket_cfg.target, host)
                     self.assertEqual(socket.socket_cfg.port, port)
-            except Exception as e:
+            except (ValueError, TypeError, ImportError) as e:
                 self.fail(f"Valid socket config ({host}, {port}) failed: {e}")
     
     def test_socket_factory_creation(self):
@@ -158,8 +158,8 @@ class TestSocketIntegration(unittest.TestCase):
             raw_campaign = RawUDPCampaign()
             raw_socket = create(raw_campaign)
             self.assertIsNotNone(raw_socket)
-        except Exception:
-            # Raw sockets may fail in test environment
+        except (OSError, PermissionError, ImportError):
+            # Raw sockets may fail in test environment due to permissions or socket availability
             self.skipTest("Raw UDP socket creation not available")
 
 if __name__ == '__main__':

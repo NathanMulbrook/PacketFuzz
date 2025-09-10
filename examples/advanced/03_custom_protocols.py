@@ -95,7 +95,7 @@ class SimpleProtocolFuzzCampaign(FuzzingCampaign):
                     b"X" * 1000  # Very large payload
                 ]
                 smp_layer.field_fuzz('data').description = "Payload fuzzing"
-            except Exception as e:
+            except (AttributeError, ValueError, TypeError) as e:
                 print(f"Warning: Could not configure field fuzzing: {e}")
                 # Fallback: create packet without FuzzField objects
                 pass
@@ -154,7 +154,7 @@ class RPCProtocolFuzzCampaign(FuzzingCampaign):
                 b"malformed_json{invalid",
                 b"X" * 200
             ]
-        except Exception as e:
+        except (AttributeError, ValueError, TypeError) as e:
             print(f"Warning: Could not configure RPC field fuzzing: {e}")
     
     def pre_send_callback(self, context, packet):
