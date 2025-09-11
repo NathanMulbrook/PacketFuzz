@@ -47,7 +47,7 @@ from .socket_types import SocketType
 from .sockets.socket_interface import FuzzSocket
 from .utils.packet_report import ReportingEngine, ReportLevel, write_crash_report, generate_campaign_reports, write_fuzz_history_dump
 from .utils.scapy_utils import get_layer_names_from_packets, get_layer_name
-from .default_mappings import FIELD_NAME_WEIGHTS
+from .default_mappings import FIELD_NAME_WEIGHTS, DEFAULT_FUZZ_WEIGHT_SCALING
 from .utils.pattern_utils import parse_field_patterns, pattern_matches_any
 
 # Constants
@@ -793,8 +793,6 @@ class FuzzingCampaign:
 
         # Handle fields_to_fuzz (whitelist approach) - exclude all fields except those specified
         if self.fields_to_fuzz:
-            # Get all known patterns
-            all_patterns = set(FIELD_NAME_WEIGHTS.keys())
             whitelisted_patterns = set(self.fields_to_fuzz)
             
             # Extract layer names from whitelisted patterns (e.g., "TCP.dport" -> "TCP")
@@ -803,19 +801,50 @@ class FuzzingCampaign:
                 if '.' in pattern and not pattern.endswith('.*') and pattern.split('.', 1)[0] != '*'
             }
             
-            # Build exclusion list, avoiding broad Layer.* exclusions for whitelisted layers
-            fields_to_exclude = [
-                pattern for pattern in all_patterns 
+            # First, exclude all known patterns that don't match whitelist
+            all_known_patterns = set(FIELD_NAME_WEIGHTS.keys())
+            known_fields_to_exclude = [
+                pattern for pattern in all_known_patterns 
                 if not pattern_matches_any(pattern, whitelisted_patterns)
                 and not (pattern.endswith('.*') and pattern[:-2] in whitelisted_layers)
             ]
             
-            if fields_to_exclude:
-                if not self.advanced_field_mapping_overrides:
-                    self.advanced_field_mapping_overrides = []
+            # Second, create a catch-all exclusion for any unknown fields
+            # This ensures fields not in FIELD_NAME_WEIGHTS are also excluded unless whitelisted
+            if not self.advanced_field_mapping_overrides:
+                self.advanced_field_mapping_overrides = []
+                
+            # Add known field exclusions
+            if known_fields_to_exclude:
                 self.advanced_field_mapping_overrides.extend(
-                    parse_field_patterns(fields_to_exclude, exclude=True)
+                    parse_field_patterns(known_fields_to_exclude, exclude=True)
                 )
+            
+            # Add catch-all exclusion with whitelist exceptions
+            # This excludes all fields by default, then allows only whitelisted ones
+            for pattern in whitelisted_patterns:
+                # Add explicit inclusion for whitelisted patterns 
+                if '.' in pattern:
+                    layer, field = pattern.split('.', 1)
+                    self.advanced_field_mapping_overrides.append({
+                        'layer': layer,
+                        'field': field,
+                        'fuzz_weight': 1.0,
+                        'description': f'Whitelist inclusion: {pattern}'
+                    })
+                else:
+                    # Pattern like "Path" or "Host" - matches any layer
+                    self.advanced_field_mapping_overrides.append({
+                        'field': pattern,
+                        'fuzz_weight': 1.0,
+                        'description': f'Whitelist inclusion: {pattern} (any layer)'
+                    })
+            
+            # Add universal exclusion for everything else (lowest priority)
+            self.advanced_field_mapping_overrides.append({
+                'fuzz_weight': 0.0,
+                'description': 'Default exclusion: fields_to_fuzz whitelist mode'
+            })
 
 
     def validate_campaign(self) -> bool:
@@ -1071,7 +1100,7 @@ class FuzzingCampaign:
             config = FuzzConfig(
                 mode = fuzz_mode,
                 use_dictionaries = True,
-                fuzz_weight = self.fuzz_weight_scaling if self.fuzz_weight_scaling is not None else DEFAULT_FUZZ_WEIGHT,
+                fuzz_weight = self.fuzz_weight_scaling if self.fuzz_weight_scaling is not None else DEFAULT_FUZZ_WEIGHT_SCALING,
                 global_dict_config_path = self.global_dict_config_path,
                 mutator_preference = self.mutator_preference if self.mutator_preference is not None else DEFAULT_MUTATOR_PREFERENCE,
                 enable_layer_weight_scaling = self.enable_layer_weight_scaling,

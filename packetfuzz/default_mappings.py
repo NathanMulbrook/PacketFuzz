@@ -8,6 +8,7 @@ Features:
 - Type, name, and property-based mapping
 - Default: combine all matching dictionaries
 - Optional override for exclusive dictionary selection
+- Default fuzz weight scaling configuration
 - Utility functions for dictionary resolution and macro expansion
 
 Usage:
@@ -1225,13 +1226,13 @@ FIELD_ADVANCED_WEIGHTS = [
     # Example: match by name, type, and length, with mode
     {
         "match": {"name": "Raw.load", "type": "string", "length": ">1024"},
-        "weight": 0.99,
+        "fuzz_weight": 0.99,
         "mode": "override"
     },
     # Example: match by type and context
     {
         "match": {"type": "string", "context": "html"},
-        "weight": 0.8,
+        "fuzz_weight": 0.8,
         "mode": "min"
     },
     # ...add more as needed
@@ -1373,5 +1374,14 @@ FIELD_ADVANCED_MUTATOR_WEIGHTS = [
 #   - 0.1: Aggressive reduction (90% reduction per layer depth)
 # Innermost layer (depth=0) is never scaled (multiplier=1.0)
 LAYER_WEIGHT_SCALING: float = 0.9
+
+# =============================
+# Default fuzz weight scaling
+# =============================
+# Default global fuzz weight scaling factor used throughout the framework.
+# This value controls the overall fuzzing probability for fields.
+# Can be overridden by campaign-level fuzz_weight_scaling settings.
+# Range: 0.0 to 1.0 (higher values increase fuzzing probability)
+DEFAULT_FUZZ_WEIGHT_SCALING: float = 0.4
 
 

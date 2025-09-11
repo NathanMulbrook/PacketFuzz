@@ -17,6 +17,7 @@ from packetfuzz.socket_types import SocketType
 from packetfuzz.sockets.socket_interface import FuzzSocket, create
 from packetfuzz.sockets.managed_udp_socket import ManagedUDPSocket, ManagedUDPConfig
 from packetfuzz.sockets.raw_ip_socket import RawIPSocket
+from packetfuzz.sockets.raw_udp_socket import RawUDPConfig
 from packetfuzz import FuzzingCampaign
 
 class TestSocketIntegration(unittest.TestCase):
@@ -153,6 +154,7 @@ class TestSocketIntegration(unittest.TestCase):
         # Test different socket types
         class RawUDPCampaign(FuzzingCampaign):
             socket_type = SocketType.RAW_UDP
+            socket_config = RawUDPConfig(target="127.0.0.1", port=53)
             
         try:
             raw_campaign = RawUDPCampaign()

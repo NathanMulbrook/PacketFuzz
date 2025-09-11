@@ -30,6 +30,7 @@ class QuickStartCampaign(FuzzingCampaign):
     """Simple HTTP fuzzing with enhanced logging."""
     name = "Quick Start"
     socket_config = ManagedUDPConfig(target="192.168.1.100", port=80)
+    fields_to_fuzz = ["Path", "Host"]
     iterations = 50
     verbose = True
     packet = (

@@ -29,7 +29,12 @@ from scapy.packet import Packet, NoPayload
 from scapy.fields import Field
 
 DEFAULT_MAX_MUTATIONS = 1000
-DEFAULT_FUZZ_WEIGHT = 0.7
+# Import default fuzz weight from default_mappings for consistency
+try:
+    from .default_mappings import DEFAULT_FUZZ_WEIGHT_SCALING as DEFAULT_FUZZ_WEIGHT
+except ImportError:
+    # Fallback in case of import issues
+    DEFAULT_FUZZ_WEIGHT = 0.7
 
 logger = logging.getLogger(__name__)
 
@@ -233,6 +238,8 @@ class MutatorManagerData:
         # Extract packet information - validate packets are provided
         if fuzz_config.packets is None:
             raise ValueError("FuzzConfig.packets must be provided")
+        if isinstance(fuzz_config.packets, list) and len(fuzz_config.packets) == 0:
+            raise ValueError("FuzzConfig.packets cannot be empty")
         self.original_packets = fuzz_config.packets
         self.fuzzed_packets: List[Packet] = []  # Will be populated during preprocessing
 
@@ -363,8 +370,7 @@ class MutatorManagerData:
         logger.debug(f"PREPROCESSING: Created {len(self.fuzzed_packets)} packet copies for {self.iterations} iterations "
                     f"(cycling through {num_original} original packets)")
         
-        # Update total_packets now that we have the final count
-        self.total_packets = len(self.fuzzed_packets)
+        # total_packets should remain the count of original packets, not fuzzed packets
 
     def _process_single_packet(self, packet: Packet, packet_idx: int,
                               dictionary_manager: Optional[Any]) -> PacketData:
@@ -693,7 +699,12 @@ class MutatorManagerData:
         # 2. Campaign configuration (from FuzzConfig + overrides)
         if self.fuzz_config.advanced_field_mapping_overrides:
             campaign_config = self._get_campaign_config(field_metadata)
-            sources.campaign_weight = campaign_config.get('weight')
+            # Support legacy 'weight' key for backward compatibility, prefer 'fuzz_weight'
+            # Handle 0.0 correctly - it's a valid weight value
+            campaign_weight = campaign_config.get('fuzz_weight')
+            if campaign_weight is None:
+                campaign_weight = campaign_config.get('weight')
+            sources.campaign_weight = campaign_weight
             sources.campaign_dictionaries = campaign_config.get('dictionaries', [])
             sources.campaign_values = campaign_config.get('values', [])
         
@@ -854,8 +865,11 @@ class MutatorManagerData:
         field_name = field_metadata.field_name
         layer_name = field_metadata.layer_name
         
+        # Track global/catch-all overrides (lowest priority)
+        global_override = None
+        
         for override in self.fuzz_config.advanced_field_mapping_overrides:
-            # Direct match: Layer.field
+            # Direct match: Layer.field (highest priority)
             if (override.get('layer') == layer_name and 
                 override.get('field') == field_name):
                 return override
@@ -874,8 +888,14 @@ class MutatorManagerData:
             elif 'pattern' in override and 'pattern_type' in override:
                 if self._matches_enhanced_pattern(layer_name, field_name, override):
                     return override
+            
+            # Global/catch-all override: no layer, field, or pattern specified (lowest priority)
+            elif ('layer' not in override and 'field' not in override and 
+                  'pattern' not in override and global_override is None):
+                global_override = override
         
-        return {}
+        # Return global override if no specific matches found
+        return global_override or {}
     
     def _calculate_layer_scaling_factor(self, layer: Packet) -> float:
         """Calculate layer weight scaling factor."""
@@ -1454,7 +1474,8 @@ class MutatorManagerData:
             'is_preprocessed': self.is_preprocessed,
             'preprocessing_errors': len(self.preprocessing_errors),
             'iterations': self.iterations,
-            'creation_time': self.creation_time.isoformat()
+            'creation_time': self.creation_time.isoformat(),
+            'single_packet_mode': self.is_single_packet
         }
     
     def record_field_mutation(self, field_key: str, packet_index: int, 

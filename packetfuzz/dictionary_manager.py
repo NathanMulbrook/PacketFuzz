@@ -15,6 +15,9 @@ logger = logging.getLogger(__name__)
 # Deduplication configuration - always use enhanced with case sensitivity
 CASE_SENSITIVE_DEDUP = True
 
+# Length filtering configuration - exclude dictionary entries over max field length
+FILTER_BY_MAX_LENGTH = True
+
 
 class DictionaryManager:
     """Manages dictionary data access and advanced resolution logic for packet fuzzing."""
@@ -52,20 +55,61 @@ class DictionaryManager:
                 return str(path)
         return None
     
+    def _find_project_root(self) -> Path:
+        """Find the project root directory by looking for common project markers."""
+        current = Path(__file__).parent
+        
+        # Look for project markers (setup.py, pyproject.toml, .git, etc.)
+        markers = ['setup.py', 'pyproject.toml', '.git', 'requirements.txt', 'README.md']
+        
+        while current != current.parent:
+            if any((current / marker).exists() for marker in markers):
+                return current
+            current = current.parent
+        
+        # Fallback to the directory containing this file
+        return Path(__file__).parent
+
     def _resolve_path(self, path: str) -> str:
+        """
+        Resolve dictionary file paths dynamically.
+        
+        For relative paths, looks for the appropriate directory structure
+        starting from the project root.
+        """
         p = Path(path)
         if p.is_absolute():
             return str(p)
+        
+        # Handle legacy fuzzdb-specific path format for backwards compatibility
         if path.startswith("fuzzdb/") and self.fuzzdb_path:
             return str(Path(self.fuzzdb_path) / path[7:])
         
-        current = Path(__file__).parent
-        while current != current.parent:
-            fuzzdb_path = current / "fuzzdb"
-            if fuzzdb_path.exists():
-                return str(fuzzdb_path / path)
-            current = current.parent
-        return str(Path(__file__).parent / path)
+        # For any other relative path, resolve it relative to project root
+        project_root = self._find_project_root()
+        
+        # Try to resolve the path directly from project root
+        candidate_path = project_root / path
+        if candidate_path.exists():
+            return str(candidate_path)
+        
+        # If the direct path doesn't exist, try to find it in any subdirectory
+        # This handles cases where the path might be nested differently
+        path_parts = Path(path).parts
+        if len(path_parts) >= 2:
+            # Look for the top-level directory (e.g., "SecLists", "fuzzdb", "custom-dicts")
+            top_dir = path_parts[0]
+            rest_path = Path(*path_parts[1:])
+            
+            top_dir_path = project_root / top_dir
+            if top_dir_path.exists() and top_dir_path.is_dir():
+                full_path = top_dir_path / rest_path
+                if full_path.exists():
+                    return str(full_path)
+        
+        # Fallback: return the path as-is relative to project root
+        # This allows for new directory structures to work even if files don't exist yet
+        return str(project_root / path)
     
     @staticmethod
     def expand_macro(entry: str, visited: Optional[set] = None) -> List[str]:
@@ -156,8 +200,8 @@ class DictionaryManager:
         
         for adv in mapping_list:
             match = adv.get("match", {})
-            if self._match_criteria(match, field_name, field_type, properties) and "weight" in adv:
-                matches.append(float(adv["weight"]))
+            if self._match_criteria(match, field_name, field_type, properties) and "fuzz_weight" in adv:
+                matches.append(float(adv["fuzz_weight"]))
                 modes.append(adv.get("mode"))
         
         if not matches:
@@ -251,16 +295,17 @@ class DictionaryManager:
                 return [self._resolve_path(path) for path in packet_config.dictionary]
         return []
     
-    def get_dictionary_entries(self, dictionary_paths: List[str]) -> List[bytes]:
+    def get_dictionary_entries(self, dictionary_paths: List[str], max_length: Optional[int] = None) -> List[bytes]:
         """
         Load and combine dictionary entries from multiple files.
         
         Reads all specified dictionary files, combines their entries, and 
         removes duplicates using enhanced case-sensitive deduplication while preserving order.
-        Skips comments and empty lines.
+        Skips comments and empty lines. Optionally filters entries by maximum length.
         
         Args:
             dictionary_paths: List of dictionary file paths to load
+            max_length: Optional maximum length for entries (from field metadata)
             
         Returns:
             List of deduplicated dictionary entries as bytes
@@ -275,14 +320,14 @@ class DictionaryManager:
                 combined_entries.extend(self._load_dictionary_file(resolved_path))
         
         original_count = len(combined_entries)
-        combined_entries = self._enhanced_deduplicate_bytes(combined_entries)
+        combined_entries, entries_filtered = self._enhanced_deduplicate_bytes(combined_entries, max_length)
         deduplicated_count = len(combined_entries)
         if original_count != deduplicated_count:
             logger.debug(f"Enhanced deduplication: {original_count} -> {deduplicated_count} entries "
                        f"({original_count - deduplicated_count} duplicates removed)")
         return combined_entries
     
-    def _enhanced_deduplicate_bytes(self, entries: List[bytes]) -> List[bytes]:
+    def _enhanced_deduplicate_bytes(self, entries: List[bytes], max_length: Optional[int] = None) -> tuple[List[bytes], int]:
         """
         Enhanced deduplication of byte entries with case-sensitive comparison.
         
@@ -291,18 +336,21 @@ class DictionaryManager:
         - Whitespace normalization
         - Empty entry removal
         - Proper Unicode handling
+        - Optional length filtering based on field metadata
         
         Args:
             entries: List of byte entries to deduplicate
+            max_length: Optional maximum length for entries (from field metadata)
             
         Returns:
-            List of deduplicated entries as bytes
+            Tuple of (deduplicated_entries_as_bytes, entries_filtered_by_length)
         """
         if not entries:
-            return []
+            return [], 0
         
         seen_normalized = set()
         deduplicated = []
+        entries_filtered_by_length = 0
         
         for entry in entries:
             if not entry or not entry.strip():
@@ -317,6 +365,11 @@ class DictionaryManager:
             if not entry_str:
                 continue  # Skip entries that become empty after normalization
                 
+            # Apply length filtering if enabled and max_length is provided
+            if FILTER_BY_MAX_LENGTH and max_length is not None and len(entry_str) > max_length:
+                entries_filtered_by_length += 1
+                continue
+                
             # Use case-sensitive comparison (no .lower() transformation)
             normalized = entry_str
             
@@ -327,16 +380,20 @@ class DictionaryManager:
                 else:
                     deduplicated.append(entry_str.encode('utf-8'))
         
-        return deduplicated
+        if entries_filtered_by_length > 0:
+            logger.debug(f"Filtered {entries_filtered_by_length} dictionary entries exceeding max_length {max_length}")
+        
+        return deduplicated, entries_filtered_by_length
     
-    def get_dictionary_entries_with_stats(self, dictionary_paths: List[str]) -> Tuple[List[bytes], Dict[str, int]]:
+    def get_dictionary_entries_with_stats(self, dictionary_paths: List[str], max_length: Optional[int] = None) -> Tuple[List[bytes], Dict[str, int]]:
         """
         Load dictionary entries and return both entries and deduplication statistics.
         
-        Uses enhanced case-sensitive deduplication.
+        Uses enhanced case-sensitive deduplication with optional length filtering.
         
         Args:
             dictionary_paths: List of dictionary file paths to load
+            max_length: Optional maximum length for entries (from field metadata)
             
         Returns:
             Tuple of (deduplicated_entries, stats_dict) where stats_dict contains:
@@ -360,13 +417,14 @@ class DictionaryManager:
                 combined_entries.extend(entries)
         
         original_count = len(combined_entries)
-        final_entries = self._enhanced_deduplicate_bytes(combined_entries)
+        final_entries, entries_filtered = self._enhanced_deduplicate_bytes(combined_entries, max_length)
         final_count = len(final_entries)
         
         stats = {
             'original_count': original_count,
             'final_count': final_count,
-            'duplicates_removed': original_count - final_count,
+            'duplicates_removed': original_count - final_count - entries_filtered,
+            'entries_filtered_by_length': entries_filtered,
             'files_processed': files_processed
         }
         

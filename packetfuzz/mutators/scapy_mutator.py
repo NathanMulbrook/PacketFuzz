@@ -75,6 +75,3 @@ class ScapyMutator(BaseMutator):
         except Exception as e:
             logger.debug(f"ScapyMutator: randval() failed for field '{field_name}': {e}")
             return None
-
-
-MutatorRegistry.register("scapy", ScapyMutator)

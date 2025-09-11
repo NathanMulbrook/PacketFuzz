@@ -36,7 +36,12 @@ logger = logging.getLogger(__name__)
 VERBOSITY_LEVEL = 1
 DEFAULT_MAX_OUTPUT_SIZE = 1024
 DEFAULT_MAX_MUTATIONS = 1000
-DEFAULT_FUZZ_WEIGHT = 0.7
+# Import default fuzz weight from default_mappings for consistency
+try:
+    from .default_mappings import DEFAULT_FUZZ_WEIGHT_SCALING as DEFAULT_FUZZ_WEIGHT
+except ImportError:
+    # Fallback in case of import issues
+    DEFAULT_FUZZ_WEIGHT = 0.7
 DEFAULT_MUTATOR_PREFERENCE = {"libfuzzer": 1.0}
 CRITICAL_FIELDS = {'ihl', 'len', 'chksum', 'dataofs', 'sport', 'dport', 'seq', 'ack', 'flags', 'window', 'src', 'dst'}
 
@@ -223,9 +228,15 @@ class MutatorManager:
                 self.data.validate_and_assign(field, pick)
                 # Not recording this as a mutation; it's a deterministic assignment
             else:
-                dictionary_entries = self.dictionary_manager.get_dictionary_entries(
-                    getattr(field, 'dictionary_paths', []) or []
+                dictionary_entries, dict_stats = self.dictionary_manager.get_dictionary_entries_with_stats(
+                    getattr(field, 'dictionary_paths', []) or [],
+                    max_length=getattr(field, 'max_length', None)
                 )
+                
+                # Update field metadata with dictionary statistics
+                field.dictionary_entries_loaded = dict_stats.get('final_count', 0)
+                field.dictionary_entries_excluded = dict_stats.get('entries_filtered_by_length', 0)
+                field.dictionary_files_processed = dict_stats.get('files_processed', 0)
                 mutator_selection = self._select_mutator_for_field(field)
                 
                 if mutator_selection and mutator_selection != "skip":
@@ -371,8 +382,12 @@ class MutatorManager:
             attempts += 1
 
             try:
+                # Get the actual layer from the packet for proper Scapy field mutation
+                packet_data = self.data.packet_data[field_info.packet_index]
+                layer = packet_data.packet.getlayer(field_info.layer_name, field_info.layer_index + 1)
+                
                 #Mutate the field
-                mutated_value = mutator.mutate_field(field_info, dictionaries=dictionary_entries, rng=self.fuzz_config.rng, layer=None)
+                mutated_value = mutator.mutate_field(field_info, dictionaries=dictionary_entries, rng=self.fuzz_config.rng, layer=layer)
                 mutator_type = self.get_mutator_type(mutator)
                 
                 # If mutator returns None, treat as failure - no mutation occurred
