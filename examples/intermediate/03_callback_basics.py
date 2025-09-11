@@ -1,20 +1,22 @@
 #!/usr/bin/env python3
 """
-Intermediate Example 4: Callback System Basics
+Callback System Examples
 
-Shows how to use callback functions for custom fuzzing logic,
-data transformation, and result processing.
+Demonstrates the callback system for custom fuzzing logic:
+- Pre-send callbacks for packet modification
+- Post-send callbacks for response analysis  
+- Error and crash handling callbacks
+- Monitor callbacks for ongoing analysis
+
+Run with: python -m packetfuzz examples/intermediate/03_callback_basics.py --disable-network
 """
 
-import sys
-import os
 import time
 import random
 from scapy.layers.inet import IP, TCP, UDP
 from scapy.layers.dns import DNS, DNSQR
 from scapy.packet import Raw
 from scapy.layers.http import HTTP, HTTPRequest
-  
 
 from packetfuzz.fuzzing_framework import FuzzingCampaign, FuzzField, CallbackResult
 from packetfuzz.sockets.raw_ip_socket import RawIPConfig
