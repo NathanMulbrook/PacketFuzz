@@ -14,6 +14,7 @@ Now uses embedded packet configuration with field_fuzz() and fuzz_config() metho
 # Standard library imports
 from __future__ import annotations
 import copy
+import difflib
 import hashlib
 import importlib.util
 import json
@@ -882,6 +883,7 @@ class FuzzingCampaign:
         Validate campaign configuration before execution.
         
         This method performs runtime validation that cannot be done during initialization:
+        - Checks for potential attribute typos
         - Resolves dynamic packets via get_packet() method
         - Validates network configuration requirements
         - Ensures socket/packet layer compatibility
@@ -889,8 +891,60 @@ class FuzzingCampaign:
         Returns:
             bool: True if campaign is valid and ready for execution
         """
-        #TODO remove this maybe?
         errors = []
+        
+        # Check for potential attribute typos
+        valid_attributes = {
+            # Core campaign attributes
+            'iterations', 'duration', 'rate_limit', 'response_timeout', 'verbose',
+            'output_network', 'output_pcap', 'append_pcap', 'stats_interval',
+            'capture_responses', 'global_dict_config_path', 'packet', 'name',
+            'reuse_socket',
+            # Callback configuration
+            'pre_launch_callback', 'pre_connect_callback', 'pre_send_callback',
+            'post_send_callback', 'crash_callback', 'no_success_callback',
+            'monitor_callback', 'custom_send_callback',
+            # Crash logging
+            'crash_packet_logging', 'crash_log_directory', 'crash_log_format',
+            # Advanced mapping
+            'advanced_field_mapping_overrides', 'user_mapping_file', 'mapping_merge_mode',
+            # Mutator configuration
+            'mutator_preference',
+            # Layer-weight scaling
+            'enable_layer_weight_scaling', 'layer_weight_scaling', 'fuzz_weight_scaling',
+            # Layer/field filtering
+            'excluded_layers', 'layers_to_fuzz', 'excluded_fields', 'fields_to_fuzz',
+            # Network interface offload
+            'disable_interface_offload', 'interface_offload_features', 'interface_offload_restore',
+            # Reporting
+            'report_formats', 'report_level',
+            # Socket configuration
+            'socket_config', 'pcap_serialize_failure_mode',
+            # Sequential fuzzing
+            'sequential_field_fuzzing',
+            # Runtime attributes created in __init__
+            'callback_manager', 'context', 'monitor_thread', '_original_offload_settings',
+            '_interface_configured'
+        }
+        
+        # Check each instance attribute for typos
+        for attr_name in vars(self).keys():
+            if attr_name.startswith('_'):  # Skip private attributes
+                continue
+                
+            if attr_name not in valid_attributes:
+                # Find closest match using difflib
+                closest_matches = difflib.get_close_matches(
+                    attr_name, valid_attributes, n=3, cutoff=0.6
+                )
+                
+                if closest_matches:
+                    suggestion = f"Did you mean: {', '.join(closest_matches)}?"
+                else:
+                    suggestion = "No close matches found."
+                
+                errors.append(f"Unknown attribute '{attr_name}'. {suggestion}")
+        
         packet = getattr(self, 'packet', None)
         
         # If no packet assigned, try to obtain one via get_packet()
@@ -935,12 +989,11 @@ class FuzzingCampaign:
         if errors:
             logger.error("Campaign validation failed:")
             for error in errors:
-                logger.error(f"  • {error}")
+                logger.error(f"  - {error}")
         else:
             logger.debug("Campaign validation passed")
         
         return not errors
-
 
 
     def get_pcap_path(self) -> Optional[Path]:

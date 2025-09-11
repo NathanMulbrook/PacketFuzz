@@ -20,33 +20,44 @@ from packetfuzz.fuzzing_framework import FuzzingCampaign
 from packetfuzz.sockets.raw_ip_socket import RawIPConfig
 
 class QuickStartCampaign(FuzzingCampaign):
-    """Simple HTTP fuzzing demonstrating field filtering."""
-    name = "Quick Start"
-    socket_config = RawIPConfig(target="127.0.0.1")
-    fields_to_fuzz = ["Path", "Host"]  # Only fuzz these specific fields
-    iterations = 25
-    output_network = False
-    verbose = True
-    packet = (
-        IP() /
-        TCP(dport=80) /
-        HTTP() / 
-        HTTPRequest(Path=b"/api/test", Method=b"GET", Host=b"example.com")
-    )
+    """Simple HTTP fuzzing demonstrating field filtering.
+    
+    Note: __slots__ = () is required for typo prevention inheritance.
+    """
+    __slots__ = ()  # Required to inherit typo prevention from FuzzingCampaign
+    
+    def __init__(self):
+        super().__init__()
+        self.name = "Quick Start"
+        self.socket_config = RawIPConfig(target="127.0.0.1")
+        self.fields_to_fuzz = ["Path", "Host"]  # Only fuzz these specific fields
+        self.iterations = 25
+        self.output_network = False
+        self.verbose = True
+        self.packet = (
+            IP() /
+            TCP(dport=80) /
+            HTTP() / 
+            HTTPRequest(Path=b"/api/test", Method=b"GET", Host=b"example.com")
+        )
 
 class MultiLayerFieldFiltering(FuzzingCampaign):
     """Multi-layer packet showing layer-based field filtering."""
-    name = "Multi-Layer Field Filtering"
-    socket_config = RawIPConfig(target="127.0.0.1")
-    iterations = 25
-    output_network = False
-    verbose = True
-    packet = (
-        IP(dst="127.0.0.1") /
-        TCP(dport=80) /
-        HTTP() / 
-        HTTPRequest(Path=b"/test", Method=b"POST", Host=b"localhost")
-    )
+    __slots__ = ()  # Required to inherit typo prevention from FuzzingCampaign
+    
+    def __init__(self):
+        super().__init__()
+        self.name = "Multi-Layer Field Filtering"
+        self.socket_config = RawIPConfig(target="127.0.0.1")
+        self.iterations = 25
+        self.output_network = False
+        self.verbose = True
+        self.packet = (
+            IP(dst="127.0.0.1") /
+            TCP(dport=80) /
+            HTTP() / 
+            HTTPRequest(Path=b"/test", Method=b"POST", Host=b"localhost")
+        )
 
 
 # Register campaign(s) for framework and CLI discovery

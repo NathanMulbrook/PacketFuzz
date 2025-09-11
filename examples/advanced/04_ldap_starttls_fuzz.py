@@ -30,14 +30,13 @@ class LDAP_ExtendedRequest(ASN1_Packet):
         implicit_tag=ASN1_Class_LDAP.ExtendedRequest,
     )
 
-# Add the missing ExtendedRequest to LDAP's protocolOp choices
+# Add the missing ExtendedRequest to LDAP's protocol choices
 # Tag 119 is the official LDAP ExtendedRequest tag per RFC 4511
 for field in LDAP.fields_desc:
     if field.name == "protocolOp":
         field.choices[119] = LDAP_ExtendedRequest
         break
 
-# --- Fuzzing Campaigns ---
 
 class LDAPStartTLSCampaign(FuzzingCampaign):
     """LDAP StartTLS TLS Application Data fuzzing."""
@@ -112,5 +111,4 @@ class LDAPStartTLSHandshakeFuzz(FuzzingCampaign):
         return CallbackResult.SUCCESS
 
 
-# Register campaigns for framework and CLI discovery
 CAMPAIGNS = [LDAPStartTLSCampaign, LDAPStartTLSHandshakeFuzz]

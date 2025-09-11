@@ -45,6 +45,52 @@ from .fuzzing_framework import FuzzingCampaign, logger
 from .mutators.libfuzzer_mutator import LibFuzzerMutator
 
 
+def load_campaigns_from_sources(config_sources: List[str]) -> List[Type[FuzzingCampaign]]:
+    """
+    Load campaign classes from multiple sources (files or directories).
+    
+    Args:
+        config_sources: List of file paths or directory paths
+        
+    Returns:
+        List of campaign classes to execute
+    """
+    all_campaigns = []
+    
+    for source in config_sources:
+        config_path = Path(source)
+        if not config_path.exists():
+            logger.warning(f"Config path does not exist: {config_path}")
+            continue
+            
+        try:
+            if config_path.is_file() and config_path.suffix == '.py':
+                # Single file
+                campaigns = load_campaigns_from_file(config_path)
+            elif config_path.is_dir():
+                # Directory - load all .py files
+                campaigns = []
+                for py_file in config_path.glob("*.py"):
+                    if py_file.name == "__init__.py":
+                        continue
+                    campaigns.extend(load_campaigns_from_file(py_file))
+            else:
+                logger.warning(f"Skipping invalid path: {config_path}")
+                continue
+                
+            if campaigns:
+                logger.info(f"Loaded {len(campaigns)} campaigns from {config_path}")
+                all_campaigns.extend(campaigns)
+            else:
+                logger.warning(f"No campaigns found in {config_path}")
+                
+        except Exception as e:
+            logger.error(f"Failed to load campaigns from {config_path}: {e}")
+            continue
+    
+    return all_campaigns
+
+
 def load_campaigns_from_file(config_file: Path) -> List[Type[FuzzingCampaign]]:
     """
     Load campaign classes from a configuration file.
@@ -99,14 +145,12 @@ def check_components() -> int:
         libfuzzer_available = mutator.is_libfuzzer_available()
         print(f"LibFuzzer extension: {'Available' if libfuzzer_available else 'Not available'}")
         
-        if libfuzzer_available:
-            pass
-        else:
-            exit()
+        if not libfuzzer_available:
+            return 1
+            
     except ImportError as e:
-        libfuzzer_available = False
         print(f"LibFuzzer extension: Not available - {e}")
-        exit()
+        return 1
     
     # Check dictionary manager
     try:
@@ -119,7 +163,10 @@ def check_components() -> int:
             
     except (OSError, IOError) as e:
         print(f"Dictionary manager: Error - {e}")
-        exit()
+        return 1
+    
+    print("All components available!")
+    return 0
 
 
 def apply_cli_overrides(campaign: Any, args: Any) -> None:
@@ -259,10 +306,11 @@ def main() -> int:
     )
     parser.add_argument(
         "config_file",
-        type=Path,
-        nargs='?',
-        default=env_defaults['config_file'],
-        help="Path to campaign configuration file (or set PACKETFUZZ_CONFIG_FILE)"
+        type=str,
+        nargs='*',
+        help="Path(s) to campaign configuration file(s) or directory(ies). "
+             "Supports single files, multiple files, directories, or packages. "
+             "Environment variable: PACKETFUZZ_CONFIG_FILE"
     )
     parser.add_argument(
         "-l",
@@ -400,8 +448,15 @@ def main() -> int:
     if args.check_components:
         return check_components()
     
+    # Handle config file arguments (environment variable or positional args)
+    config_sources = []
+    if args.config_file:
+        config_sources = args.config_file
+    elif env_defaults['config_file']:
+        config_sources = [env_defaults['config_file']]
+    
     # Require config file for other operations
-    if not args.config_file:
+    if not config_sources:
         parser.error("config_file is required unless using --check-components")
     
     # Require LibFuzzer if specified
@@ -411,16 +466,16 @@ def main() -> int:
             logger.error("LibFuzzer extension is required but not available. Compile the extension first.")
             return 1
     
-    # Load campaigns from config file
-    campaigns = load_campaigns_from_file(args.config_file)
+    # Load campaigns from all config sources
+    campaigns = load_campaigns_from_sources(config_sources)
     
     if not campaigns:
-        logger.error("No campaigns found in configuration file")
+        logger.error("No campaigns found in any configuration source")
         return 1
     
     # List campaigns if requested
     if args.list_campaigns:
-        print(f"Found {len(campaigns)} campaigns in {args.config_file}:")
+        print(f"Found {len(campaigns)} campaigns from {len(config_sources)} source(s):")
         for i, campaign_class in enumerate(campaigns, 1):
             instance = campaign_class()
             network_status = "Network: ON" if getattr(instance, 'output_network', False) else "Network: OFF"
