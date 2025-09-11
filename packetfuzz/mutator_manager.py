@@ -62,6 +62,9 @@ class MutatorManager:
         self.current_fuzzed_fields: List[str] = []
         self.fuzzed_fields_per_packet: List[Dict[str, Dict[str, Any]]] = []
         
+        # Track current iteration for sequential field fuzzing
+        self.current_iteration: int = 0
+        
         install_packet_extensions()
 
         #Initialize dictionary manager
@@ -219,6 +222,9 @@ class MutatorManager:
         # Iterate through all fields of this type
         failed_indices: List[int] = []
         for field in fields_to_fuzz:
+            # Set current iteration based on packet index for sequential field fuzzing
+            self.current_iteration = field.packet_index
+            
             # Within this block we are fuzzing a single field
             # Always use default values if they exist - these are user-specified, not dictionary-derived
             if field.default_values:
@@ -247,12 +253,19 @@ class MutatorManager:
         return failed_indices
 
     def _select_mutator_for_field(self, field: FieldMetadata) -> str:
+        # Check for iteration-specific weight override (for sequential field fuzzing)
+        effective_weight = field.fuzz_weight
+        if hasattr(self.data, 'iteration_field_weights') and hasattr(self, 'current_iteration'):
+            iteration_weights = self.data.iteration_field_weights.get(self.current_iteration, {})
+            if field.field_key in iteration_weights:
+                effective_weight = iteration_weights[field.field_key]
+        
         # Skip fields with zero weight immediately
-        if field.fuzz_weight == 0.0:
+        if effective_weight == 0.0:
             return "skip"
             
-        # Use fuzz_weight as probability to CONTINUE fuzzing (higher weight = more likely to fuzz)
-        if random.random() >= field.fuzz_weight:
+        # Use effective_weight as probability to CONTINUE fuzzing (higher weight = more likely to fuzz)
+        if random.random() >= effective_weight:
             return "skip"
 
         # Select mutator using weighted selection

@@ -710,6 +710,11 @@ class FuzzingCampaign:
     #  - 'fail' : raise RuntimeError (strict, default)
     #  - 'skip' : do not write PCAP for this iteration and do not send
     pcap_serialize_failure_mode: str = 'fail'
+    
+    # Sequential field fuzzing configuration
+    # When enabled, only one field is fuzzed per iteration (similar to boofuzz behavior)
+    # Respects fields_to_fuzz/excluded_fields and layer filtering
+    sequential_field_fuzzing: bool = False
 
 
     def __init__(self):
@@ -1134,7 +1139,9 @@ class FuzzingCampaign:
                 packets = self.packet,
                 iterations = self.iterations,
                 # Pass campaign-level field mapping overrides
-                advanced_field_mapping_overrides = getattr(self, 'advanced_field_mapping_overrides', None)
+                advanced_field_mapping_overrides = getattr(self, 'advanced_field_mapping_overrides', None),
+                # Pass sequential field fuzzing flag
+                sequential_field_fuzzing = getattr(self, 'sequential_field_fuzzing', False)
             )
             fuzzer = MutatorManager(config)
             self.context.mutator_data = fuzzer.fuzz_packet()

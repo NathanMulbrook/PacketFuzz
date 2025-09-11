@@ -70,6 +70,7 @@ class FuzzConfig:
     iterations: Optional[int] = None  # None = use max_mutations
     
     advanced_field_mapping_overrides: Optional[List[Dict[str, Any]]] = None
+    sequential_field_fuzzing: bool = False  # Enable boofuzz-style field-by-field fuzzing
 
 
 @dataclass
@@ -288,6 +289,57 @@ class MutatorManagerData:
                 f"fields={self.total_fields}, fuzzable={self.fuzzable_field_count}, "
                 f"iterations={self.iterations}, preprocessed={self.is_preprocessed})")
     
+    def apply_sequential_field_weights(self) -> None:
+        """
+        Apply sequential field fuzzing by manipulating weights per iteration.
+        
+        Creates per-iteration weight maps where only one field is active per iteration,
+        enabling boofuzz-style field-by-field fuzzing while reusing all existing
+        field discovery, filtering, and mutation logic.
+        
+        This function respects all existing field filtering:
+        - fields_to_fuzz/excluded_fields patterns
+        - layer inclusion/exclusion
+        - fuzz_weight settings
+        
+        After calling this function, the existing probabilistic field selection
+        becomes deterministic: exactly one field per iteration.
+        """
+        # Check if sequential field fuzzing is enabled
+        if not hasattr(self.fuzz_config, 'sequential_field_fuzzing') or not self.fuzz_config.sequential_field_fuzzing:
+            return  # Skip if not in sequential mode
+        
+        # Get all fuzzable fields from all packets (respecting existing include/exclude)
+        fuzzable_fields = []
+        for packet_data in self.packet_data:
+            for field_key in packet_data.fuzzable_fields:
+                field_metadata = packet_data.fields[field_key]
+                # Only include fields that would normally be fuzzed (weight > 0)
+                if field_metadata.fuzz_weight > 0.0:
+                    fuzzable_fields.append(field_key)
+        
+        if not fuzzable_fields:
+            logger.warning("No fuzzable fields found for sequential fuzzing - no fields will be modified")
+            return
+        
+        # Create per-iteration weight maps
+        self.iteration_field_weights: Dict[int, Dict[str, float]] = {}
+        
+        for iteration in range(self.iterations):
+            # Cycle through fields - one field per iteration  
+            target_field_index = iteration % len(fuzzable_fields)
+            target_field = fuzzable_fields[target_field_index]
+            
+            # Create weight map: 1.0 for target field, 0.0 for all others
+            weight_map = {}
+            for field_key in fuzzable_fields:
+                weight_map[field_key] = 1.0 if field_key == target_field else 0.0
+            
+            self.iteration_field_weights[iteration] = weight_map
+        
+        logger.info(f"Sequential field fuzzing enabled: {len(fuzzable_fields)} fields will be cycled through {self.iterations} iterations")
+        logger.debug(f"Field sequence: {', '.join(fuzzable_fields)}")
+    
 # ===========================
 # PROCESSING & COMPUTATION
 # ===========================
@@ -348,6 +400,9 @@ class MutatorManagerData:
                    f"{self.fuzzable_field_count} fuzzable, {self.excluded_field_count} excluded, "
                    f"{self.layer_collision_count} packets with collisions, "
                    f"processed in {processing_time:.2f}s")
+        
+        # Apply sequential field fuzzing weights if enabled
+        self.apply_sequential_field_weights()
     
     def _create_packet_copies(self) -> None:
         """
