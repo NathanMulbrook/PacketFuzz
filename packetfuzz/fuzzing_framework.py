@@ -767,21 +767,34 @@ class FuzzingCampaign:
             ])
 
         # Handle layers_to_fuzz by setting weight to 0.0 for all layers except those specified
-        if self.layers_to_fuzz:
-            # Get layers from packet or fallback to all known layers
-            layer_names = get_layer_names_from_packets(self.packet) if self.packet else []
-            all_layer_names = set(layer_names) if layer_names else {
-                field_key.split('.')[0] for field_key in FIELD_NAME_WEIGHTS.keys() if '.' in field_key
-            }
+        # Only apply whitelist logic if layers_to_fuzz is explicitly provided (not None)
+        if self.layers_to_fuzz is not None:
+            whitelisted_layers = set(self.layers_to_fuzz)
             
-            # Exclude layers not in layers_to_fuzz
-            layers_to_exclude = all_layer_names - set(self.layers_to_fuzz)
-            if layers_to_exclude:
+            # Special case: empty layers_to_fuzz means exclude everything
+            if not whitelisted_layers:
                 if not self.advanced_field_mapping_overrides:
                     self.advanced_field_mapping_overrides = []
-                self.advanced_field_mapping_overrides.extend([
-                    {"layer": lname, "fuzz_weight": 0.0} for lname in layers_to_exclude
-                ])
+                # Add universal layer exclusion
+                self.advanced_field_mapping_overrides.append({
+                    'fuzz_weight': 0.0,
+                    'description': 'Universal layer exclusion: empty layers_to_fuzz list'
+                })
+            else:
+                # Get layers from packet or fallback to all known layers
+                layer_names = get_layer_names_from_packets(self.packet) if self.packet else []
+                all_layer_names = set(layer_names) if layer_names else {
+                    field_key.split('.')[0] for field_key in FIELD_NAME_WEIGHTS.keys() if '.' in field_key
+                }
+                
+                # Exclude layers not in layers_to_fuzz
+                layers_to_exclude = all_layer_names - whitelisted_layers
+                if layers_to_exclude:
+                    if not self.advanced_field_mapping_overrides:
+                        self.advanced_field_mapping_overrides = []
+                    self.advanced_field_mapping_overrides.extend([
+                        {"layer": lname, "fuzz_weight": 0.0} for lname in layers_to_exclude
+                    ])
 
         # Handle excluded_fields with pattern matching support
         if self.excluded_fields:
@@ -792,59 +805,71 @@ class FuzzingCampaign:
             )
 
         # Handle fields_to_fuzz (whitelist approach) - exclude all fields except those specified
-        if self.fields_to_fuzz:
+        # Only apply whitelist logic if fields_to_fuzz is explicitly provided (not None)
+        if self.fields_to_fuzz is not None:
             whitelisted_patterns = set(self.fields_to_fuzz)
             
-            # Extract layer names from whitelisted patterns (e.g., "TCP.dport" -> "TCP")
-            whitelisted_layers = {
-                pattern.split('.', 1)[0] for pattern in whitelisted_patterns 
-                if '.' in pattern and not pattern.endswith('.*') and pattern.split('.', 1)[0] != '*'
-            }
-            
-            # First, exclude all known patterns that don't match whitelist
-            all_known_patterns = set(FIELD_NAME_WEIGHTS.keys())
-            known_fields_to_exclude = [
-                pattern for pattern in all_known_patterns 
-                if not pattern_matches_any(pattern, whitelisted_patterns)
-                and not (pattern.endswith('.*') and pattern[:-2] in whitelisted_layers)
-            ]
-            
-            # Second, create a catch-all exclusion for any unknown fields
-            # This ensures fields not in FIELD_NAME_WEIGHTS are also excluded unless whitelisted
-            if not self.advanced_field_mapping_overrides:
-                self.advanced_field_mapping_overrides = []
+            # Special case: empty fields_to_fuzz means exclude everything
+            if not whitelisted_patterns:
+                if not self.advanced_field_mapping_overrides:
+                    self.advanced_field_mapping_overrides = []
+                # Add universal field exclusion
+                self.advanced_field_mapping_overrides.append({
+                    'fuzz_weight': 0.0,
+                    'description': 'Universal field exclusion: empty fields_to_fuzz list'
+                })
+            # Only process the whitelist logic if we have actual patterns to whitelist
+            elif whitelisted_patterns:
+                # Extract layer names from whitelisted patterns (e.g., "TCP.dport" -> "TCP")
+                whitelisted_layers = {
+                    pattern.split('.', 1)[0] for pattern in whitelisted_patterns 
+                    if '.' in pattern and not pattern.endswith('.*') and pattern.split('.', 1)[0] != '*'
+                }
                 
-            # Add known field exclusions
-            if known_fields_to_exclude:
-                self.advanced_field_mapping_overrides.extend(
-                    parse_field_patterns(known_fields_to_exclude, exclude=True)
-                )
-            
-            # Add catch-all exclusion with whitelist exceptions
-            # This excludes all fields by default, then allows only whitelisted ones
-            for pattern in whitelisted_patterns:
-                # Add explicit inclusion for whitelisted patterns 
-                if '.' in pattern:
-                    layer, field = pattern.split('.', 1)
-                    self.advanced_field_mapping_overrides.append({
-                        'layer': layer,
-                        'field': field,
-                        'fuzz_weight': 1.0,
-                        'description': f'Whitelist inclusion: {pattern}'
-                    })
-                else:
-                    # Pattern like "Path" or "Host" - matches any layer
-                    self.advanced_field_mapping_overrides.append({
-                        'field': pattern,
-                        'fuzz_weight': 1.0,
-                        'description': f'Whitelist inclusion: {pattern} (any layer)'
-                    })
-            
-            # Add universal exclusion for everything else (lowest priority)
-            self.advanced_field_mapping_overrides.append({
-                'fuzz_weight': 0.0,
-                'description': 'Default exclusion: fields_to_fuzz whitelist mode'
-            })
+                # First, exclude all known patterns that don't match whitelist
+                all_known_patterns = set(FIELD_NAME_WEIGHTS.keys())
+                known_fields_to_exclude = [
+                    pattern for pattern in all_known_patterns 
+                    if not pattern_matches_any(pattern, whitelisted_patterns)
+                    and not (pattern.endswith('.*') and pattern[:-2] in whitelisted_layers)
+                ]
+                
+                # Second, create a catch-all exclusion for any unknown fields
+                # This ensures fields not in FIELD_NAME_WEIGHTS are also excluded unless whitelisted
+                if not self.advanced_field_mapping_overrides:
+                    self.advanced_field_mapping_overrides = []
+                    
+                # Add known field exclusions
+                if known_fields_to_exclude:
+                    self.advanced_field_mapping_overrides.extend(
+                        parse_field_patterns(known_fields_to_exclude, exclude=True)
+                    )
+                
+                # Add catch-all exclusion with whitelist exceptions
+                # This excludes all fields by default, then allows only whitelisted ones
+                for pattern in whitelisted_patterns:
+                    # Add explicit inclusion for whitelisted patterns 
+                    if '.' in pattern:
+                        layer, field = pattern.split('.', 1)
+                        self.advanced_field_mapping_overrides.append({
+                            'layer': layer,
+                            'field': field,
+                            'fuzz_weight': 1.0,
+                            'description': f'Whitelist inclusion: {pattern}'
+                        })
+                    else:
+                        # Pattern like "Path" or "Host" - matches any layer
+                        self.advanced_field_mapping_overrides.append({
+                            'field': pattern,
+                            'fuzz_weight': 1.0,
+                            'description': f'Whitelist inclusion: {pattern} (any layer)'
+                        })
+                
+                # Add universal exclusion for everything else (lowest priority)
+                self.advanced_field_mapping_overrides.append({
+                    'fuzz_weight': 0.0,
+                    'description': 'Default exclusion: fields_to_fuzz whitelist mode'
+                })
 
 
     def validate_campaign(self) -> bool:
