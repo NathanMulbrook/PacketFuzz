@@ -29,6 +29,12 @@ def _load_mutators():
             importlib.import_module(f".{module_name}", package=__name__)
         except (ImportError, ModuleNotFoundError) as e:
             logging.getLogger(__name__).warning(f"Failed to load mutator {module_name}: {e}")
+    
+    # Also load boofuzz adapters
+    try:
+        importlib.import_module(".boofuzz_adapters", package=__name__)
+    except (ImportError, ModuleNotFoundError) as e:
+        logging.getLogger(__name__).warning(f"Failed to load boofuzz_adapters: {e}")
 
 _load_mutators()
 
