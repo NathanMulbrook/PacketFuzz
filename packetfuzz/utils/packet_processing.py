@@ -15,22 +15,15 @@ Features:
 - Pure functions for easy testing and reusability
 """
 
-# Standard library imports
 import logging
 from dataclasses import dataclass
 from typing import List, Optional, Union
 
-# Third-party imports
 from scapy.layers.inet import IP, TCP, UDP
 from scapy.layers.l2 import Ether
 from scapy.packet import Packet, Raw
 
 logger = logging.getLogger(__name__)
-
-
-# ============================================================================
-# Configuration Data Structures
-# ============================================================================
 
 @dataclass
 class PacketProcessingConfig:
@@ -40,10 +33,6 @@ class PacketProcessingConfig:
     exclude_layers: Optional[List[str]] = None  # e.g., ["Raw"] - exclude these layers
     repackage_template: Optional[Packet] = None # e.g., IP(dst="192.168.1.1") / UDP(dport=53)
 
-
-# ============================================================================
-# Pure Packet Processing Functions
-# ============================================================================
 
 def extract_layers(packet: Optional[Packet], 
                   extract_at_layer: Optional[str] = None,
@@ -66,12 +55,13 @@ def extract_layers(packet: Optional[Packet],
         
     # Step 1: Find extraction point
     if extract_at_layer:
+        from .packet_utils import get_payload
         layer = packet
         while layer and layer.name != extract_at_layer:
-            layer = layer.payload
+            layer = get_payload(layer)
         if not layer or layer.name != extract_at_layer:
             return None
-        extracted = layer.payload if layer.payload else None
+        extracted = get_payload(layer)
     else:
         extracted = packet
     
@@ -215,14 +205,10 @@ def convert_to_scapy(data: bytes, protocol_hint: Optional[str] = None) -> Packet
     
     # Try parsers in order
     for parser in parsers:
-        try:
-            pkt = parser(data)
-            # Prefer parsers that create multiple layers
-            if hasattr(pkt, 'layers') and len(pkt.layers()) > 1:
-                return pkt
-        except Exception as e:
-            logger.debug(f"Parser {parser.__name__} failed: {e}")
-            continue
+        pkt = parser(data)
+        # Prefer parsers that create multiple layers
+        if hasattr(pkt, 'layers') and len(pkt.layers()) > 1:
+            return pkt
     
     # Fallback to Raw
     return Raw(data)

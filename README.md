@@ -93,7 +93,7 @@ Instalation is not necessarily required, the application can be executed from th
    ```bash
    # Basic examples
    python examples/basic/01_quick_start.py
-   python examples/basic/02_campaign_types.py
+   python examples/basic/05_campaign_types.py
    
    # Run all examples
    python examples/run_all_examples.py

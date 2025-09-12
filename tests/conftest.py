@@ -18,6 +18,8 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from packetfuzz.fuzzing_framework import FuzzingCampaign
+from packetfuzz.sockets.raw_ip_socket import RawIPConfig
+from packetfuzz.sockets.managed_udp_socket import ManagedUDPConfig
 from scapy.all import IP, TCP, UDP, DNS, DNSQR, Ether, ARP, Raw
 
 
@@ -47,7 +49,7 @@ def cleanup_test_files():
         if filepath.exists():
             try:
                 filepath.unlink()
-            except Exception:
+            except (OSError, PermissionError):
                 pass  # Ignore cleanup errors
     
     # Clean up crash log directories and their contents
@@ -67,10 +69,10 @@ def cleanup_test_files():
                         elif crash_file.is_dir():
                             # Remove subdirectories recursively  
                             shutil.rmtree(crash_file)
-                    except Exception:
+                    except (OSError, PermissionError):
                         # Ignore permission errors
                         pass
-            except Exception:
+            except (OSError, PermissionError):
                 # Ignore permission errors on directory access
                 pass
     
@@ -87,7 +89,7 @@ def cleanup_test_files():
             if log_path.exists():
                 try:
                     log_path.unlink()
-                except Exception:
+                except (OSError, PermissionError):
                     # Ignore permission errors
                     pass
 
@@ -119,6 +121,8 @@ class BasicTestCampaign(FuzzingCampaign):
     
     def __init__(self):
         super().__init__()
+        # Add socket config to satisfy validation requirements
+        self.socket_config = RawIPConfig(target=self.target)
         self.packet = IP(dst="192.168.1.1") / TCP(dport=80)
 
 
@@ -164,7 +168,7 @@ class Layer2TestCampaign(FuzzingCampaign):
     """Layer 2 test campaign"""
     name = "Layer 2 Test Campaign"
     target = "192.168.1.0/24"
-    socket_type = "l2"
+    socket_type = "raw_ethernet"
     interface = "eth0"
     iterations = 3
     rate_limit = 10.0
@@ -226,6 +230,7 @@ class DictionaryTestCampaign(FuzzingCampaign):
 
 
 class DummyConftestCampaign(FuzzingCampaign):
+    """Test campaign for configuration validation."""
     name = "dummy_conftest"
     target = "127.0.0.1"
     output_network = False
@@ -377,3 +382,24 @@ TEST_CAMPAIGNS = [
     DictionaryTestCampaign,
     DummyConftestCampaign,
 ]
+
+
+import pytest
+
+def pytest_configure(config):
+    """Configure pytest with custom markers."""
+    config.addinivalue_line("markers", "slow: marks tests as slow (deselect with '-m \"not slow\"')")
+
+def pytest_addoption(parser):
+    """Add custom command line options."""
+    parser.addoption(
+        "--run-slow", action="store_true", default=False, help="Run slow tests"
+    )
+
+def pytest_collection_modifyitems(config, items):
+    """Skip slow tests unless --run-slow is specified."""
+    if not config.getoption("--run-slow"):
+        skip_slow = pytest.mark.skip(reason="Need --run-slow option to run")
+        for item in items:
+            if "slow" in item.keywords:
+                item.add_marker(skip_slow)

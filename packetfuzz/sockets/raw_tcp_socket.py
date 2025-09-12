@@ -1,0 +1,77 @@
+#!/usr/bin/env python3
+"""
+Raw TCP Socket Implementation
+
+Sends packets at Layer 4 (Transport/TCP layer) using raw sockets.
+Requires root privileges on most systems.
+"""
+from __future__ import annotations
+
+import logging
+import socket
+from typing import Optional, TYPE_CHECKING
+from dataclasses import dataclass
+
+from .socket_interface import FuzzSocket
+from .base_socket import BaseSocketConfig
+
+if TYPE_CHECKING:
+    from ..fuzzing_framework import CampaignContext
+
+
+@dataclass
+class RawTCPConfig(BaseSocketConfig):
+    """Optional config for raw TCP socket targeting (when needed)."""
+    target: str = '127.0.0.1'
+
+
+class RawTCPSocket(FuzzSocket):
+    """
+    Raw TCP socket implementation for Layer 4 packet sending.
+    
+    Requirements:
+    - Packet must have TCP header (and IP header)
+    - Root privileges typically required
+    - No connection state management
+    
+    Use case: TCP protocol testing, connection manipulation
+    """
+
+    def open(self) -> "RawTCPSocket":
+        """Create and configure raw TCP socket."""
+        try:
+            # Create raw TCP socket
+            s = socket.socket(socket.AF_INET, socket.IPPROTO_TCP)
+            
+            # Include IP headers in the packet
+            s.setsockopt(socket.IPPROTO_IP, socket.IP_HDRINCL, 1)
+            
+            self._sock = s
+            return self
+        except PermissionError:
+            raise PermissionError("Raw TCP sockets require root/administrator privileges")
+        except OSError as e:
+            raise OSError(f"Failed to create raw TCP socket: {e}")
+
+    def send_packet(self, packet_bytes: bytes, context: "CampaignContext") -> Optional[int]:
+        """Send raw TCP packet."""
+        if not self._sock:
+            raise RuntimeError("Socket not open")
+        return self._sock.sendto(packet_bytes, (self.socket_config.target, 0))
+
+    def prepare_for_pcap_logging(self, raw_bytes: bytes, original_packet=None) -> bytes:
+        """
+        Prepare packet for PCAP logging for raw TCP sockets.
+        
+        Raw TCP packets already contain complete TCP/IP headers, so we just need to 
+        add Ethernet framing for PCAP compatibility.
+        """
+        from scapy.layers.l2 import Ether
+        
+        # Add Ethernet frame around the raw TCP/IP packet
+        completed = Ether(dst="ff:ff:ff:ff:ff:ff", src="00:00:00:00:00:00") / raw_bytes
+        return bytes(completed)
+
+    def close(self) -> None:
+        """Close the raw TCP socket."""
+        super().close()

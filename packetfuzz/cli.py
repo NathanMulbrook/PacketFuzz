@@ -2,7 +2,8 @@
 """
 PacketFuzz - Main Entry Point
 
-This script provides a command-line interface for running fuzzing campaigns.
+This script provides a command-line interface for running fuzzing
+campaigns against network protocols and services.
 
 Environment Variable Support:
 The CLI supports environment variables for all major configuration options.
@@ -11,9 +12,8 @@ CLI arguments always take precedence over environment variables.
 
 Supported Environment Variables:
 - PACKETFUZZ_CONFIG_FILE: Path to campaign configuration file
-- PACKETFUZZ_VERBOSE: Verbosity level (0, 1, 2, etc.) for both console and file output
-- PACKETFUZZ_CONSOLE_VERBOSITY: Console verbosity level (overrides PACKETFUZZ_VERBOSE for console)
-- PACKETFUZZ_FILE_VERBOSITY: File verbosity level (overrides PACKETFUZZ_VERBOSE for file)
+- PACKETFUZZ_CONSOLE_VERBOSITY: Console verbosity level
+- PACKETFUZZ_FILE_VERBOSITY: File verbosity level
 - PACKETFUZZ_ENABLE_NETWORK: Set to "true" to enable network transmission
 - PACKETFUZZ_DISABLE_NETWORK: Set to "true" to disable network transmission
 - PACKETFUZZ_PCAP_FILE: Path to PCAP output file
@@ -28,31 +28,67 @@ Example usage with environment variables:
   export PACKETFUZZ_CONFIG_FILE="campaign.py"
   export PACKETFUZZ_DISABLE_NETWORK="true"
   export PACKETFUZZ_PCAP_FILE="output.pcap"
-  export PACKETFUZZ_VERBOSE="2"
+  export PACKETFUZZ_CONSOLE_VERBOSITY="2"
   packetfuzz
 """
 
-# ===========================
-# Standard Library Imports
-# ===========================
 import argparse
 import sys
 import importlib.util
-from pathlib import Path
-from typing import List, Type
+import logging
 import os
+from pathlib import Path
+from typing import Any, List, Type
 
-# ===========================
-# Third-Party Imports
-# ===========================
-# (None required for CLI)
-
-# ===========================
-# Local Imports
-# ===========================
+from .dictionary_manager import DictionaryManager
 from .fuzzing_framework import FuzzingCampaign, logger
 from .mutators.libfuzzer_mutator import LibFuzzerMutator
-from .dictionary_manager import DictionaryManager
+
+
+def load_campaigns_from_sources(config_sources: List[str]) -> List[Type[FuzzingCampaign]]:
+    """
+    Load campaign classes from multiple sources (files or directories).
+    
+    Args:
+        config_sources: List of file paths or directory paths
+        
+    Returns:
+        List of campaign classes to execute
+    """
+    all_campaigns = []
+    
+    for source in config_sources:
+        config_path = Path(source)
+        if not config_path.exists():
+            logger.warning(f"Config path does not exist: {config_path}")
+            continue
+            
+        try:
+            if config_path.is_file() and config_path.suffix == '.py':
+                # Single file
+                campaigns = load_campaigns_from_file(config_path)
+            elif config_path.is_dir():
+                # Directory - load all .py files
+                campaigns = []
+                for py_file in config_path.glob("*.py"):
+                    if py_file.name == "__init__.py":
+                        continue
+                    campaigns.extend(load_campaigns_from_file(py_file))
+            else:
+                logger.warning(f"Skipping invalid path: {config_path}")
+                continue
+                
+            if campaigns:
+                logger.info(f"Loaded {len(campaigns)} campaigns from {config_path}")
+                all_campaigns.extend(campaigns)
+            else:
+                logger.warning(f"No campaigns found in {config_path}")
+                
+        except Exception as e:
+            logger.error(f"Failed to load campaigns from {config_path}: {e}")
+            continue
+    
+    return all_campaigns
 
 
 def load_campaigns_from_file(config_file: Path) -> List[Type[FuzzingCampaign]]:
@@ -87,7 +123,7 @@ def load_campaigns_from_file(config_file: Path) -> List[Type[FuzzingCampaign]]:
         return campaigns
 
 
-def check_components():
+def check_components() -> int:
     """
     Check if all required components are available.
     
@@ -100,56 +136,38 @@ def check_components():
     - FuzzDB dictionary database
     - Native dictionary support integration
     """
-    from .mutators.libfuzzer_mutator import LibFuzzerMutator
-    from .dictionary_manager import DictionaryManager
-    import os
     
     print("Checking component availability...")
     
-    # Check LibFuzzer extension
     try:
         mutator = LibFuzzerMutator()
         libfuzzer_available = mutator.is_libfuzzer_available()
         print(f"LibFuzzer extension: {'Available' if libfuzzer_available else 'Not available'}")
         
-        if libfuzzer_available:
-            try:
-                # Check if native dictionary support works
-                mutator.load_dictionaries_for_native_support(['test'])
-                print("LibFuzzer native dictionary support: Available")
-            except Exception as e:
-                print(f"LibFuzzer native dictionary support: Error - {e}")
-    except Exception as e:
-        libfuzzer_available = False
-        print(f"LibFuzzer extension: Not available - {e}")
-    
-    # Check dictionary manager
-    try:
-        dict_manager = DictionaryManager()
-        print("Dictionary manager: Available")
-        
-        # Check fuzzdb directory
-        fuzzdb_path = os.path.join(os.path.dirname(__file__), 'fuzzdb')
-        if os.path.exists(fuzzdb_path):
-            print("FuzzDB dictionaries: Available")
-        else:
-            print("FuzzDB dictionaries: Not found")
+        if not libfuzzer_available:
+            return 1
             
-    except Exception as e:
-        print(f"Dictionary manager: Error - {e}")
-    
-    # Overall status
-    if libfuzzer_available:
-        print("\nAll core components available - optimal fuzzing performance")
-        return 0
-    else:
-        print("\nLibFuzzer extension not available - compile extension for optimal performance")
+    except ImportError as e:
+        print(f"LibFuzzer extension: Not available - {e}")
         return 1
+    
+    try:
+        for name in ['fuzzdb', 'seclists']:
+            display = 'FuzzDB' if name == 'fuzzdb' else 'SecLists'
+            path = os.path.join(os.path.dirname(__file__), name)
+            print(f"{display} dictionaries: {'Available' if os.path.exists(path) else 'Not found'}")
+    except (OSError, IOError) as e:
+        print(f"Dictionary manager: Error - {e}")
+        return 1
+    
+    print("All components available!")
+    return 0
 
 
-def apply_cli_overrides(campaign, args):
+def apply_cli_overrides(campaign: Any, args: Any) -> None:
     """
-    Apply CLI flag and environment variable overrides to a campaign instance.
+    Apply command line arguments for network configuration, PCAP recording,
+    PCAP output, dictionary configuration, and logging configuration.
     
     Args:
         campaign: FuzzingCampaign instance to modify
@@ -157,85 +175,73 @@ def apply_cli_overrides(campaign, args):
         
     This function applies command-line flag overrides to campaign attributes,
     allowing CLI flags to override campaign class defaults for network output,
-    PCAP output, dictionary configuration, and verbose logging.
+    PCAP output, dictionary configuration, and logging configuration.
     """
-    # Network
     if args.enable_network:
         campaign.output_network = True
     elif args.disable_network:
         campaign.output_network = False
-    # PCAP
+
     if args.pcap_file:
         campaign.output_pcap = str(args.pcap_file)
-    elif args.enable_pcap:
-        if not campaign.output_pcap:
-            campaign.output_pcap = f"{campaign.__class__.__name__.lower()}_output.pcap"
+    elif args.enable_pcap and not campaign.output_pcap:
+        campaign.output_pcap = f"{campaign.__class__.__name__.lower()}_output.pcap"
     elif args.disable_pcap:
         campaign.output_pcap = None
-    # Auto-enable PCAP if network is disabled and no explicit PCAP setting,
-    # but only if user didn't request --disable-pcap
+
     if (not getattr(campaign, 'output_network', True) and 
         not getattr(campaign, 'output_pcap', None) and 
         not args.enable_pcap and not args.pcap_file and not args.disable_pcap):
         campaign.output_pcap = f"{campaign.__class__.__name__.lower()}_output.pcap"
-    # Dictionary
+
     if args.dictionary_config:
         campaign.dictionary_config_file = str(args.dictionary_config)
     
-    # Interface offload control
+    if args.max_iterations:
+        campaign.iterations = args.max_iterations
+    
     if args.disable_offload:
         campaign.disable_interface_offload = True
     elif args.enable_offload:
         campaign.disable_interface_offload = False
     
-    # Verbose
-    if hasattr(campaign, 'verbose'):
-        campaign.verbose = max(args.verbose, 
-                             getattr(args, 'console_verbosity', 0) or 0,
-                             getattr(args, 'file_verbosity', 0) or 0,
-                             getattr(args, 'log_verbosity', 0) or 0)
+    # Set campaign verbose attribute based on console verbosity for backwards compatibility
+    campaign.verbose = max(
+        getattr(args, 'console_verbosity', 0) or 0,
+        getattr(args, 'file_verbosity', 0) or 0,
+        getattr(args, 'log_verbosity', 0) or 0
+    )
     
-    # Report formats
     if args.report_formats:
-        # Handle 'all' option
         if 'all' in args.report_formats:
             campaign.report_formats = ['html', 'json', 'csv', 'sarif', 'markdown', 'yaml']
         else:
             campaign.report_formats = args.report_formats
+
+    if args.report_level:
+        campaign.report_level = args.report_level
+
+
+## Logging Configuration
+    if args.console_verbosity:
+        console_verbosity = args.console_verbosity
+    else:
+        console_verbosity = 0
+
+    if args.file_verbosity:
+        file_verbosity = args.file_verbosity
+    elif args.log_verbosity and args.log_verbosity > 0:
+        file_verbosity = args.log_verbosity
+    else:
+        file_verbosity = 0
     
-    # Configure separate console and file logging levels
-    import logging
+    # Convert verbosity to log levels (inline to avoid tiny helper)
+    console_level = logging.DEBUG if console_verbosity >= 2 else logging.INFO if console_verbosity >= 1 else logging.WARNING
+    file_level = logging.DEBUG if file_verbosity >= 2 else logging.INFO if file_verbosity >= 1 else logging.WARNING
     
-    # Helper to get int from environment variable
-    def env_int(var): 
-        val = os.getenv(var)
-        return int(val) if val else 0
-    
-    # Determine verbosity levels with precedence: explicit flags > counting flags > environment > default
-    console_verbosity = (getattr(args, 'console_verbosity', None) or 
-                        (args.verbose if args.verbose > 0 else 0) or
-                        env_int('PACKETFUZZ_CONSOLE_VERBOSITY') or
-                        env_int('PACKETFUZZ_VERBOSE'))
-    
-    file_verbosity = (getattr(args, 'file_verbosity', None) or 
-                     (getattr(args, 'log_verbosity', 0) if getattr(args, 'log_verbosity', 0) > 0 else 0) or
-                     (args.verbose if args.verbose > 0 else 0) or
-                     env_int('PACKETFUZZ_FILE_VERBOSITY') or
-                     env_int('PACKETFUZZ_LOG_VERBOSITY') or
-                     env_int('PACKETFUZZ_VERBOSE'))
-    
-    # Convert verbosity to log levels
-    def verbosity_to_level(verbosity):
-        return logging.DEBUG if verbosity >= 2 else logging.INFO if verbosity >= 1 else logging.WARNING
-    
-    console_level = verbosity_to_level(console_verbosity)
-    file_level = verbosity_to_level(file_verbosity)
-    
-    # Configure logging - set root to the most verbose level needed
     root_logger = logging.getLogger()
     root_logger.setLevel(min(console_level, file_level))
     
-    # Update or create console handler
     console_handler = next((h for h in root_logger.handlers 
                            if isinstance(h, logging.StreamHandler) and h.stream.name in ['<stdout>', '<stderr>']), None)
     if console_handler:
@@ -246,12 +252,10 @@ def apply_cli_overrides(campaign, args):
         console_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
         root_logger.addHandler(console_handler)
     
-    # Update existing file handler if present
     for handler in root_logger.handlers:
         if isinstance(handler, logging.FileHandler):
             handler.setLevel(file_level)
     
-    # Log configuration if verbosity is high enough
     if max(console_verbosity, file_verbosity) >= 2:
         logger.debug(f"Logging configured - Console: {logging.getLevelName(console_level)}, "
                     f"File: {logging.getLevelName(file_level)} "
@@ -265,12 +269,11 @@ def apply_cli_overrides(campaign, args):
 # Argument Parsing and CLI Setup
 # ===========================
 
-def main():
+def main() -> int:
     """Main entry point for the packetfuzz CLI."""
     # Environment variable defaults
     env_defaults = {
         'config_file': os.getenv('PACKETFUZZ_CONFIG_FILE'),
-        'verbose': int(os.getenv('PACKETFUZZ_VERBOSE', '0')),
         'log_verbosity': int(os.getenv('PACKETFUZZ_LOG_VERBOSITY', '0')),
         'console_verbosity': int(os.getenv('PACKETFUZZ_CONSOLE_VERBOSITY', '0')) if os.getenv('PACKETFUZZ_CONSOLE_VERBOSITY') else None,
         'file_verbosity': int(os.getenv('PACKETFUZZ_FILE_VERBOSITY', '0')) if os.getenv('PACKETFUZZ_FILE_VERBOSITY') else None,
@@ -292,26 +295,18 @@ def main():
     )
     parser.add_argument(
         "config_file",
-        type=Path,
-        nargs='?',
-        default=env_defaults['config_file'],
-        help="Path to campaign configuration file (or set PACKETFUZZ_CONFIG_FILE)"
-    )
-    parser.add_argument(
-        "-v",
-        "--verbose",
-        action="count",
-        default=env_defaults['verbose'],
-        help="Increase verbosity for both console and file: -v (INFO), -vv (DEBUG), -vvv+ (more detailed). "
-             "Can also set PACKETFUZZ_VERBOSE=1 or PACKETFUZZ_VERBOSE=2"
+        type=str,
+        nargs='*',
+        help="Path(s) to campaign configuration file(s) or directory(ies). "
+             "Supports single files, multiple files, directories, or packages. "
+             "Environment variable: PACKETFUZZ_CONFIG_FILE"
     )
     parser.add_argument(
         "-l",
         action="count",
-        default=0,
+        default=env_defaults['log_verbosity'],
         dest="log_verbosity",
-        help="Increase log file verbosity: -l (INFO), -ll (DEBUG), -lll+ (more detailed). "
-             "Overrides -v for file output."
+        help="Increase log file verbosity: -l (INFO), -ll (DEBUG), -lll+ (more detailed)."
     )
     parser.add_argument(
         "--console-verbosity",
@@ -319,7 +314,7 @@ def main():
         choices=range(0, 6),
         metavar="0-5",
         default=env_defaults['console_verbosity'],
-        help="Set console verbosity level (0=WARNING, 1=INFO, 2+=DEBUG). Overrides -v for console output. "
+        help="Set console verbosity level (0=WARNING, 1=INFO, 2+=DEBUG). "
              "Can also set PACKETFUZZ_CONSOLE_VERBOSITY"
     )
     parser.add_argument(
@@ -328,7 +323,7 @@ def main():
         choices=range(0, 6),
         metavar="0-5",
         default=env_defaults['file_verbosity'],
-        help="Set file verbosity level (0=WARNING, 1=INFO, 2+=DEBUG). Overrides -v for file output. "
+        help="Set file verbosity level (0=WARNING, 1=INFO, 2+=DEBUG). "
              "Can also set PACKETFUZZ_FILE_VERBOSITY"
     )
     parser.add_argument(
@@ -376,9 +371,16 @@ def main():
         "--report-formats",
         nargs='+',
         choices=['html', 'json', 'csv', 'sarif', 'markdown', 'yaml', 'all'],
-        default=env_defaults['report_formats'],
+    default=env_defaults['report_formats'],
         help="Report output formats (can specify multiple). Use 'all' for all formats. "
              "Can also set PACKETFUZZ_REPORT_FORMATS as comma-separated list (default: json)"
+    )
+    output_group.add_argument(
+        "--report-level",
+        choices=['executive', 'technical', 'forensics', 'advanced'],
+        default='advanced',
+        help="Report detail level: executive (high-level overview), technical (security analysis), "
+             "forensics (deep packet analysis), advanced (fuzzing performance metrics)"
     )
     
     parser.add_argument(
@@ -396,6 +398,12 @@ def main():
         type=Path,
         default=env_defaults['dictionary_config'],
         help="Path to user dictionary configuration file (overrides campaign settings)."
+    )
+    parser.add_argument(
+        "--max-iterations",
+        type=int,
+        default=None,
+        help="Override the number of fuzzing iterations for the campaign (overrides campaign configuration)."
     )
     
     # Network interface offload control flags (mutually exclusive group)
@@ -429,95 +437,92 @@ def main():
     if args.check_components:
         return check_components()
     
+    # Handle config file arguments (environment variable or positional args)
+    config_sources = []
+    if args.config_file:
+        config_sources = args.config_file
+    elif env_defaults['config_file']:
+        config_sources = [env_defaults['config_file']]
+    
     # Require config file for other operations
-    if not args.config_file:
+    if not config_sources:
         parser.error("config_file is required unless using --check-components")
     
     # Require LibFuzzer if specified
     if args.require_libfuzzer:
-        from .mutators.libfuzzer_mutator import LibFuzzerMutator
         mutator = LibFuzzerMutator()
         if not mutator.is_libfuzzer_available():
             logger.error("LibFuzzer extension is required but not available. Compile the extension first.")
             return 1
     
-    # Load campaigns from config file
-    try:
-        campaigns = load_campaigns_from_file(args.config_file)
-    except Exception as e:
-        logger.error(f"Failed to load campaigns from {args.config_file}: {e}")
-        return 1
+    # Load campaigns from all config sources
+    campaigns = load_campaigns_from_sources(config_sources)
     
     if not campaigns:
-        logger.error("No campaigns found in configuration file")
+        logger.error("No campaigns found in any configuration source")
         return 1
     
     # List campaigns if requested
     if args.list_campaigns:
-        print(f"Found {len(campaigns)} campaigns in {args.config_file}:")
+        print(f"Found {len(campaigns)} campaigns from {len(config_sources)} source(s):")
         for i, campaign_class in enumerate(campaigns, 1):
             instance = campaign_class()
             network_status = "Network: ON" if getattr(instance, 'output_network', False) else "Network: OFF"
             pcap_file = getattr(instance, 'output_pcap', None) or getattr(instance, 'pcap_filename', 'None')
             dict_config = getattr(instance, 'dictionary_config_file', None) or 'Default'
             
-            # Show CLI override info if applicable
             if args.dictionary_config:
                 dict_config = f"{args.dictionary_config} (CLI override)"
             
             print(f"  {i}. {campaign_class.__name__} ({network_status}, PCAP: {pcap_file}, Dict: {dict_config})")
         return 0
     
-    # Execute campaigns
     success_count = 0
+    total_campaigns = len(campaigns)
     for campaign_class in campaigns:
-        try:
-            campaign = campaign_class()
-            apply_cli_overrides(campaign, args)
-            # Level 0: Basic progress via print (always shown)
-            if args.verbose == 0:
-                print(f"Processing campaign: {campaign_class.__name__}")
-            else:
-                logger.info(f"Processing campaign: {campaign_class.__name__}")
-                
-            network_mode = "ENABLED" if getattr(campaign, 'output_network', True) else "DISABLED"
-            pcap_file = getattr(campaign, 'output_pcap', None) or getattr(campaign, 'pcap_filename', 'None')
-            dict_config = getattr(campaign, 'dictionary_config_file', None) or 'Default mappings'
+        campaign = campaign_class()
+        apply_cli_overrides(campaign, args)
+        # Determine verbosity for output (use campaign.verbose as proxy for overall verbosity)
+        current_verbosity = getattr(campaign, 'verbose', 0)
+        
+        # Level 0: Basic progress via print (always shown)
+        if current_verbosity == 0:
+            print(f"Processing campaign: {campaign_class.__name__}")
+        else:
+            logger.info(f"Processing campaign: {campaign_class.__name__}")
             
-            # Verbosity level 1: Show campaign configuration details
-            if args.verbose >= 1:
-                logger.info(f"  Network transmission: {network_mode}")
-                logger.info(f"  PCAP output: {pcap_file}")
-                logger.info(f"  Dictionary config: {dict_config}")
-            
-            # Verbosity level 2+: Show additional campaign details
-            if args.verbose >= 2:
-                logger.debug(f"  Campaign class: {campaign_class}")
-                logger.debug(f"  Packets to fuzz: {getattr(campaign, 'packets_to_fuzz', 'Unknown')}")
-                logger.debug(f"  Mutator: {getattr(campaign, 'mutator_manager', 'Default')}")
-                logger.debug(f"  Verbose mode: {getattr(campaign, 'verbose', False)}")
-            
-            # Always execute campaign, but if --disable-network is set, output_network will be False
-            if campaign.execute():
-                if args.verbose == 0:
-                    print(f"Campaign {campaign_class.__name__} completed successfully")
-                else:
-                    logger.info(f"Campaign {campaign_class.__name__} completed successfully")
-                success_count += 1
+        network_mode = "ENABLED" if getattr(campaign, 'output_network', True) else "DISABLED"
+        pcap_file = getattr(campaign, 'output_pcap', None) or getattr(campaign, 'pcap_filename', 'None')
+        dict_config = getattr(campaign, 'dictionary_config_file', None) or 'Default mappings'
+        
+        # Verbosity level 1: Show campaign configuration details
+        if current_verbosity >= 1:
+            logger.info(f"  Network transmission: {network_mode}")
+            logger.info(f"  PCAP output: {pcap_file}")
+            logger.info(f"  Dictionary config: {dict_config}")
+        
+        # Verbosity level 2+: Show additional campaign details
+        if current_verbosity >= 2:
+            logger.debug(f"  Campaign class: {campaign_class}")
+            logger.debug(f"  Packets to fuzz: {getattr(campaign, 'packets_to_fuzz', 'Unknown')}")
+            logger.debug(f"  Mutator: {getattr(campaign, 'mutator_manager', 'Default')}")
+            logger.debug(f"  Verbose mode: {getattr(campaign, 'verbose', False)}")
+        
+        # Always execute campaign, but if --disable-network is set, output_network will be False
+        if campaign.execute():
+            if current_verbosity == 0:
+                print(f"Campaign {campaign_class.__name__} completed successfully")
             else:
-                if args.verbose == 0:
-                    print(f"Campaign {campaign_class.__name__} failed")
-                else:
-                    logger.error(f"Campaign {campaign_class.__name__} failed")
-        except Exception as e:
-            if args.verbose == 0:
-                print(f"Campaign {campaign_class.__name__} error: {e}")
+                logger.info(f"Campaign {campaign_class.__name__} completed successfully")
+            success_count += 1
+        else:
+            if args.console_verbosity == 0:
+                print(f"Campaign {campaign_class.__name__} failed")
             else:
-                logger.error(f"Campaign {campaign_class.__name__} error: {e}")
+                logger.error(f"Campaign {campaign_class.__name__} failed")
     
     # Summary
-    total_campaigns = len(campaigns)
-    if args.verbose == 0:
+    if args.console_verbosity == 0:
         print(f"Execution complete: {success_count}/{total_campaigns} campaigns successful")
     else:
         logger.info(f"Execution complete: {success_count}/{total_campaigns} campaigns successful")

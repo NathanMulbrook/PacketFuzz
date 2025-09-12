@@ -1,3 +1,0 @@
-# Ignore crash artifacts generated during tests
-*
-!/.gitignore

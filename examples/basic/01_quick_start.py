@@ -1,38 +1,56 @@
 #!/usr/bin/env python3
 """
-Basic Example 1: Quick Start - Minimal Effort Fuzzing
+Basic Example 1: Quick Start 
 
-The simplest possible fuzzing example - just 5 lines of configuration.
-Perfect for getting started quickly.
+The simplest possible fuzzing example to get started:
+- Basic HTTP fuzzing campaign
+- Field filtering (fields_to_fuzz)
+- Safe network-disabled mode for testing
 
-To run this example with the PacketFuzz CLI:
-    python3 -m fuzzing_framework.examples.basic.01_quick_start
-or simply:
-    python3 examples/basic/01_quick_start.py
+To run this example:
+    python -m packetfuzz examples/basic/01_quick_start.py --disable-network
 """
 
-# Standard library imports
-import os
-import sys
-
-# Path setup for examples
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-
-# Third-party imports
 from scapy.layers.http import HTTP, HTTPRequest
 from scapy.layers.inet import IP, TCP
 
-# Local imports
-from packetfuzz.fuzzing_framework import FuzzField, FuzzingCampaign
+
+from packetfuzz.fuzzing_framework import FuzzingCampaign
+from packetfuzz.sockets.raw_ip_socket import RawIPConfig
 
 class QuickStartCampaign(FuzzingCampaign):
-    """Minimal fuzzing campaign - just the essentials."""
-    name = "Quick Start"
-    target = "192.168.1.100"
-    iterations = 1000
-    verbose = False  # Disable verbose mode to show the difference
-    packet = IP() / TCP() / HTTP() / HTTPRequest(Path=b"/", Method=b"GET")
-    report_formats = ['html', 'json', 'csv', 'sarif', 'markdown', 'yaml']  # All formats
+    """Simple HTTP fuzzing demonstrating field filtering.
+    """
+    
 
-# Register campaign(s) for framework and CLI discovery
-CAMPAIGNS = [QuickStartCampaign]
+    name = "Quick Start"
+    socket_config = RawIPConfig(target="127.0.0.1")
+    fields_to_fuzz = ["Path", "Host"]
+    mutator_preference = ["boofuzz"]
+    iterations = 25
+    output_network = False
+    verbose = True
+    packet = (
+        IP() /
+        TCP(dport=80) /
+        HTTP() / 
+        HTTPRequest(Path=b"/api/test", Method=b"GET", Host=b"example.com")
+    )
+
+class MultiLayerFieldFiltering(FuzzingCampaign):
+    """Multi-layer packet showing layer-based field filtering."""
+
+    name = "Multi-Layer Field Filtering"
+    socket_config = RawIPConfig(target="127.0.0.1")
+    iterations = 25
+    output_network = False
+    verbose = True
+    packet = (
+        IP(dst="127.0.0.1") /
+        TCP(dport=80) /
+        HTTP() / 
+        HTTPRequest(Path=b"/test", Method=b"POST", Host=b"localhost")
+    )
+
+CAMPAIGNS = [QuickStartCampaign, MultiLayerFieldFiltering]
+

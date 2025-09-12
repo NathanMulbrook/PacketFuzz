@@ -10,6 +10,18 @@ scapy>=2.5.0
 # Optional: for interface validation in LayerSelection
 netifaces>=0.11.0
 
+# === FTP Socket Support ===
+# pyftpdlib - FTP server implementation for FTP server socket
+pyftpdlib>=2.0.0
+
+# === TFTP Socket Support ===
+# tftpy - TFTP client and server implementation for TFTP sockets
+tftpy>=0.8.0
+
+# === Modbus Socket Support ===
+# pymodbus - Modbus protocol implementation for industrial protocol fuzzing
+pymodbus>=3.1.0
+
 # === Optional Dependencies ===
 # LibFuzzer integration (install separately if needed)
 # scapy-libfuzzer>=1.0.0

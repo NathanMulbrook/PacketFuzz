@@ -14,7 +14,6 @@ Features:
 - Real-time campaign monitoring
 - Scapy-enhanced protocol coverage analysis
 """
-# Standard library imports
 import base64
 import json
 import logging
@@ -28,23 +27,31 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Union
 
-# Third-party imports
 from scapy.packet import Packet
 from scapy.layers.inet import IP, TCP, UDP, ICMP
 from scapy.layers.l2 import Ether, ARP
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_MAX_FINDINGS = 100
+DEFAULT_TOP_MUTATORS_COUNT = 10
+DEFAULT_TOP_FIELDS_COUNT = 10
+MAX_PROTOCOL_ANALYSIS_DEPTH = 50
+VULNERABILITY_CONFIDENCE_THRESHOLD = 0.7
 
-# ============================================================================
-# Report Data Structures
-# ============================================================================
+METRICS_CALCULATION_TIMEOUT = 30  # seconds
+PROTOCOL_ANALYSIS_TIMEOUT = 60   # seconds
+
+MAX_REPORT_SIZE_MB = 50
+DEFAULT_HTML_TEMPLATE_TIMEOUT = 10  # seconds
+
 
 class ReportLevel(Enum):
     """Report detail levels for different audiences"""
     EXECUTIVE = "executive"      # High-level overview for management
     TECHNICAL = "technical"      # Mid-level analysis for security teams
     FORENSICS = "forensics"      # Deep packet analysis for researchers
+    ADVANCED = "advanced"        # Detailed fuzzing performance and mutator analysis
 
 
 @dataclass
@@ -60,14 +67,23 @@ class ReportMetrics:
     error_categories: Dict[str, int] = field(default_factory=dict)
     mutation_effectiveness: Dict[str, int] = field(default_factory=dict)
     
-    # Time-based metrics
     campaign_duration: Optional[timedelta] = None
     packets_per_second: float = 0.0
     
-    # Protocol analysis
     port_coverage: Set[int] = field(default_factory=set)
     payload_sizes: List[int] = field(default_factory=list)
     network_layers: Set[str] = field(default_factory=set)
+    
+    fuzzed_field_distribution: Dict[str, int] = field(default_factory=dict)
+    packets_with_fuzzed_fields: int = 0
+    packets_without_fuzzed_fields: int = 0
+    most_fuzzed_fields: List[str] = field(default_factory=list)
+    
+    detailed_field_metadata: Dict[str, Any] = field(default_factory=dict)
+    
+    mutator_usage: Dict[str, int] = field(default_factory=dict)
+    total_mutations_applied: int = 0
+    most_used_mutators: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -101,10 +117,6 @@ class ProtocolAnalysis:
     scapy_layer_coverage: Set[str]
 
 
-# ============================================================================
-# Core Interfaces for Modularity
-# ============================================================================
-
 class ReportGeneratorInterface:
     """Interface for report content generators"""
     
@@ -131,9 +143,167 @@ class ExporterInterface:
         raise NotImplementedError("Subclasses must implement get_file_extension()")
 
 
-# ============================================================================
-# Core Reporting Engine
-# ============================================================================
+class MetricsCalculator:
+    """Handles calculation of various metrics from campaign data"""
+    
+    @staticmethod
+    def calculate_basic_metrics(history_entries: List[Any]) -> Dict[str, Any]:
+        """Calculate basic packet and timing metrics"""
+        if not history_entries:
+            return {
+                'total_packets': 0,
+                'successful_packets': 0,
+                'failed_packets': 0,
+                'serialization_failures': 0,
+                'crash_count': 0
+            }
+        
+        return {
+            'total_packets': len(history_entries),
+            'successful_packets': len([h for h in history_entries if not h.serialization_failed]),
+            'failed_packets': len([h for h in history_entries if h.serialization_failed]),
+            'serialization_failures': len([h for h in history_entries if h.serialization_failed]),
+            'crash_count': len([h for h in history_entries if h.crashed])
+        }
+    
+    @staticmethod
+    def calculate_field_metrics(history_entries: List[Any]) -> Dict[str, Any]:
+        """
+        Calculate field-level fuzzing metrics.
+        
+        Note: Field mutation information is now tracked in MutatorManagerData
+        rather than duplicated in history entries. This function provides
+        placeholder values for backward compatibility.
+        """
+        return {
+            'fuzzed_field_distribution': {},
+            'packets_with_fuzzed_fields': 0,
+            'packets_without_fuzzed_fields': len(history_entries) if history_entries else 0,
+            'most_fuzzed_fields': []
+        }
+    
+    @staticmethod
+    def calculate_protocol_metrics(history_entries: List[Any]) -> Dict[str, Any]:
+        """Calculate protocol and network-level metrics"""
+        protocol_distribution = {}
+        port_coverage = set()
+        payload_sizes = []
+        
+        for entry in history_entries:
+            if hasattr(entry, 'protocol') and entry.protocol:
+                protocol_distribution[entry.protocol] = protocol_distribution.get(entry.protocol, 0) + 1
+            if hasattr(entry, 'target_port') and entry.target_port:
+                port_coverage.add(entry.target_port)
+            if entry.payload_size:
+                payload_sizes.append(entry.payload_size)
+        
+        unique_targets = len(set(getattr(h, 'target_host', 'unknown') for h in history_entries if hasattr(h, 'target_host') and h.target_host))
+        
+        return {
+            'protocol_distribution': protocol_distribution,
+            'port_coverage': port_coverage,
+            'payload_sizes': payload_sizes,
+            'unique_targets': unique_targets
+        }
+    
+    @staticmethod
+    def calculate_timing_metrics(history_entries: List[Any]) -> Dict[str, Any]:
+        """Calculate timing and performance metrics"""
+        timestamps = [h.timestamp_sent for h in history_entries if h.timestamp_sent]
+        
+        if len(timestamps) < 2:
+            return {
+                'campaign_duration': None,
+                'packets_per_second': 0.0
+            }
+        
+        duration = max(timestamps) - min(timestamps)
+        packets_per_second = len(history_entries) / duration.total_seconds() if duration.total_seconds() > 0 else 0.0
+        
+        return {
+            'campaign_duration': duration,
+            'packets_per_second': packets_per_second
+        }
+
+
+class MutatorAnalyzer:
+    """Handles analysis of mutator usage and effectiveness"""
+    
+    @staticmethod
+    def extract_mutator_metrics(mutator_data: Any) -> Dict[str, Any]:
+        """Extract comprehensive mutator metrics from MutatorManagerData"""
+        if not mutator_data:
+            logger.info("No mutator data available for enhanced metrics")
+            return {
+                'mutator_usage': {},
+                'total_mutations_applied': 0,
+                'most_used_mutators': [],
+                'detailed_field_metadata': {}
+            }
+        
+        try:
+            mutator_usage = {}
+            total_mutations = 0
+            detailed_field_metadata = {}
+            
+            if hasattr(mutator_data, 'get_mutator_usage_summary'):
+                mutator_usage = mutator_data.get_mutator_usage_summary()
+                total_mutations = sum(mutator_usage.values())
+            
+            sorted_mutators = sorted(mutator_usage.items(), key=lambda x: x[1], reverse=True)
+            most_used_mutators = [mutator for mutator, count in sorted_mutators[:DEFAULT_TOP_MUTATORS_COUNT]]
+            
+            if hasattr(mutator_data, 'get_all_fuzzable_fields'):
+                try:
+                    fuzzable_fields = mutator_data.get_all_fuzzable_fields()
+                    for field_metadata in fuzzable_fields:
+                        field_dict = {
+                            'field_key': field_metadata.field_key,
+                            'layer_name': field_metadata.layer_name,
+                            'field_name': field_metadata.field_name,
+                            'layer_index': field_metadata.layer_index,
+                            'packet_index': field_metadata.packet_index,
+                            'field_type': field_metadata.field_type,
+                            'field_kind': field_metadata.field_kind,
+                            'current_value': str(field_metadata.current_value) if field_metadata.current_value is not None else None,
+                            'fuzz_weight': field_metadata.fuzz_weight,
+                            'base_weight': getattr(field_metadata, 'base_weight', field_metadata.fuzz_weight),
+                            'final_scaling_factor': getattr(field_metadata, 'final_scaling_factor', 1.0),
+                            'dictionary_paths': field_metadata.dictionary_paths.copy() if field_metadata.dictionary_paths else [],
+                            'mutator_preferences': field_metadata.mutator_preferences.copy() if field_metadata.mutator_preferences else [],
+                            'min_value': field_metadata.min_value,
+                            'max_value': field_metadata.max_value,
+                            'max_length': field_metadata.max_length,
+                            'enum_values': field_metadata.enum_values.copy() if field_metadata.enum_values else None,
+                            'is_signed': field_metadata.is_signed,
+                            'is_fuzzable': field_metadata.is_fuzzable,
+                            'exclusion_reason': field_metadata.exclusion_reason,
+                            'config_source': field_metadata.config_source,
+                            'mutation_count': field_metadata.mutation_count,
+                            'successful_mutations': field_metadata.successful_mutations,
+                            'failed_mutations': field_metadata.failed_mutations,
+                            'last_mutated': field_metadata.last_mutated.isoformat() if field_metadata.last_mutated else None,
+                        }
+                        detailed_field_metadata[field_metadata.field_key] = field_dict
+                    logger.debug(f"Extracted detailed metadata for {len(detailed_field_metadata)} fields")
+                except Exception as e:
+                    logger.warning(f"Failed to extract field metadata: {e}")
+            
+            if hasattr(mutator_data, 'get_processing_summary'):
+                processing_summary = mutator_data.get_processing_summary()
+                logger.debug(f"Mutator processing summary: {processing_summary}")
+            
+            return {
+                'mutator_usage': mutator_usage,
+                'total_mutations_applied': total_mutations,
+                'most_used_mutators': most_used_mutators,
+                'detailed_field_metadata': detailed_field_metadata
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to extract mutator metrics - this indicates mutator manager issues: {e}")
+            raise
+
 
 class ReportingEngine:
     """Central reporting engine with pluggable generators and exporters"""
@@ -142,7 +312,8 @@ class ReportingEngine:
         self.generators = {
             ReportLevel.EXECUTIVE: ExecutiveSummaryGenerator(),
             ReportLevel.TECHNICAL: TechnicalAnalysisGenerator(),
-            ReportLevel.FORENSICS: ForensicsGenerator()
+            ReportLevel.FORENSICS: ForensicsGenerator(),
+            ReportLevel.ADVANCED: AdvancedPerformanceGenerator()
         }
         self.exporters = {
             'html': HTMLExporter(),
@@ -172,36 +343,36 @@ class ReportingEngine:
         """Get list of available report levels"""
         return [level.value for level in self.generators.keys()]
     
-    def generate_report(
-        self,
-        campaign: Any,
-        history_entries: List[Any],
-        level: ReportLevel = ReportLevel.TECHNICAL,
-        output_format: str = 'html',
-        output_path: Optional[str] = None
-    ) -> str:
-        """Generate comprehensive report for campaign"""
-        # Validate inputs
+    def generate_report(self, level: ReportLevel, output_format: str, output_path: Optional[str] = None, 
+                       campaign=None, campaign_context=None, history_entries=None) -> str:
+        """
+        Generate a report at the specified level and format.
+        output_format: Export format (html, json, csv, etc.)
+        output_path: Optional custom output path
+        campaign: Campaign object (optional)
+        campaign_context: Campaign context (optional)
+        history_entries: History entries (optional)
+        Returns:
+            Path to the generated report file
+        """
+        if history_entries is None:
+            history_entries = []
+        if campaign_context is None:
+            campaign_context = campaign
+            
         if level not in self.generators:
             raise ValueError(f"Unsupported report level: {level}. Available: {self.get_available_levels()}")
-        
         if output_format not in self.exporters:
             raise ValueError(f"Unsupported output format: {output_format}. Available: {self.get_available_formats()}")
+        metrics = self._calculate_metrics(history_entries, campaign_context)
         
-        # Calculate core metrics
-        metrics = self._calculate_metrics(history_entries)
-        
-        # Perform protocol analysis
         protocol_analysis = self.protocol_analyzer.analyze_campaign(history_entries)
         
-        # Generate findings
         findings = self._detect_vulnerabilities(history_entries, protocol_analysis)
         
-        # Generate report content
         generator = self.generators[level]
         content = generator.generate(campaign, metrics, protocol_analysis, findings)
         
-        # Export in requested format
         exporter = self.exporters[output_format]
         if not output_path:
             extension = exporter.get_file_extension()
@@ -209,38 +380,62 @@ class ReportingEngine:
         
         return exporter.export(content, output_path)
     
-    def _calculate_metrics(self, history_entries: List[Any]) -> ReportMetrics:
-        """Calculate comprehensive metrics from history entries"""
+    def _calculate_metrics(self, history_entries: List[Any], campaign_context: Any) -> ReportMetrics:
+        """
+        Calculate comprehensive metrics from history entries and campaign context
+        
+        Args:
+            history_entries: List of FuzzHistoryEntry objects
+            campaign_context: CampaignContext containing mutator data and runtime info
+            
+        Returns:
+            ReportMetrics object with comprehensive campaign analytics
+        """
         metrics = ReportMetrics()
         
         if not history_entries:
             return metrics
         
-        metrics.total_packets = len(history_entries)
-        metrics.successful_packets = len([h for h in history_entries if not h.serialization_failed])
-        metrics.failed_packets = metrics.total_packets - metrics.successful_packets
-        metrics.serialization_failures = len([h for h in history_entries if h.serialization_failed])
-        metrics.crash_count = len([h for h in history_entries if h.crashed])
+        basic_metrics = MetricsCalculator.calculate_basic_metrics(history_entries)
+        field_metrics = MetricsCalculator.calculate_field_metrics(history_entries)
+        protocol_metrics = MetricsCalculator.calculate_protocol_metrics(history_entries)
+        timing_metrics = MetricsCalculator.calculate_timing_metrics(history_entries)
         
-        # Collect protocol distribution
-        for entry in history_entries:
-            if entry.protocol:
-                metrics.protocol_distribution[entry.protocol] = metrics.protocol_distribution.get(entry.protocol, 0) + 1
-            if entry.target_port:
-                metrics.port_coverage.add(entry.target_port)
-            if entry.payload_size:
-                metrics.payload_sizes.append(entry.payload_size)
+        mutator_data = getattr(campaign_context, 'mutator_data', None)
+        if not hasattr(self, '_cached_mutator_metrics'):
+            self._cached_mutator_metrics = MutatorAnalyzer.extract_mutator_metrics(mutator_data)
+        mutator_metrics = self._cached_mutator_metrics
         
-        # Calculate timing metrics
-        timestamps = [h.timestamp_sent for h in history_entries if h.timestamp_sent]
-        if len(timestamps) >= 2:
-            metrics.campaign_duration = max(timestamps) - min(timestamps)
-            if metrics.campaign_duration and metrics.campaign_duration.total_seconds() > 0:
-                metrics.packets_per_second = metrics.total_packets / metrics.campaign_duration.total_seconds()
-        
-        metrics.unique_targets = len(set(h.target_host for h in history_entries if h.target_host))
+        self._populate_metrics(metrics, basic_metrics, field_metrics, protocol_metrics, timing_metrics, mutator_metrics)
         
         return metrics
+    
+    def _populate_metrics(self, metrics: ReportMetrics, basic: Dict, field: Dict, protocol: Dict, timing: Dict, mutator: Dict) -> None:
+        """Populate ReportMetrics object from calculated metric dictionaries"""
+        metrics.total_packets = basic['total_packets']
+        metrics.successful_packets = basic['successful_packets']
+        metrics.failed_packets = basic['failed_packets']
+        metrics.serialization_failures = basic['serialization_failures']
+        metrics.crash_count = basic['crash_count']
+        
+        metrics.fuzzed_field_distribution = field['fuzzed_field_distribution']
+        metrics.packets_with_fuzzed_fields = field['packets_with_fuzzed_fields']
+        metrics.packets_without_fuzzed_fields = field['packets_without_fuzzed_fields']
+        metrics.most_fuzzed_fields = field['most_fuzzed_fields']
+        
+        metrics.protocol_distribution = protocol['protocol_distribution']
+        metrics.port_coverage = protocol['port_coverage']
+        metrics.payload_sizes = protocol['payload_sizes']
+        metrics.unique_targets = protocol['unique_targets']
+        
+        metrics.campaign_duration = timing['campaign_duration']
+        metrics.packets_per_second = timing['packets_per_second']
+        
+        metrics.mutator_usage = mutator['mutator_usage']
+        metrics.total_mutations_applied = mutator['total_mutations_applied']
+        metrics.most_used_mutators = mutator['most_used_mutators']
+        
+        metrics.detailed_field_metadata = mutator.get('detailed_field_metadata', {})
     
     def _detect_vulnerabilities(
         self, 
@@ -278,7 +473,7 @@ class ReportingEngine:
                     severity="high",  # Crashes are serious but we don't know exploitability
                     category="application_crash",
                     description=f"Fuzzing caused application crash - investigate for DoS or memory corruption",
-                    affected_packet=entry.packet,
+                    affected_packet=getattr(entry, 'packet', None),
                     error_message=str(entry.crash_info.exception) if entry.crash_info.exception else None
                 )
                 findings.append(finding)
@@ -308,7 +503,7 @@ class ReportingEngine:
                         severity="info",
                         category="response_anomaly",
                         description=f"Unusually large response ({entry.response_size} bytes vs avg {avg_size:.0f}) - may indicate verbose error disclosure",
-                        affected_packet=entry.packet
+                        affected_packet=getattr(entry, 'packet', None)
                     )
                     findings.append(finding)
         
@@ -321,15 +516,10 @@ class ReportingEngine:
         return f"artifacts/reports/{campaign_name}_{level.value}_{timestamp}.{extension}"
 
 
-# ============================================================================
-# Protocol Intelligence Analyzer
-# ============================================================================
-
 class ProtocolIntelligenceAnalyzer:
     """Generic packet analysis using Scapy's protocol knowledge"""
     
     def __init__(self):
-        # Remove protocol-specific handlers - make it generic
         pass
     
     def analyze_campaign(self, history_entries: List[Any]) -> Dict[str, ProtocolAnalysis]:
@@ -338,7 +528,7 @@ class ProtocolIntelligenceAnalyzer:
         
         # Group entries by protocol (or 'unknown' if not available)
         for entry in history_entries:
-            protocol = entry.protocol or 'unknown'
+            protocol = getattr(entry, 'protocol', None) or 'unknown'
             protocol_groups[protocol].append(entry)
         
         # Analyze each protocol group generically
@@ -350,6 +540,7 @@ class ProtocolIntelligenceAnalyzer:
     
     def _analyze_protocol_group(self, protocol: str, entries: List[Any]) -> ProtocolAnalysis:
         """Generic analysis of a group of entries - no protocol assumptions"""
+        # TODO: Consider adding configurable analysis depth and timeout controls for large datasets
         unique_ports = set()
         payload_variations = 0
         error_patterns = Counter()
@@ -357,7 +548,7 @@ class ProtocolIntelligenceAnalyzer:
         
         for entry in entries:
             # Collect port information if available
-            if entry.target_port:
+            if hasattr(entry, 'target_port') and entry.target_port:
                 unique_ports.add(entry.target_port)
             
             # Categorize errors generically
@@ -407,10 +598,6 @@ class ProtocolIntelligenceAnalyzer:
             return "other_error"
 
 
-# ============================================================================
-# Report Generators
-# ============================================================================
-
 class ExecutiveSummaryGenerator(ReportGeneratorInterface):
     """Generate executive-level summary reports"""
     
@@ -437,7 +624,11 @@ class ExecutiveSummaryGenerator(ReportGeneratorInterface):
                 "critical_vulnerabilities": len(critical_findings),
                 "high_vulnerabilities": len(high_findings),
                 "protocols_tested": len(protocol_analysis),
-                "campaign_duration": str(metrics.campaign_duration) if metrics.campaign_duration else "unknown"
+                "campaign_duration": str(metrics.campaign_duration) if metrics.campaign_duration else "unknown",
+                "packets_with_fuzzed_fields": metrics.packets_with_fuzzed_fields,
+                "packets_without_fuzzed_fields": metrics.packets_without_fuzzed_fields,
+                "unique_fields_fuzzed": len(metrics.fuzzed_field_distribution),
+                "most_fuzzed_fields": metrics.most_fuzzed_fields[:5]  # Top 5 for executive summary
             },
             
             "risk_assessment": {
@@ -449,7 +640,13 @@ class ExecutiveSummaryGenerator(ReportGeneratorInterface):
             "testing_coverage": {
                 "protocols": list(protocol_analysis.keys()),
                 "ports_tested": list(metrics.port_coverage),
-                "packets_per_second": metrics.packets_per_second
+                "packets_per_second": metrics.packets_per_second,
+                "fuzzed_field_distribution": dict(metrics.fuzzed_field_distribution),
+                "field_fuzzing_rate": f"{(metrics.packets_with_fuzzed_fields/metrics.total_packets*100):.1f}%" if metrics.total_packets > 0 else "0%",
+                "detailed_field_metadata": metrics.detailed_field_metadata,  # Already in dict format
+                "mutator_usage": dict(metrics.mutator_usage),
+                "total_mutations_applied": metrics.total_mutations_applied,
+                "most_used_mutators": metrics.most_used_mutators
             }
         }
     
@@ -601,6 +798,7 @@ class ForensicsGenerator(ReportGeneratorInterface):
     
     def _generate_reproduction_data(self, findings: List[VulnerabilityFinding]) -> Dict[str, str]:
         """Generate base64-encoded reproduction data"""
+        # TODO: Consider adding compression for large reproduction datasets and size limits
         reproduction_data = {}
         
         for finding in findings:
@@ -610,9 +808,436 @@ class ForensicsGenerator(ReportGeneratorInterface):
         return reproduction_data
 
 
-# ============================================================================
-# Export Formatters
-# ============================================================================
+class AdvancedPerformanceGenerator(ReportGeneratorInterface):
+    """Generate advanced fuzzing performance and mutator analysis reports"""
+    
+    def generate(
+        self, 
+        campaign: Any, 
+        metrics: ReportMetrics, 
+        protocol_analysis: Dict[str, ProtocolAnalysis], 
+        findings: List[VulnerabilityFinding]
+    ) -> Dict[str, Any]:
+        """Generate advanced performance analysis content"""
+        
+        # Extract mutator data from campaign context
+        mutator_data = None
+        if hasattr(campaign, 'context') and hasattr(campaign.context, 'mutator_data'):
+            mutator_data = campaign.context.mutator_data
+        
+        performance_data = {
+            "report_type": "advanced_performance",
+            "campaign_name": getattr(campaign, "name", campaign.__class__.__name__),
+            "target": getattr(campaign, "target", "unknown"),
+            "timestamp": datetime.now().isoformat(),
+            
+            # Core performance metrics
+            "performance_summary": self._generate_performance_summary(metrics, mutator_data),
+            
+            # Detailed mutator analysis
+            "mutator_analysis": self._generate_mutator_analysis(mutator_data),
+            
+            # Field performance metrics
+            "field_performance": self._generate_field_performance(mutator_data),
+            
+            # Weight scaling analysis
+            "weight_analysis": self._generate_weight_analysis(mutator_data),
+            
+            # Campaign configuration analysis
+            "campaign_config": self._generate_campaign_config(mutator_data),
+            
+            # Mutation effectiveness metrics
+            "mutation_effectiveness": self._generate_mutation_effectiveness(mutator_data, metrics),
+            
+            # Dictionary utilization
+            "dictionary_analysis": self._generate_dictionary_analysis(mutator_data),
+            
+            # Performance recommendations
+            "recommendations": self._generate_performance_recommendations(mutator_data, metrics)
+        }
+        
+        return performance_data
+    
+    def _generate_performance_summary(self, metrics: ReportMetrics, mutator_data: Any) -> Dict[str, Any]:
+        """Generate high-level performance summary"""
+        if not mutator_data:
+            return {"error": "No mutator data available"}
+        
+        try:
+            summary = {
+                "total_fields": mutator_data.total_fields,
+                "fuzzable_fields": mutator_data.fuzzable_field_count,
+                "fuzzable_percentage": round((mutator_data.fuzzable_field_count / mutator_data.total_fields * 100), 2) if mutator_data.total_fields > 0 else 0,
+                "packets_processed": mutator_data.total_packets,
+                "average_fields_per_packet": round(mutator_data.total_fields / mutator_data.total_packets, 2) if mutator_data.total_packets > 0 else 0,
+                "mutation_attempts": sum(getattr(field, 'mutation_count', 0) for field in mutator_data.get_all_fuzzable_fields()),
+                "successful_mutations": sum(getattr(field, 'successful_mutations', 0) for field in mutator_data.get_all_fuzzable_fields()),
+                "failed_mutations": sum(getattr(field, 'failed_mutations', 0) for field in mutator_data.get_all_fuzzable_fields())
+            }
+            
+            if summary["mutation_attempts"] > 0:
+                summary["mutation_success_rate"] = round((summary["successful_mutations"] / summary["mutation_attempts"] * 100), 2)
+            else:
+                summary["mutation_success_rate"] = 0
+                
+            return summary
+        except Exception as e:
+            return {"error": f"Failed to generate performance summary: {str(e)}"}
+    
+    def _generate_mutator_analysis(self, mutator_data: Any) -> Dict[str, Any]:
+        """Analyze mutator usage and effectiveness"""
+        if not mutator_data:
+            return {"error": "No mutator data available"}
+        
+        try:
+            # Get mutator usage summary
+            mutator_usage = mutator_data.get_mutator_usage_summary()
+            
+            analysis = {
+                "mutator_usage_distribution": mutator_usage,
+                "most_used_mutator": max(mutator_usage.items(), key=lambda x: x[1]) if mutator_usage else None,
+                "total_mutator_invocations": sum(mutator_usage.values()),
+                "unique_mutators_used": len(mutator_usage)
+            }
+            
+            # Analyze mutator preferences
+            field_mutator_prefs = {}
+            for field in mutator_data.get_all_fuzzable_fields():
+                if hasattr(field, 'mutator_preferences') and field.mutator_preferences:
+                    for mutator in field.mutator_preferences:
+                        if mutator not in field_mutator_prefs:
+                            field_mutator_prefs[mutator] = 0
+                        field_mutator_prefs[mutator] += 1
+            
+            analysis["mutator_preferences_distribution"] = field_mutator_prefs
+            
+            return analysis
+        except Exception as e:
+            return {"error": f"Failed to generate mutator analysis: {str(e)}"}
+    
+    def _generate_field_performance(self, mutator_data: Any) -> Dict[str, Any]:
+        """Analyze individual field performance metrics"""
+        if not mutator_data:
+            return {"error": "No mutator data available"}
+        
+        try:
+            field_stats = []
+            
+            for field in mutator_data.get_all_fuzzable_fields():
+                field_info = {
+                    "field_key": field.field_key,
+                    "field_name": field.field_name,
+                    "field_kind": field.field_kind,
+                    "layer_name": field.layer_name,
+                    "base_weight": getattr(field, 'base_weight', field.fuzz_weight),
+                    "final_weight": field.fuzz_weight,
+                    "scaling_factor": getattr(field, 'final_scaling_factor', 1.0),
+                    "mutation_count": getattr(field, 'mutation_count', 0),
+                    "successful_mutations": getattr(field, 'successful_mutations', 0),
+                    "failed_mutations": getattr(field, 'failed_mutations', 0),
+                    "dictionary_count": len(field.dictionary_paths),
+                    "default_values_count": len(field.default_values),
+                    "mutator_preferences": field.mutator_preferences,
+                    "config_source": field.config_source,
+                    "last_mutated": getattr(field, 'last_mutated', None)
+                }
+                
+                # Calculate success rate
+                if field_info["mutation_count"] > 0:
+                    field_info["success_rate"] = round((field_info["successful_mutations"] / field_info["mutation_count"] * 100), 2)
+                else:
+                    field_info["success_rate"] = 0
+                
+                field_stats.append(field_info)
+            
+            # Sort by mutation count (most active fields first)
+            field_stats.sort(key=lambda x: x["mutation_count"], reverse=True)
+            
+            return {
+                "total_fields_analyzed": len(field_stats),
+                "field_details": field_stats,
+                "top_performing_fields": field_stats[:10],  # Top 10 by mutation count
+                "field_config_sources": Counter([f["config_source"] for f in field_stats]),
+                "weight_scaling_impact": self._analyze_weight_scaling_impact(field_stats)
+            }
+        except Exception as e:
+            return {"error": f"Failed to generate field performance: {str(e)}"}
+    
+    def _generate_weight_analysis(self, mutator_data: Any) -> Dict[str, Any]:
+        """Analyze weight scaling and its impact"""
+        if not mutator_data:
+            return {"error": "No mutator data available"}
+        
+        try:
+            weight_data = []
+            
+            for field in mutator_data.get_all_fuzzable_fields():
+                weight_info = {
+                    "field_key": field.field_key,
+                    "base_weight": getattr(field, 'base_weight', field.fuzz_weight),
+                    "layer_scaled_weight": getattr(field, 'layer_scaled_weight', field.fuzz_weight),
+                    "campaign_scaled_weight": getattr(field, 'campaign_scaled_weight', field.fuzz_weight),
+                    "final_weight": field.fuzz_weight,
+                    "layer_scaling_factor": getattr(field, 'layer_scaling_factor', 1.0),
+                    "campaign_scaling_factor": getattr(field, 'campaign_scaling_factor', 1.0),
+                    "final_scaling_factor": getattr(field, 'final_scaling_factor', 1.0)
+                }
+                weight_data.append(weight_info)
+            
+            # Calculate scaling statistics
+            layer_scalings = [w["layer_scaling_factor"] for w in weight_data if w["layer_scaling_factor"] != 1.0]
+            campaign_scalings = [w["campaign_scaling_factor"] for w in weight_data if w["campaign_scaling_factor"] != 1.0]
+            
+            analysis = {
+                "total_fields_with_scaling": len([w for w in weight_data if w["final_scaling_factor"] != 1.0]),
+                "average_layer_scaling": round(sum(layer_scalings) / len(layer_scalings), 3) if layer_scalings else 1.0,
+                "average_campaign_scaling": round(sum(campaign_scalings) / len(campaign_scalings), 3) if campaign_scalings else 1.0,
+                "weight_distribution": {
+                    "min_final_weight": min([w["final_weight"] for w in weight_data]) if weight_data else 0,
+                    "max_final_weight": max([w["final_weight"] for w in weight_data]) if weight_data else 0,
+                    "avg_final_weight": round(sum([w["final_weight"] for w in weight_data]) / len(weight_data), 3) if weight_data else 0
+                },
+                "scaling_effectiveness": self._calculate_scaling_effectiveness(weight_data)
+            }
+            
+            return analysis
+        except Exception as e:
+            return {"error": f"Failed to generate weight analysis: {str(e)}"}
+    
+    def _generate_campaign_config(self, mutator_data: Any) -> Dict[str, Any]:
+        """Analyze campaign-level configuration"""
+        if not mutator_data:
+            return {"error": "No mutator data available"}
+        
+        try:
+            config = mutator_data.fuzz_config
+            
+            campaign_info = {
+                "fuzz_mode": config.mode.value if hasattr(config.mode, 'value') else str(config.mode),
+                "max_mutations": config.max_mutations,
+                "global_fuzz_weight": config.fuzz_weight,
+                "fuzz_weight_scale": config.fuzz_weight_scale,
+                "layer_weight_scaling_enabled": config.layer_weight_scaling is not None and config.layer_weight_scaling != 1.0,
+                "layer_weight_scaling_factor": config.layer_weight_scaling,
+                "mutator_preferences": config.mutator_preference,
+                "single_packet_mode": getattr(mutator_data, 'is_single_packet', None),
+                "total_iterations": config.iterations
+            }
+            
+            # Additional configuration analysis
+            if config.iterations:
+                campaign_info["estimated_total_mutations"] = config.iterations * len(mutator_data.get_all_fuzzable_fields())
+            else:
+                campaign_info["estimated_total_mutations"] = "Unknown (iterations not set)"
+            # Dictionaries are always enabled when mutators support them
+            campaign_info["dictionary_usage_enabled"] = True
+            
+            return campaign_info
+        except Exception as e:
+            return {"error": f"Failed to generate campaign config: {str(e)}"}
+    
+    def _generate_mutation_effectiveness(self, mutator_data: Any, metrics: ReportMetrics) -> Dict[str, Any]:
+        """Analyze mutation effectiveness and coverage"""
+        if not mutator_data:
+            return {"error": "No mutator data available"}
+        
+        try:
+            effectiveness = {
+                "field_coverage": {
+                    "total_available_fields": mutator_data.total_fields,
+                    "fuzzable_fields": mutator_data.fuzzable_field_count,
+                    "actually_fuzzed_fields": len([f for f in mutator_data.get_all_fuzzable_fields() if getattr(f, 'mutation_count', 0) > 0]),
+                    "coverage_percentage": 0
+                },
+                "mutation_distribution": {},
+                "effectiveness_score": 0
+            }
+            
+            # Calculate coverage percentage
+            if mutator_data.fuzzable_field_count > 0:
+                effectiveness["field_coverage"]["coverage_percentage"] = round(
+                    (effectiveness["field_coverage"]["actually_fuzzed_fields"] / mutator_data.fuzzable_field_count * 100), 2
+                )
+            
+            # Analyze mutation distribution by field type
+            field_type_mutations = {}
+            for field in mutator_data.get_all_fuzzable_fields():
+                field_kind = field.field_kind
+                mutation_count = getattr(field, 'mutation_count', 0)
+                
+                if field_kind not in field_type_mutations:
+                    field_type_mutations[field_kind] = {"count": 0, "mutations": 0}
+                
+                field_type_mutations[field_kind]["count"] += 1
+                field_type_mutations[field_kind]["mutations"] += mutation_count
+            
+            effectiveness["mutation_distribution"] = field_type_mutations
+            
+            # Calculate basic effectiveness score (0-100)
+            coverage_score = effectiveness["field_coverage"]["coverage_percentage"]
+            mutation_score = min(100, sum([info["mutations"] for info in field_type_mutations.values()]) / 10)  # Scale mutations
+            effectiveness["effectiveness_score"] = round((coverage_score + mutation_score) / 2, 2)
+            
+            return effectiveness
+        except Exception as e:
+            return {"error": f"Failed to generate mutation effectiveness: {str(e)}"}
+    
+    def _generate_dictionary_analysis(self, mutator_data: Any) -> Dict[str, Any]:
+        """Analyze dictionary usage and effectiveness"""
+        if not mutator_data:
+            return {"error": "No mutator data available"}
+        
+        try:
+            dictionary_stats = {
+                "fields_with_dictionaries": 0,
+                "total_dictionary_files": set(),
+                "dictionary_distribution": {},
+                "most_common_dictionaries": []
+            }
+            
+            for field in mutator_data.get_all_fuzzable_fields():
+                if field.dictionary_paths:
+                    dictionary_stats["fields_with_dictionaries"] += 1
+                    dictionary_stats["total_dictionary_files"].update(field.dictionary_paths)
+                    
+                    for dict_path in field.dictionary_paths:
+                        if dict_path not in dictionary_stats["dictionary_distribution"]:
+                            dictionary_stats["dictionary_distribution"][dict_path] = 0
+                        dictionary_stats["dictionary_distribution"][dict_path] += 1
+            
+            # Convert set to count
+            dictionary_stats["total_dictionary_files"] = len(dictionary_stats["total_dictionary_files"])
+            
+            # Get most common dictionaries
+            if dictionary_stats["dictionary_distribution"]:
+                dictionary_stats["most_common_dictionaries"] = sorted(
+                    dictionary_stats["dictionary_distribution"].items(),
+                    key=lambda x: x[1],
+                    reverse=True
+                )[:10]
+            
+            return dictionary_stats
+        except Exception as e:
+            return {"error": f"Failed to generate dictionary analysis: {str(e)}"}
+    
+    def _generate_performance_recommendations(self, mutator_data: Any, metrics: ReportMetrics) -> List[str]:
+        """Generate performance improvement recommendations"""
+        recommendations = []
+        
+        if not mutator_data:
+            recommendations.append("No mutator data available for analysis")
+            return recommendations
+        
+        try:
+            # Analyze field coverage
+            fuzzable_fields = mutator_data.get_all_fuzzable_fields()
+            actually_fuzzed = [f for f in fuzzable_fields if getattr(f, 'mutation_count', 0) > 0]
+            
+            if len(actually_fuzzed) < len(fuzzable_fields) * 0.5:
+                recommendations.append("Consider increasing iteration count or fuzz weights - only {:.1f}% of fuzzable fields were actually mutated".format(
+                    len(actually_fuzzed) / len(fuzzable_fields) * 100 if fuzzable_fields else 0
+                ))
+            
+            # Analyze mutation failures
+            total_mutations = sum([getattr(f, 'mutation_count', 0) for f in fuzzable_fields])
+            failed_mutations = sum([getattr(f, 'failed_mutations', 0) for f in fuzzable_fields])
+            
+            if total_mutations > 0 and failed_mutations / total_mutations > 0.2:
+                recommendations.append("High mutation failure rate ({:.1f}%) - check field constraints and mutator compatibility".format(
+                    failed_mutations / total_mutations * 100
+                ))
+            
+            # Analyze weight scaling impact
+            fields_with_scaling = [f for f in fuzzable_fields if getattr(f, 'final_scaling_factor', 1.0) != 1.0]
+            if len(fields_with_scaling) > 0:
+                avg_scaling = sum([getattr(f, 'final_scaling_factor', 1.0) for f in fields_with_scaling]) / len(fields_with_scaling)
+                if avg_scaling < 0.5:
+                    recommendations.append("Weight scaling is significantly reducing fuzz weights (avg factor: {:.2f}) - consider adjusting scaling parameters".format(avg_scaling))
+            
+            # Analyze dictionary usage
+            fields_with_dicts = [f for f in fuzzable_fields if f.dictionary_paths]
+            if len(fields_with_dicts) < len(fuzzable_fields) * 0.3:
+                recommendations.append("Low dictionary utilization ({:.1f}%) - consider adding more field-specific dictionaries".format(
+                    len(fields_with_dicts) / len(fuzzable_fields) * 100 if fuzzable_fields else 0
+                ))
+            
+            # Check mutator preferences diversity
+            mutator_usage = mutator_data.get_mutator_usage_summary()
+            if len(mutator_usage) == 1:
+                recommendations.append("Only one mutator type used - consider enabling multiple mutators for better coverage")
+            
+            if not recommendations:
+                recommendations.append("Campaign performance looks good - no specific recommendations at this time")
+                
+        except Exception as e:
+            recommendations.append(f"Failed to generate recommendations: {str(e)}")
+        
+        return recommendations
+    
+    def _analyze_weight_scaling_impact(self, field_stats: List[Dict]) -> Dict[str, Any]:
+        """Analyze the impact of weight scaling on field selection"""
+        impact_analysis = {
+            "fields_affected_by_scaling": 0,
+            "average_scaling_reduction": 0,
+            "highly_scaled_fields": []
+        }
+        
+        scaling_factors = []
+        for field in field_stats:
+            scaling_factor = field.get("scaling_factor", 1.0)
+            if scaling_factor != 1.0:
+                impact_analysis["fields_affected_by_scaling"] += 1
+                scaling_factors.append(scaling_factor)
+                
+                if scaling_factor < 0.3:  # Highly scaled down
+                    impact_analysis["highly_scaled_fields"].append({
+                        "field_key": field["field_key"],
+                        "scaling_factor": scaling_factor,
+                        "original_weight": field["base_weight"],
+                        "final_weight": field["final_weight"]
+                    })
+        
+        if scaling_factors:
+            impact_analysis["average_scaling_reduction"] = round(1 - (sum(scaling_factors) / len(scaling_factors)), 3)
+        
+        return impact_analysis
+    
+    def _calculate_scaling_effectiveness(self, weight_data: List[Dict]) -> Dict[str, Any]:
+        """Calculate how effective the weight scaling is"""
+        effectiveness = {
+            "scaling_distribution": {
+                "no_scaling": 0,
+                "light_scaling": 0,  # 0.7-1.0
+                "moderate_scaling": 0,  # 0.3-0.7
+                "heavy_scaling": 0   # 0.0-0.3
+            },
+            "scaling_impact_score": 0
+        }
+        
+        for weight in weight_data:
+            factor = weight["final_scaling_factor"]
+            if factor >= 1.0:
+                effectiveness["scaling_distribution"]["no_scaling"] += 1
+            elif factor >= 0.7:
+                effectiveness["scaling_distribution"]["light_scaling"] += 1
+            elif factor >= 0.3:
+                effectiveness["scaling_distribution"]["moderate_scaling"] += 1
+            else:
+                effectiveness["scaling_distribution"]["heavy_scaling"] += 1
+        
+        # Calculate impact score (0-100, higher means more diverse scaling)
+        total_fields = len(weight_data)
+        if total_fields > 0:
+            diversity_score = (
+                effectiveness["scaling_distribution"]["light_scaling"] * 0.3 +
+                effectiveness["scaling_distribution"]["moderate_scaling"] * 0.7 +
+                effectiveness["scaling_distribution"]["heavy_scaling"] * 1.0
+            ) / total_fields * 100
+            effectiveness["scaling_impact_score"] = round(diversity_score, 2)
+        
+        return effectiveness
+
+
 
 class HTMLExporter(ExporterInterface):
     """Export reports as HTML"""
@@ -623,7 +1248,9 @@ class HTMLExporter(ExporterInterface):
     
     def export(self, content: Dict[str, Any], output_path: str) -> str:
         """Export content as HTML report"""
-        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        output_dir = os.path.dirname(output_path)
+        if output_dir:
+            os.makedirs(output_dir, exist_ok=True)
         
         html_content = self._generate_html(content)
         
@@ -691,6 +1318,14 @@ class HTMLExporter(ExporterInterface):
             <p><strong>Duration:</strong> {summary.get('campaign_duration', 'unknown')}</p>
         </div>
         
+        <div class="metric">
+            <h3>Field Fuzzing Analysis</h3>
+            <p><strong>Packets with Fuzzed Fields:</strong> {summary.get('packets_with_fuzzed_fields', 0)}</p>
+            <p><strong>Packets without Fuzzed Fields:</strong> {summary.get('packets_without_fuzzed_fields', 0)}</p>
+            <p><strong>Unique Fields Fuzzed:</strong> {summary.get('unique_fields_fuzzed', 0)}</p>
+            <p><strong>Most Fuzzed Fields:</strong> {', '.join(summary.get('most_fuzzed_fields', []))}</p>
+        </div>
+        
         <div class="finding">
             <h3>Risk Assessment: {risk.get('overall_risk', 'UNKNOWN')}</h3>
             <p><strong>Critical Vulnerabilities:</strong> {summary.get('critical_vulnerabilities', 0)}</p>
@@ -744,12 +1379,16 @@ class JSONExporter(ExporterInterface):
     """Export reports as JSON"""
     
     def get_file_extension(self) -> str:
+        """Get appropriate file extension for the format type."""
         """Return the file extension for JSON files"""
         return "json"
     
     def export(self, content: Dict[str, Any], output_path: str) -> str:
         """Export content as JSON"""
-        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        # Create directory if path includes one
+        output_dir = os.path.dirname(output_path)
+        if output_dir:
+            os.makedirs(output_dir, exist_ok=True)
         
         # Convert sets to lists for JSON serialization
         serializable_content = self._make_serializable(content)
@@ -778,12 +1417,16 @@ class CSVExporter(ExporterInterface):
     """Export reports as CSV"""
     
     def get_file_extension(self) -> str:
+        """Get appropriate file extension for the format type."""
         """Return the file extension for CSV files"""
         return "csv"
     
     def export(self, content: Dict[str, Any], output_path: str) -> str:
         """Export content as CSV"""
-        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        # Create directory if path includes one
+        output_dir = os.path.dirname(output_path)
+        if output_dir:
+            os.makedirs(output_dir, exist_ok=True)
         
         csv_content = self._generate_csv(content)
         
@@ -815,12 +1458,16 @@ class SARIFExporter(ExporterInterface):
     """Export reports as SARIF format for CI/CD integration"""
     
     def get_file_extension(self) -> str:
+        """Get appropriate file extension for the format type."""
         """Return the file extension for SARIF files"""
         return "sarif"
     
     def export(self, content: Dict[str, Any], output_path: str) -> str:
         """Export content as SARIF"""
-        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        # Create directory if path includes one
+        output_dir = os.path.dirname(output_path)
+        if output_dir:
+            os.makedirs(output_dir, exist_ok=True)
         
         sarif_content = self._generate_sarif(content)
         
@@ -879,10 +1526,14 @@ class MarkdownExporter(ExporterInterface):
     """Export reports as Markdown for documentation"""
     
     def get_file_extension(self) -> str:
+        """Get appropriate file extension for the format type."""
         return "md"
     
     def export(self, content: Dict[str, Any], output_path: str) -> str:
-        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        # Create directory if path includes one
+        output_dir = os.path.dirname(output_path)
+        if output_dir:
+            os.makedirs(output_dir, exist_ok=True)
         
         markdown_content = self._generate_markdown(content)
         with open(output_path, 'w', encoding='utf-8') as f:
@@ -898,12 +1549,31 @@ class MarkdownExporter(ExporterInterface):
         md = f"# PacketFuzz {report_type.replace('_', ' ').title()}\n\n"
         md += f"**Generated:** {content.get('timestamp', 'unknown')}\n\n"
         
-        if "executive_summary" in content:
+        # Handle advanced performance reports
+        if report_type == "advanced_performance":
+            md += self._generate_advanced_performance_markdown(content)
+        
+        # Handle executive summary reports  
+        elif "executive_summary" in content:
             summary = content["executive_summary"]
             md += "## Executive Summary\n\n"
             md += f"- **Target:** {content.get('target', 'unknown')}\n"
             md += f"- **Packets Tested:** {summary.get('total_packets_tested', 0)}\n"
-            md += f"- **Success Rate:** {summary.get('success_rate', '0%')}\n\n"
+            md += f"- **Success Rate:** {summary.get('success_rate', '0%')}\n"
+            md += f"- **Packets with Fuzzed Fields:** {summary.get('packets_with_fuzzed_fields', 0)}\n"
+            md += f"- **Packets without Fuzzed Fields:** {summary.get('packets_without_fuzzed_fields', 0)}\n"
+            md += f"- **Unique Fields Fuzzed:** {summary.get('unique_fields_fuzzed', 0)}\n"
+            if summary.get('most_fuzzed_fields'):
+                md += f"- **Most Fuzzed Fields:** {', '.join(summary.get('most_fuzzed_fields', []))}\n"
+            md += "\n"
+            # Add fuzzed field distribution table if available
+            fuzzed_field_dist = content.get('testing_coverage', {}).get('fuzzed_field_distribution', {})
+            if fuzzed_field_dist:
+                md += "### Fuzzed Field Distribution\n\n"
+                md += "| Field Name | Times Fuzzed |\n|---|---|\n"
+                for field, count in sorted(fuzzed_field_dist.items(), key=lambda x: x[1], reverse=True):
+                    md += f"| {field} | {count} |\n"
+                md += "\n"
         
         if "performance_metrics" in content:
             metrics = content["performance_metrics"]
@@ -913,16 +1583,251 @@ class MarkdownExporter(ExporterInterface):
             md += f"- **Failed:** {metrics.get('failed_packets', 0)}\n\n"
         
         return md
+    
+    def _generate_advanced_performance_markdown(self, content: Dict[str, Any]) -> str:
+        """Generate markdown content for advanced performance reports"""
+        md = ""
+        
+        # Campaign info
+        md += f"**Campaign:** {content.get('campaign_name', 'Unknown')}\n"
+        md += f"**Target:** {content.get('target', 'Unknown')}\n\n"
+        
+        # Performance Summary
+        if "performance_summary" in content:
+            summary = content["performance_summary"]
+            md += "## Performance Summary\n\n"
+            md += f"- **Total Fields:** {summary.get('total_fields', 0)}\n"
+            md += f"- **Fuzzable Fields:** {summary.get('fuzzable_fields', 0)}\n"
+            md += f"- **Fuzzable Percentage:** {summary.get('fuzzable_percentage', 0)}%\n"
+            md += f"- **Packets Processed:** {summary.get('packets_processed', 0)}\n"
+            md += f"- **Average Fields per Packet:** {summary.get('average_fields_per_packet', 0)}\n"
+            md += f"- **Mutation Attempts:** {summary.get('mutation_attempts', 0)}\n"
+            md += f"- **Successful Mutations:** {summary.get('successful_mutations', 0)}\n"
+            md += f"- **Failed Mutations:** {summary.get('failed_mutations', 0)}\n"
+            md += f"- **Mutation Success Rate:** {summary.get('mutation_success_rate', 0)}%\n\n"
+        
+        # Mutator Analysis
+        if "mutator_analysis" in content:
+            analysis = content["mutator_analysis"]
+            md += "## Mutator Analysis\n\n"
+            if analysis.get("mutator_usage_distribution"):
+                md += "### Mutator Usage Distribution\n\n"
+                md += "| Mutator | Usage Count |\n|---|---|\n"
+                for mutator, count in sorted(analysis["mutator_usage_distribution"].items(), key=lambda x: x[1], reverse=True):
+                    md += f"| {mutator} | {count} |\n"
+                md += "\n"
+            
+            md += f"- **Total Mutator Invocations:** {analysis.get('total_mutator_invocations', 0)}\n"
+            md += f"- **Unique Mutators Used:** {analysis.get('unique_mutators_used', 0)}\n"
+            if analysis.get('most_used_mutator'):
+                mutator, count = analysis['most_used_mutator']
+                md += f"- **Most Used Mutator:** {mutator} ({count} times)\n"
+            
+            # Add mutator preferences distribution if available
+            if analysis.get('mutator_preferences_distribution'):
+                md += "\n### Mutator Preferences Distribution\n\n"
+                md += "| Preference | Usage Count |\n|---|---|\n"
+                for pref, count in sorted(analysis['mutator_preferences_distribution'].items(), key=lambda x: x[1], reverse=True):
+                    md += f"| {pref} | {count} |\n"
+            md += "\n"
+        
+        # Weight Analysis
+        if "weight_analysis" in content:
+            weights = content["weight_analysis"]
+            md += "## Weight Analysis\n\n"
+            md += f"- **Fields with Scaling:** {weights.get('total_fields_with_scaling', 0)}\n"
+            md += f"- **Average Layer Scaling:** {weights.get('average_layer_scaling', 1.0)}\n"
+            md += f"- **Average Campaign Scaling:** {weights.get('average_campaign_scaling', 1.0)}\n"
+            
+            if "weight_distribution" in weights:
+                dist = weights["weight_distribution"]
+                md += f"- **Weight Range:** {dist.get('min_final_weight', 0)} - {dist.get('max_final_weight', 0)}\n"
+                md += f"- **Average Final Weight:** {dist.get('avg_final_weight', 0)}\n"
+            
+            # Add scaling effectiveness details
+            if "scaling_effectiveness" in weights:
+                scaling_eff = weights["scaling_effectiveness"]
+                md += f"- **Scaling Impact Score:** {scaling_eff.get('scaling_impact_score', 0.0)}\n"
+                
+                if "scaling_distribution" in scaling_eff:
+                    dist = scaling_eff["scaling_distribution"]
+                    md += "\n### Scaling Distribution\n\n"
+                    md += "| Scaling Level | Field Count |\n|---|---|\n"
+                    md += f"| No Scaling | {dist.get('no_scaling', 0)} |\n"
+                    md += f"| Light Scaling | {dist.get('light_scaling', 0)} |\n"
+                    md += f"| Moderate Scaling | {dist.get('moderate_scaling', 0)} |\n"
+                    md += f"| Heavy Scaling | {dist.get('heavy_scaling', 0)} |\n"
+            md += "\n"
+        
+        # Campaign Configuration
+        if "campaign_config" in content:
+            config = content["campaign_config"]
+            md += "## Campaign Configuration\n\n"
+            md += f"- **Fuzz Mode:** {config.get('fuzz_mode', 'unknown')}\n"
+            md += f"- **Max Mutations:** {config.get('max_mutations', 0)}\n"
+            md += f"- **Use Dictionaries:** Always enabled when supported\n"
+            md += f"- **Global Fuzz Weight:** {config.get('global_fuzz_weight', 0)}\n"
+            md += f"- **Fuzz Weight Scale:** {config.get('fuzz_weight_scale', 1.0)}\n"
+            md += f"- **Layer Weight Scaling Enabled:** {config.get('layer_weight_scaling_enabled', False)}\n"
+            md += f"- **Single Packet Mode:** {config.get('single_packet_mode', False)}\n"
+            md += f"- **Total Iterations:** {config.get('total_iterations', 0)}\n"
+            md += f"- **Estimated Total Mutations:** {config.get('estimated_total_mutations', 0)}\n"
+            
+            # Handle mutator preferences - could be list or dict
+            mutator_prefs = config.get('mutator_preferences')
+            if mutator_prefs:
+                if isinstance(mutator_prefs, dict):
+                    # Dictionary format: {'libfuzzer': 1.0, 'scapy': 0.8}
+                    pref_list = [f"{k} ({v})" for k, v in mutator_prefs.items()]
+                    md += f"- **Mutator Preferences:** {', '.join(pref_list)}\n"
+                elif isinstance(mutator_prefs, list):
+                    # List format: ['libfuzzer', 'scapy']
+                    md += f"- **Mutator Preferences:** {', '.join(mutator_prefs)}\n"
+                else:
+                    md += f"- **Mutator Preferences:** {mutator_prefs}\n"
+            
+            # Add layer weight scaling factor if available
+            if config.get('layer_weight_scaling_factor') is not None:
+                md += f"- **Layer Weight Scaling Factor:** {config.get('layer_weight_scaling_factor')}\n"
+            
+            # Add dictionary usage flag
+            if 'dictionary_usage_enabled' in config:
+                md += f"- **Dictionary Usage Enabled:** {config.get('dictionary_usage_enabled', False)}\n"
+            
+            md += "\n"
+        
+        # Mutation Effectiveness
+        if "mutation_effectiveness" in content:
+            effectiveness = content["mutation_effectiveness"]
+            md += "## Mutation Effectiveness\n\n"
+            
+            if "field_coverage" in effectiveness:
+                coverage = effectiveness["field_coverage"]
+                md += f"- **Total Available Fields:** {coverage.get('total_available_fields', 0)}\n"
+                md += f"- **Fuzzable Fields:** {coverage.get('fuzzable_fields', 0)}\n"
+                md += f"- **Actually Fuzzed Fields:** {coverage.get('actually_fuzzed_fields', 0)}\n"
+                md += f"- **Field Coverage:** {coverage.get('coverage_percentage', 0)}%\n"
+            
+            md += f"- **Effectiveness Score:** {effectiveness.get('effectiveness_score', 0)}/100\n"
+            
+            if "mutation_distribution" in effectiveness:
+                md += "\n### Mutation Distribution by Field Type\n\n"
+                md += "| Field Type | Field Count | Total Mutations |\n|---|---|---|\n"
+                for field_type, info in effectiveness["mutation_distribution"].items():
+                    md += f"| {field_type} | {info.get('count', 0)} | {info.get('mutations', 0)} |\n"
+            md += "\n"
+        
+        # Dictionary Analysis
+        if "dictionary_analysis" in content:
+            dicts = content["dictionary_analysis"]
+            md += "## Dictionary Analysis\n\n"
+            md += f"- **Fields with Dictionaries:** {dicts.get('fields_with_dictionaries', 0)}\n"
+            md += f"- **Total Dictionary Files:** {dicts.get('total_dictionary_files', 0)}\n"
+            
+            # Full dictionary distribution (not just top 10)
+            if dicts.get('dictionary_distribution'):
+                md += "\n### Complete Dictionary Distribution\n\n"
+                md += "| Dictionary | Usage Count |\n|---|---|\n"
+                # Sort by usage count
+                sorted_dicts = sorted(dicts['dictionary_distribution'].items(), key=lambda x: x[1], reverse=True)
+                for dict_path, count in sorted_dicts:
+                    # Truncate long paths for readability
+                    display_path = dict_path if len(dict_path) <= 60 else "..." + dict_path[-57:]
+                    md += f"| {display_path} | {count} |\n"
+                md += "\n"
+            
+            # Still keep the legacy most_common_dictionaries for compatibility
+            elif dicts.get('most_common_dictionaries'):
+                md += "\n### Most Common Dictionaries\n\n"
+                md += "| Dictionary | Usage Count |\n|---|---|\n"
+                for dict_path, count in dicts['most_common_dictionaries'][:10]:
+                    display_path = dict_path if len(dict_path) <= 60 else "..." + dict_path[-57:]
+                    md += f"| {display_path} | {count} |\n"
+                md += "\n"
+        
+        # Performance Recommendations
+        if "recommendations" in content:
+            recommendations = content["recommendations"]
+            md += "## Performance Recommendations\n\n"
+            for i, recommendation in enumerate(recommendations, 1):
+                md += f"{i}. {recommendation}\n"
+            md += "\n"
+        
+        # Top Performing Fields (from field_performance)
+        if "field_performance" in content:
+            field_perf = content["field_performance"]
+            
+            # Add detailed field analysis table
+            if field_perf.get("field_details"):
+                md += "## Detailed Field Analysis\n\n"
+                md += f"- **Total Fields Analyzed:** {field_perf.get('total_fields_analyzed', 0)}\n\n"
+                
+                # Create comprehensive field details table
+                md += "### Field Performance Details\n\n"
+                md += "| Field Key | Field Name | Kind | Layer | Base Weight | Final Weight | Mutations | Success Rate | Dict Count | Config Source | Last Mutated |\n"
+                md += "|---|---|---|---|---|---|---|---|---|---|---|\n"
+                
+                for field in field_perf["field_details"]:
+                    # Truncate field key for readability
+                    field_key = field.get('field_key', 'unknown')
+                    display_key = field_key if len(field_key) <= 20 else field_key[:17] + "..."
+                    
+                    # Format last mutated timestamp
+                    last_mutated = field.get('last_mutated', '')
+                    if last_mutated:
+                        # Convert datetime to string if needed, then format
+                        last_mutated_str = str(last_mutated)
+                        # Just show date and time, not microseconds
+                        last_mutated_str = last_mutated_str.split('.')[0] if '.' in last_mutated_str else last_mutated_str
+                    
+                    md += f"| {display_key} | {field.get('field_name', 'unknown')} | {field.get('field_kind', 'unknown')} | {field.get('layer_name', 'unknown')} | {field.get('base_weight', 0)} | {field.get('final_weight', 0)} | {field.get('mutation_count', 0)} | {field.get('success_rate', 0)}% | {field.get('dictionary_count', 0)} | {field.get('config_source', 'unknown')} | {last_mutated_str} |\n"
+                md += "\n"
+            
+            # Field config sources summary
+            if field_perf.get("field_config_sources"):
+                md += "### Field Configuration Sources\n\n"
+                md += "| Config Source | Field Count |\n|---|---|\n"
+                for source, count in field_perf["field_config_sources"].items():
+                    md += f"| {source} | {count} |\n"
+                md += "\n"
+            
+            # Weight scaling impact
+            if field_perf.get("weight_scaling_impact"):
+                scaling_impact = field_perf["weight_scaling_impact"]
+                md += "### Weight Scaling Impact\n\n"
+                md += f"- **Fields Affected by Scaling:** {scaling_impact.get('fields_affected_by_scaling', 0)}\n"
+                md += f"- **Average Scaling Reduction:** {scaling_impact.get('average_scaling_reduction', 0)}\n"
+                
+                if scaling_impact.get("highly_scaled_fields"):
+                    md += "\n#### Highly Scaled Fields\n\n"
+                    md += "| Field | Original Weight | Final Weight | Reduction |\n|---|---|---|---|\n"
+                    for field in scaling_impact["highly_scaled_fields"]:
+                        md += f"| {field.get('field', 'unknown')} | {field.get('original_weight', 0)} | {field.get('final_weight', 0)} | {field.get('reduction', 0)}% |\n"
+                md += "\n"
+            
+            # Top performing fields summary (keep existing functionality)
+            if field_perf.get("top_performing_fields"):
+                md += "### Top Performing Fields (by mutation count)\n\n"
+                md += "| Field | Layer | Mutations | Success Rate | Final Weight |\n|---|---|---|---|---|\n"
+                for field in field_perf["top_performing_fields"][:10]:
+                    md += f"| {field.get('field_name', 'unknown')} | {field.get('layer_name', 'unknown')} | {field.get('mutation_count', 0)} | {field.get('success_rate', 0)}% | {field.get('final_weight', 0)} |\n"
+                md += "\n"
+        
+        return md
 
 
 class YAMLExporter(ExporterInterface):
     """Export reports as YAML for configuration management"""
     
     def get_file_extension(self) -> str:
+        """Get appropriate file extension for the format type."""
         return "yaml"
     
     def export(self, content: Dict[str, Any], output_path: str) -> str:
-        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        # Create directory if path includes one
+        output_dir = os.path.dirname(output_path)
+        if output_dir:
+            os.makedirs(output_dir, exist_ok=True)
         
         yaml_content = self._generate_yaml(content)
         with open(output_path, 'w', encoding='utf-8') as f:
@@ -956,10 +1861,6 @@ class YAMLExporter(ExporterInterface):
         return "\n".join(yaml_lines)
 
 
-# ============================================================================
-# Enhanced Reporting API
-# ============================================================================
-
 def register_custom_exporters(engine: ReportingEngine) -> None:
     """Register additional export formats with the reporting engine"""
     engine.register_exporter('markdown', MarkdownExporter())
@@ -981,31 +1882,33 @@ def generate_campaign_report(
         campaign: FuzzingCampaign instance
         campaign_context: CampaignContext with fuzz_history
         level: Report level ("executive", "technical", "forensics")
-        output_format: Export format ("html", "json", "csv", "sarif")
+        output_format: Export format ("html", "json", "csv", "sarif", "markdown", "yaml")
         output_path: Optional output path (auto-generated if not provided)
     
     Returns:
         Path to generated report file
     """
     engine = ReportingEngine()
+    register_custom_exporters(engine)
     
-    # Get history entries from campaign context
     history_entries = getattr(campaign_context, 'fuzz_history', [])
     
     # Map string level to enum
     level_map = {
         "executive": ReportLevel.EXECUTIVE,
         "technical": ReportLevel.TECHNICAL,
-        "forensics": ReportLevel.FORENSICS
+        "forensics": ReportLevel.FORENSICS,
+        "advanced": ReportLevel.ADVANCED
     }
     report_level = level_map.get(level, ReportLevel.TECHNICAL)
     
     return engine.generate_report(
-        campaign=campaign,
-        history_entries=history_entries,
         level=report_level,
         output_format=output_format,
-        output_path=output_path
+        output_path=output_path or "",
+        campaign=campaign,
+        campaign_context=campaign_context,
+        history_entries=history_entries
     )
 
 
@@ -1033,14 +1936,16 @@ def generate_campaign_reports(
     if output_formats is None:
         output_formats = getattr(campaign, 'report_formats', ['json'])
     
-    # Ensure we have a valid list
+    # Debug logging
+    logger.info(f"Campaign: {getattr(campaign, 'name', 'Unknown')}")
+    logger.info(f"Requested output formats: {output_formats}")
+    
     if not output_formats:
         output_formats = ['json']
     
-    # Handle 'all' format
     if 'all' in output_formats:
         engine = ReportingEngine()
-        register_custom_exporters(engine)  # Add markdown and yaml
+        register_custom_exporters(engine)
         output_formats = list(engine.get_available_formats())
     
     # Ensure output directory exists
@@ -1141,10 +2046,6 @@ def monitor_campaign_progress(
         return None
 
 
-# ============================================================================
-# Utility Functions
-# ============================================================================
-
 def analyze_protocol_coverage(history_entries: List[Any]) -> Dict[str, Any]:
     """Analyze protocol coverage from history entries"""
     analyzer = ProtocolIntelligenceAnalyzer()
@@ -1158,10 +2059,19 @@ def export_findings_to_sarif(findings: List[VulnerabilityFinding], output_path: 
     return exporter.export(content, output_path)
 
 
-def calculate_campaign_metrics(history_entries: List[Any]) -> ReportMetrics:
-    """Calculate comprehensive campaign metrics"""
+def calculate_campaign_metrics(history_entries: List[Any], campaign_context: Any) -> ReportMetrics:
+    """
+    Calculate comprehensive campaign metrics
+    
+    Args:
+        history_entries: List of FuzzHistoryEntry objects
+        campaign_context: CampaignContext containing mutator data
+        
+    Returns:
+        ReportMetrics with comprehensive analytics
+    """
     engine = ReportingEngine()
-    return engine._calculate_metrics(history_entries)
+    return engine._calculate_metrics(history_entries, campaign_context)
 
 
 def write_crash_report(
@@ -1178,7 +2088,6 @@ def write_crash_report(
     This is a focused function for crash reporting that replaces the legacy 
     write_packet_report for crash scenarios.
     """
-    import base64
     
     with open(file_path, 'w') as f:
         f.write("# PacketFuzz Crash Report\n\n")
@@ -1249,7 +2158,6 @@ def write_debug_packet_log(
     
     This replaces write_packet_report for debug logging scenarios.
     """
-    import base64
     
     if not isinstance(packets, (list, tuple)):
         packets = [packets]
@@ -1277,7 +2185,8 @@ def write_fuzz_history_dump(
     fuzz_history: List[Any],
     file_path: str,
     verbose_level: int = 2,
-    title: str = "Fuzz History Dump"
+    title: str = "Fuzz History Dump",
+    mutator_data: Any = None
 ) -> None:
     """
     Write a detailed dump of the fuzz history for very verbose runs.
@@ -1329,27 +2238,152 @@ def write_fuzz_history_dump(
                 if hasattr(entry, 'payload_hash') and entry.payload_hash:
                     f.write(f"Payload Hash: {entry.payload_hash}\n")
                 
+                # Raw packet bytes (for verbose runs) - moved up for better visibility
+                if verbose_level >= 2 and hasattr(entry, 'packet_bytes') and entry.packet_bytes:
+                    try:
+                        import base64
+                        f.write(f"Raw Packet (base64): {base64.b64encode(entry.packet_bytes).decode()}\n")
+                        f.write(f"Raw Packet (hex): {entry.packet_bytes.hex()}\n")
+                    except Exception as e:
+                        f.write(f"Could not display raw packet bytes: {e}\n")
+                
+                # Fuzzed fields information - prioritize entry's stored data over mutator lookup
+                fuzzed_fields = []
+                if hasattr(entry, 'fuzzed_fields') and entry.fuzzed_fields:
+                    # Use the stored fuzzed_fields from the history entry (most accurate)
+                    fuzzed_fields = entry.fuzzed_fields
+                elif mutator_data and hasattr(mutator_data, 'get_fuzzed_fields_for_packet'):
+                    # Fallback to querying mutator_data (may be less accurate for per-iteration data)
+                    try:
+                        iteration_num = getattr(entry, 'iteration', i)
+                        fuzzed_fields = mutator_data.get_fuzzed_fields_for_packet(iteration_num)
+                    except Exception as e:
+                        logger.debug(f"Failed to get fuzzed fields for iteration {iteration_num}: {e}")
+                        pass  # Continue with empty fuzzed_fields
+                
+                if fuzzed_fields:
+                    # If we have detailed mutator info, show field -> mutator mapping
+                    if hasattr(entry, 'field_mutators') and entry.field_mutators:
+                        # Create formatted list showing field and its mutator
+                        field_mutator_pairs = []
+                        for field in fuzzed_fields:
+                            mutator = entry.field_mutators.get(field, 'unknown')
+                            field_mutator_pairs.append(f"{field}({mutator})")
+                        f.write(f"Fuzzed Fields: {', '.join(field_mutator_pairs)}\n")
+                    else:
+                        # Simple field list
+                        f.write(f"Fuzzed Fields: {', '.join(fuzzed_fields)}\n")
+                else:
+                    f.write(f"Fuzzed Fields: None\n")
+                
+                # Add detailed field values breakdown (if verbose enough and we have mutator data)
+                if verbose_level >= 2 and mutator_data:
+                    try:
+                        iteration_num = getattr(entry, 'iteration', i)
+                        
+                        # Show complete packet breakdown by layers
+                        f.write("\nCOMPLETE PACKET BREAKDOWN:\n")
+                        f.write("=" * 80 + "\n")
+                        
+                        # Get mutator usage information for this iteration
+                        mutator_usage = mutator_data.get_mutators_for_packet(iteration_num)
+                        
+                        # Get the layer names in hierarchical order (outer to inner)
+                        if iteration_num < len(mutator_data.packet_data):
+                            packet_data = mutator_data.packet_data[iteration_num]
+                            ordered_layers = packet_data.layer_names if hasattr(packet_data, 'layer_names') else []
+                        else:
+                            # Fallback to first packet if iteration is out of range
+                            packet_data = mutator_data.packet_data[0] if mutator_data.packet_data else None
+                            ordered_layers = packet_data.layer_names if packet_data and hasattr(packet_data, 'layer_names') else []
+                        
+                        # If no ordered layers available, fallback to getting all layer types
+                        if not ordered_layers:
+                            ordered_layers = mutator_data.get_all_layer_types()
+                        
+                        for layer_depth, layer_name in enumerate(ordered_layers):
+                            # Get all fields for this layer from the specific packet iteration
+                            if iteration_num < len(mutator_data.packet_data):
+                                layer_fields = mutator_data.packet_data[iteration_num].get_field_by_layer(layer_name)
+                            else:
+                                # Fallback to first packet if iteration is out of range
+                                layer_fields = mutator_data.packet_data[0].get_field_by_layer(layer_name) if mutator_data.packet_data else []
+                            
+                            if not layer_fields:
+                                continue
+                            
+                            # Create indentation based on layer depth (outer to inner)
+                            indent = "  " * layer_depth
+                            
+                            f.write(f"\n{indent}{layer_name}:\n")
+                            
+                            # Sort fields for consistent output
+                            layer_field_keys = sorted([field.field_key for field in layer_fields])
+                            
+                            for field_key in layer_field_keys:
+                                try:
+                                    # Get the actual field value for this iteration
+                                    field_value = mutator_data.get_field_value(field_key, iteration_num)
+                                    
+                                    # Get mutator type for this field
+                                    mutator_type = mutator_usage.get(field_key, "")
+                                    
+                                    # Format mutator type column (always left-aligned, fixed width)
+                                    if mutator_type:
+                                        # Abbreviate common mutator names for better display
+                                        mutator_display = {
+                                            'libfuzzer': 'LibFuzz',
+                                            'dictionary_only': 'Dict',
+                                            'scapy_mutator': 'Scapy',
+                                            'radamsa': 'Radamsa',
+                                            'bit_flip': 'BitFlip',
+                                            'custom': 'Custom'
+                                        }.get(mutator_type, mutator_type[:8])  # Truncate long names
+                                        mutator_column = f"[{mutator_display:<8}]"
+                                    else:
+                                        mutator_column = " " * 10  # Empty space for non-fuzzed fields
+                                    
+                                    # Handle different types of values appropriately
+                                    if field_value is None:
+                                        display_value = "None"
+                                    elif isinstance(field_value, (str, bytes)):
+                                        # Truncate very long values for readability
+                                        if len(str(field_value)) > 100:
+                                            display_value = repr(str(field_value)[:97] + "...")
+                                        else:
+                                            display_value = repr(field_value)
+                                    else:
+                                        display_value = repr(field_value)
+                                    
+                                    # Extract field name from field_key (remove layer prefix)
+                                    field_name = field_key.split('.')[-1] if '.' in field_key else field_key
+                                    
+                                    # Format with fuzzer at the end of the line
+                                    if mutator_type != "None":
+                                        f.write(f"{indent}{field_name:>20}: {display_value} [{mutator_type}]\n")
+                                    else:
+                                        f.write(f"{indent}{field_name:>20}: {display_value}\n")
+                                except Exception as e:
+                                    field_name = field_key.split('.')[-1] if '.' in field_key else field_key
+                                    f.write(f"{indent}{field_name:>20}: <error retrieving value: {e}>\n")
+                        
+                        f.write("\n")
+                        
+                    except Exception as e:
+                        f.write(f"Error retrieving complete packet breakdown: {e}\n\n")
+                
                 f.write("\n")
                 
                 # Packet details (if verbose enough)
                 if verbose_level >= 2 and hasattr(entry, 'packet') and entry.packet:
                     try:
+                        from packetfuzz.utils.packet_utils import get_packet_summary
                         f.write("PACKET DETAILS:\n")
                         f.write("-" * 40 + "\n")
-                        # Use Scapy's show method for detailed packet info
-                        packet_summary = entry.packet.show(dump=True) if hasattr(entry.packet, 'show') else str(entry.packet)
+                        # Use safe packet summary method
+                        packet_summary = entry.packet.show(dump=True) if hasattr(entry.packet, 'show') else get_packet_summary(entry.packet)
                         f.write(packet_summary or "No packet details available\n")
                         f.write("\n")
-                        
-                        # Raw packet bytes (for highest verbosity)
-                        if verbose_level >= 3:
-                            try:
-                                import base64
-                                packet_bytes = bytes(entry.packet)
-                                f.write(f"Raw Packet (base64): {base64.b64encode(packet_bytes).decode()}\n")
-                                f.write(f"Raw Packet (hex): {packet_bytes.hex()}\n\n")
-                            except Exception as e:
-                                f.write(f"Could not serialize packet to bytes: {e}\n\n")
                                 
                     except Exception as e:
                         f.write(f"Error displaying packet details: {e}\n\n")
