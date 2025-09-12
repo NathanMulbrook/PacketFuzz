@@ -4,7 +4,6 @@ Base mutator interface for Scapy LibFuzzer
 Defines the common interface that all mutators must implement.
 """
 
-# Standard library imports
 import logging
 import random
 from abc import ABC, abstractmethod
@@ -56,7 +55,6 @@ class BaseMutator(ABC):
         if name.endswith('Mutator'):
             name = name[:-7]  # Remove "Mutator" suffix
         
-        # Convert CamelCase to snake_case
         result = ""
         for i, char in enumerate(name):
             if char.isupper() and i > 0:

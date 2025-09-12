@@ -16,8 +16,6 @@ from scapy.packet import Raw
 
 from packetfuzz.fuzzing_framework import FuzzingCampaign, FuzzField
 from packetfuzz.sockets.raw_ip_socket import RawIPConfig
-
-# This shows how inheritance can be set to make small changes to a base campaign
 class DNSBaseCampaign(FuzzingCampaign):
     """Base campaign for network infrastructure testing."""
     rate_limit = 10.0
@@ -43,8 +41,7 @@ class DNSTarget2(DNSBaseCampaign):
     output_pcap = "intermediate_dns_fuzz_2.pcap"
     
 
-
-# THis shows more advanced inheritance for sending different data
+#Packets can be defined once and reused in multiple campaigns
 HTTPBasePacket = (IP() / 
                 TCP() /
                 HTTP()
@@ -53,7 +50,7 @@ class WebAppBaseCampaign(FuzzingCampaign):
     """Base campaign for web application testing."""
     socket_config = RawIPConfig(target="192.168.1.100")
     rate_limit = 10.0
-    iterations = 1  # Reduced for faster execution in tests
+    iterations = 1
     output_network = False
     verbose = False
 

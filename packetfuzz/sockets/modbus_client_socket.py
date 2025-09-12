@@ -13,27 +13,10 @@ import time
 from typing import Optional, Dict, Any, TYPE_CHECKING, List, Union, Tuple
 from dataclasses import dataclass, field
 
-try:
-    from pymodbus.client import ModbusTcpClient
-    from pymodbus.exceptions import ModbusException, ConnectionException
-    from pymodbus.pdu import ModbusRequest, ModbusResponse
-    from pymodbus.transaction import ModbusSocketFramer
-    PYMODBUS_AVAILABLE = True
-except ImportError:
-    # Define stubs for type checking when pymodbus is not available
-    class ModbusTcpClient:
-        pass
-    class ModbusException(Exception):
-        pass
-    class ConnectionException(Exception):
-        pass
-    class ModbusRequest:
-        pass
-    class ModbusResponse:
-        pass
-    class ModbusSocketFramer:
-        pass
-    PYMODBUS_AVAILABLE = False
+from pymodbus.client import ModbusTcpClient
+from pymodbus.exceptions import ModbusException, ConnectionException
+from pymodbus.pdu import ModbusRequest, ModbusResponse
+from pymodbus.transaction import ModbusSocketFramer
 
 from .socket_interface import FuzzSocket
 from .base_socket import BaseSocketConfig
@@ -85,14 +68,9 @@ class ModbusClientSocket(FuzzSocket):
     """
 
     def __init__(self, campaign) -> None:
-        if not PYMODBUS_AVAILABLE:
-            raise ImportError(
-                "pymodbus is required for ModbusClientSocket. "
-                "Please install it using 'pip install pymodbus>=3.1.0'"
-            )
         
         super().__init__(campaign)
-        cfg = getattr(self.campaign, 'socket_config', None)
+        cfg = self.socket_config
         self.socket_cfg: ModbusClientConfig = (
             cfg if isinstance(cfg, ModbusClientConfig) else ModbusClientConfig()
         )
@@ -238,11 +216,9 @@ class ModbusClientSocket(FuzzSocket):
             sock = self._modbus_client.socket
             sock.settimeout(actual_timeout)
             
-            # Read data
             response = sock.recv(1024)
             
             if response:
-                # Store the response
                 self._last_response = response
                 self._response_history.append(response)
                 # Trim history if needed
@@ -251,7 +227,6 @@ class ModbusClientSocket(FuzzSocket):
                 
                 if self.debug_mode:
                     self.logger.debug(f"Received {len(response)} bytes: {response.hex(' ')}")
-            
             return response
         except (ConnectionError, OSError, socket.error, EOFError) as e:
             self.logger.error(f"Network error receiving data: {e}")
@@ -375,7 +350,6 @@ class ModbusClientSocket(FuzzSocket):
             "unit": self.socket_cfg.unit,
             "connected": self._connected,
             "one_connection_per_request": self.socket_cfg.one_connection_per_request,
-            "pymodbus_available": PYMODBUS_AVAILABLE
         })
         return base_info
 

@@ -227,7 +227,6 @@ MACROS = {
     "ssh_default_creds": [
         "SecLists/Passwords/Default-Credentials/ssh-betterdefaultpasslist.txt"
     ],
-    # Add more as discovered
 }
 
 # Type-based field mappings
@@ -696,7 +695,6 @@ FIELD_NAME_DICTIONARIES = {
         "@string",
         "fuzzdb/regex/nsa-wordlist.txt"
     ],
-    # SNMP Fields
     "SNMP.community": [
         "@snmp_communities",
         "@string"
@@ -704,7 +702,6 @@ FIELD_NAME_DICTIONARIES = {
     "SNMP.version": [
         "@numeric"
     ],
-    # Additional HTTP Fields
     "HTTPRequest.Server": [
         "@string",
         "@useragent"
@@ -712,7 +709,6 @@ FIELD_NAME_DICTIONARIES = {
     "HTTPResponse.Status": [
         "@numeric"
     ],
-    # Additional Database Fields  
     "MySQL.query": [
         "@sql_injection",
         "@string"
@@ -725,7 +721,6 @@ FIELD_NAME_DICTIONARIES = {
         "@nosql_injection",
         "@string"
     ],
-    # Additional Authentication Fields
     "SSH.username": [
         "@auth_user",
         "@common_users"
@@ -742,12 +737,10 @@ FIELD_NAME_DICTIONARIES = {
         "@auth_pass",
         "@common_passwords"
     ],
-    # SOAP Fields
     "SOAP.method": [
         "@soap_functions",
         "@string"
     ],
-    # API Fields
     "API.endpoint": [
         "@api_endpoints",
         "@string"
@@ -801,7 +794,6 @@ FIELD_ADVANCED_DICTIONARIES = {
 
 # Protocol-specific default values (expanded for comprehensive coverage)
 FIELD_DEFAULT_VALUES = {
-    # TCP Common Values
     "TCP.dport": [
         # Well-known ports
         21, 22, 23, 25, 53, 80, 110, 143, 443, 993, 995,
@@ -831,7 +823,6 @@ FIELD_DEFAULT_VALUES = {
     "TCP.ack": [0, 1, 0xFFFFFFFF, 0x12345678, 0xDEADBEEF],
     "TCP.window": [0, 1, 65535, 32768, 8192, 1024],
     
-    # UDP Common Values
     "UDP.dport": [
         # DNS and DHCP
         53, 67, 68,
@@ -847,7 +838,6 @@ FIELD_DEFAULT_VALUES = {
     "UDP.sport": [1024, 2048, 4096, 8192, 16384, 32768, 49152, 65535],
     "UDP.len": [8, 16, 32, 64, 128, 256, 512, 1024, 1472, 65535],
     
-    # IP Common Values
     "IP.version": [4, 6, 0, 15],  # IPv4, IPv6, invalid values
     "IP.ihl": [5, 15, 0, 1],  # Standard, max, invalid values
     "IP.ttl": [0, 1, 32, 64, 128, 255],
@@ -866,7 +856,6 @@ FIELD_DEFAULT_VALUES = {
         0    # Invalid
     ],
     
-    # ICMP Common Values
     "ICMP.type": [
         0,   # Echo Reply
         3,   # Destination Unreachable
@@ -889,7 +878,6 @@ FIELD_DEFAULT_VALUES = {
     "ICMP.id": [0, 1, 0x1234, 0x5678, 0xFFFF],
     "ICMP.seq": [0, 1, 0x1234, 0x5678, 0xFFFF],
     
-    # DNS Common Values
     "DNS.id": [0x0000, 0x1234, 0x5678, 0x9abc, 0xdef0, 0xffff],
     "DNS.qr": [0, 1],  # Query/Response
     "DNS.opcode": [0, 1, 2, 4, 5, 15],  # Standard, Inverse, Status, Notify, Update, Reserved
@@ -913,7 +901,6 @@ FIELD_DEFAULT_VALUES = {
     ],
     "DNSQR.qclass": [1, 3, 4, 255, 65535],  # IN, CH, HS, ANY, Invalid
     
-    # Ethernet Common Values
     "Ether.type": [
         0x0800,  # IPv4
         0x0806,  # ARP
@@ -924,14 +911,12 @@ FIELD_DEFAULT_VALUES = {
         0xFFFF   # Invalid
     ],
     
-    # ARP Common Values
     "ARP.hwtype": [1, 6, 7, 15, 16, 17, 18, 19, 20],  # Ethernet, IEEE 802, etc.
     "ARP.ptype": [0x0800, 0x86dd, 0x0000, 0xFFFF],  # IPv4, IPv6, Invalid
     "ARP.hwlen": [6, 8, 16, 20, 0, 255],  # MAC length variants
     "ARP.plen": [4, 16, 0, 255],  # IP address length variants
     "ARP.op": [1, 2, 3, 4, 8, 9, 10, 11, 65535],  # REQUEST, REPLY, RREQUEST, RREPLY, etc.
     
-    # IPv6 Common Values (for future extension)
     "IPv6.version": [6, 4, 0, 15],
     "IPv6.tc": [0, 1, 2, 4, 8, 16, 32, 64, 128, 255],
     "IPv6.fl": [0, 1, 0x12345, 0xFFFFF],
@@ -939,26 +924,19 @@ FIELD_DEFAULT_VALUES = {
     "IPv6.nh": [6, 17, 1, 41, 43, 44, 58, 59, 60, 255],  # TCP, UDP, ICMP, IPv6, etc.
     "IPv6.hlim": [1, 64, 128, 255],
     
-    # Common Payload Sizes
     "payload_sizes": [0, 1, 8, 16, 32, 64, 128, 256, 512, 1024, 1500, 9000, 65535],
     
-    # Common String Lengths for fuzzing
     "string_lengths": [0, 1, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 65535],
     
-    # LDAP Common Values
     "LDAP.filter": ["(objectClass=*)", "(cn=*)", "(uid=admin)", "(&(cn=*)(mail=*))", "(|(cn=admin)(uid=admin))"],
     "LDAP.dn": ["cn=admin,dc=example,dc=com", "uid=test,ou=users,dc=domain,dc=com", "dc=com", "ou=users"],
     
-    # JSON Common Values
     "JSON.data": ['{"test": "value"}', '{"admin": true}', '{"id": 1}', '{"null": null}', '{"array": []}'],
     
-    # XML Common Values
     "XML.data": ["<root></root>", "<test>value</test>", "<?xml version='1.0'?>", "<![CDATA[data]]>"],
     
-    # XPath Common Values
     "XPath.query": ["//user", "//*[@id='admin']", "//password", "count(//user)", "string-length(//password)"],
     
-    # NoSQL Common Values
     "NoSQL.query": ['{"$ne": null}', '{"$gt": ""}', '{"$regex": ".*"}', '{"$where": "1==1"}'],
     
     # File Upload Common Values
@@ -970,26 +948,21 @@ FIELD_DEFAULT_VALUES = {
     "HTML.tag": ["script", "img", "iframe", "object", "embed", "form", "input", "div"],
     "JS.event": ["onclick", "onload", "onmouseover", "onerror", "onfocus", "onblur"],
     
-    # OS Command Values
     "OS.command": ["id", "whoami", "ls", "dir", "cat /etc/passwd", "type c:\\windows\\system32\\drivers\\etc\\hosts"],
     
     # Authentication Common Values
     "Auth.username": ["admin", "administrator", "root", "test", "guest", "user", "sa", "postgres"],
     "Auth.password": ["password", "admin", "123456", "password123", "root", "test", "guest"],
     
-    # Debug Parameters
     "Debug.param": ["debug", "test", "dev", "trace", "verbose", "log", "show_errors"],
     
-    # Format String Values
     "Format.string": ["%s", "%x", "%n", "%08x", "AAAA%08x.%08x", "%s%s%s%s%s"],
     
     # Integer Overflow Values
     "Integer.value": [0, -1, 2147483647, -2147483648, 4294967295, 65535, 32767, -32768],
     
-    # Unicode Values
     "Unicode.text": ["test", "тест", "测试", "テスト", "🚀", "﷽", "\u202e", "\ufeff"],
     
-    # MIME Types
     "MIME.type": ["text/html", "application/json", "image/jpeg", "application/octet-stream", "text/xml"],
     
     # Network Discovery Values
@@ -1235,7 +1208,6 @@ FIELD_ADVANCED_WEIGHTS = [
         "fuzz_weight": 0.8,
         "mode": "min"
     },
-    # ...add more as needed
 ]
 
 # =============================
@@ -1382,6 +1354,6 @@ LAYER_WEIGHT_SCALING: float = 0.9
 # This value controls the overall fuzzing probability for fields.
 # Can be overridden by campaign-level fuzz_weight_scaling settings.
 # Range: 0.0 to 1.0 (higher values increase fuzzing probability)
-DEFAULT_FUZZ_WEIGHT_SCALING: float = 0.4
+DEFAULT_FUZZ_WEIGHT_SCALING: float = 0.9
 
 

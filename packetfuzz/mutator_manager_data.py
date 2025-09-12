@@ -55,10 +55,7 @@ class FuzzConfig:
     This represents the campaign settings - clear defaults with Optional only where None is meaningful.
     """
     max_mutations: int = DEFAULT_MAX_MUTATIONS
-    use_dictionaries: bool = True
-    fuzz_weight: float = DEFAULT_FUZZ_WEIGHT
-    fuzz_weight_scale: float = 1.0
-    enable_layer_weight_scaling: bool = True
+    fuzz_weight_scale: float = 1.0  # Global multiplier for all field weights
     
     mode: Optional[FuzzMode] = None  # None = auto-detect
     layer_weight_scaling: Optional[float] = None  # None = use default constant
@@ -93,10 +90,6 @@ class FieldMetadata:
     default_values: List[Any] = field(default_factory=list)
     mutator_preferences: List[str] = field(default_factory=list)  # Legacy
     mutator_weights: Dict[str, float] = field(default_factory=dict)
-    
-    scapy_fuzz_weight: float = 0.1  # Weight for Scapy's fuzz() method
-    dictionary_only_weight: float = 0.2  # Weight for dictionary-only mutations
-    use_scapy_fuzz: bool = True  # Whether to use Scapy's built-in fuzz
     
     min_value: Optional[int] = None
     max_value: Optional[int] = None
@@ -171,9 +164,6 @@ class ConfigurationSources:
     fuzzfield_dictionaries: List[str] = field(default_factory=list)
     fuzzfield_values: List[Any] = field(default_factory=list)
     fuzzfield_mutator_weights: Dict[str, float] = field(default_factory=dict)
-    fuzzfield_scapy_weight: Optional[float] = None
-    fuzzfield_dictionary_only_weight: Optional[float] = None
-    fuzzfield_use_scapy_fuzz: Optional[bool] = None
     fuzzfield_object: Optional[Any] = None  # For materialization
     
     collection_errors: List[str] = field(default_factory=list)
@@ -291,9 +281,9 @@ class MutatorManagerData:
     
     def apply_sequential_field_weights(self) -> None:
         """
-        Apply sequential field fuzzing by manipulating weights per iteration.
+        Apply sequential field fuzzing by manipulating fuzz_weights per iteration.
         
-        Creates per-iteration weight maps where only one field is active per iteration,
+        Creates per-iteration fuzz_weight maps where only one field is active per iteration,
         enabling boofuzz-style field-by-field fuzzing while reusing all existing
         field discovery, filtering, and mutation logic.
         
@@ -314,7 +304,7 @@ class MutatorManagerData:
         for packet_data in self.packet_data:
             for field_key in packet_data.fuzzable_fields:
                 field_metadata = packet_data.fields[field_key]
-                # Only include fields that would normally be fuzzed (weight > 0)
+                # Only include fields that would normally be fuzzed (fuzz_weight > 0)
                 if field_metadata.fuzz_weight > 0.0:
                     fuzzable_fields.append(field_key)
         
@@ -322,7 +312,7 @@ class MutatorManagerData:
             logger.warning("No fuzzable fields found for sequential fuzzing - no fields will be modified")
             return
         
-        # Create per-iteration weight maps
+        # Create per-iteration fuzz_weight maps
         self.iteration_field_weights: Dict[int, Dict[str, float]] = {}
         
         for iteration in range(self.iterations):
@@ -330,7 +320,7 @@ class MutatorManagerData:
             target_field_index = iteration % len(fuzzable_fields)
             target_field = fuzzable_fields[target_field_index]
             
-            # Create weight map: 1.0 for target field, 0.0 for all others
+            # Create fuzz_weight map: 1.0 for target field, 0.0 for all others
             weight_map = {}
             for field_key in fuzzable_fields:
                 weight_map[field_key] = 1.0 if field_key == target_field else 0.0
@@ -379,10 +369,8 @@ class MutatorManagerData:
             if packet_data.has_layer_collisions():
                 self.layer_collision_count += 1
         
-        # Build global field index for cross-packet analysis
         self._build_global_field_index()
         
-        # Finalize preprocessing
         self._finalize_preprocessing()
         
 
@@ -401,7 +389,6 @@ class MutatorManagerData:
                    f"{self.layer_collision_count} packets with collisions, "
                    f"processed in {processing_time:.2f}s")
         
-        # Apply sequential field fuzzing weights if enabled
         self.apply_sequential_field_weights()
     
     def _create_packet_copies(self) -> None:
@@ -611,7 +598,6 @@ class MutatorManagerData:
         type_chain = get_field_type_chain(layer, field_name)
         
         if type_chain:
-            # Check the entire inheritance chain, not just the primary type
             for type_name in type_chain:
                 # Categorize based on type hierarchy
                 if any(typ in type_name for typ in ['Int', 'Byte', 'Short', 'Bit']):
@@ -622,10 +608,7 @@ class MutatorManagerData:
                     return "enum"
                 elif any(typ in type_name for typ in ['Flag']):
                     return "flags"
-            
-            # If no match found in inheritance chain, return unknown
             return "unknown"
-        
         return "unknown"
     
     def _extract_field_constraints(self, layer: Packet, field_desc: Field, layer_name: str, field_name: str) -> Dict[str, Any]:
@@ -645,7 +628,6 @@ class MutatorManagerData:
         from .utils.packetfuzz_utils import extract_field_properties
         properties = extract_field_properties(layer, field_desc.name)
         
-        # Convert properties to constraints format
         constraints = {
             'min_value': None,
             'max_value': None,
@@ -664,6 +646,7 @@ class MutatorManagerData:
         # Fix overly restrictive size constraints for HTTP header values
         # Scapy's _HTTPHeaderField uses sz=2 (for header indexes), but for fuzzing
         # header values we need realistic limits
+        #TODO look more into the size limits
         if layer_name in ['HTTPRequest', 'HTTPResponse']:
             if field_name == 'Method':
                 constraints['max_length'] = 32  # HTTP methods: GET, POST, etc.
@@ -745,7 +728,7 @@ class MutatorManagerData:
         sources = ConfigurationSources()
         
         # 1. Default configuration (always available)
-        sources.default_weight = self.fuzz_config.fuzz_weight
+        sources.default_weight = DEFAULT_FUZZ_WEIGHT  # Always use the default base weight
         if dictionary_manager:
             sources.default_dictionaries, sources.default_values = self._get_default_config(
                 field_metadata, dictionary_manager)
@@ -754,14 +737,18 @@ class MutatorManagerData:
         # 2. Campaign configuration (from FuzzConfig + overrides)
         if self.fuzz_config.advanced_field_mapping_overrides:
             campaign_config = self._get_campaign_config(field_metadata)
-            # Support legacy 'weight' key for backward compatibility, prefer 'fuzz_weight'
-            # Handle 0.0 correctly - it's a valid weight value
-            campaign_weight = campaign_config.get('fuzz_weight')
-            if campaign_weight is None:
-                campaign_weight = campaign_config.get('weight')
-            sources.campaign_weight = campaign_weight
+            sources.campaign_weight = campaign_config.get('fuzz_weight')
             sources.campaign_dictionaries = campaign_config.get('dictionaries', [])
             sources.campaign_values = campaign_config.get('values', [])
+        
+        # 2b. Campaign mutator preference (should be normalized to dict by FuzzingCampaign.__init__)
+        if self.fuzz_config.mutator_preference and not sources.campaign_mutator_weights:
+            if isinstance(self.fuzz_config.mutator_preference, dict):
+                sources.campaign_mutator_weights = self.fuzz_config.mutator_preference.copy()
+                logger.debug(f"Using campaign mutator_preference: {sources.campaign_mutator_weights}")
+            else:
+                # Fallback: should not happen if properly normalized, but handle gracefully
+                logger.warning(f"Campaign mutator_preference not normalized to dict: {self.fuzz_config.mutator_preference}")
         
         # 3. FuzzField configuration (highest priority)
         field_value = getattr(layer, field_metadata.field_name, None)
@@ -771,9 +758,6 @@ class MutatorManagerData:
             sources.fuzzfield_dictionaries = fuzzfield_config.get('dictionaries', [])
             sources.fuzzfield_values = fuzzfield_config.get('values', [])
             sources.fuzzfield_mutator_weights = fuzzfield_config.get('mutator_weights', {})
-            sources.fuzzfield_scapy_weight = fuzzfield_config.get('scapy_fuzz_weight')
-            sources.fuzzfield_dictionary_only_weight = fuzzfield_config.get('dictionary_only_weight')
-            sources.fuzzfield_use_scapy_fuzz = fuzzfield_config.get('use_scapy_fuzz')
             sources.fuzzfield_object = field_value
         
         return sources
@@ -785,30 +769,28 @@ class MutatorManagerData:
         """
         # Start with defaults
         config = {
-            'weight': sources.default_weight,
+            'fuzz_weight': sources.default_weight,
             'dictionaries': sources.default_dictionaries.copy(),
             'values': sources.default_values.copy(),
             'mutator_weights': sources.default_mutator_weights.copy(),
-            'scapy_fuzz_weight': 0.1,
-            'dictionary_only_weight': 0.2,
-            'use_scapy_fuzz': True,
             'config_source': 'default'
         }
         
         # Merge campaign (overwrites defaults)
         if sources.campaign_weight is not None:
-            config['weight'] = sources.campaign_weight
+            config['fuzz_weight'] = sources.campaign_weight
             config['config_source'] = 'campaign'
         if sources.campaign_dictionaries:
             config['dictionaries'].extend(sources.campaign_dictionaries)
         if sources.campaign_values:
             config['values'].extend(sources.campaign_values)
         if sources.campaign_mutator_weights:
-            config['mutator_weights'].update(sources.campaign_mutator_weights)
+            # Campaign mutator weights should replace defaults, not merge with them
+            config['mutator_weights'] = sources.campaign_mutator_weights.copy()
         
         # Merge FuzzField (overwrites everything)
         if sources.fuzzfield_weight is not None:
-            config['weight'] = sources.fuzzfield_weight
+            config['fuzz_weight'] = sources.fuzzfield_weight
             config['config_source'] = 'fuzzfield'
         if sources.fuzzfield_dictionaries:
             config['dictionaries'] = sources.fuzzfield_dictionaries  # Replace, don't extend
@@ -816,19 +798,13 @@ class MutatorManagerData:
             config['values'] = sources.fuzzfield_values  # Replace, don't extend
         if sources.fuzzfield_mutator_weights:
             config['mutator_weights'] = sources.fuzzfield_mutator_weights
-        if sources.fuzzfield_scapy_weight is not None:
-            config['scapy_fuzz_weight'] = sources.fuzzfield_scapy_weight
-        if sources.fuzzfield_dictionary_only_weight is not None:
-            config['dictionary_only_weight'] = sources.fuzzfield_dictionary_only_weight
-        if sources.fuzzfield_use_scapy_fuzz is not None:
-            config['use_scapy_fuzz'] = sources.fuzzfield_use_scapy_fuzz
         
         # Apply layer weight scaling
-        if self.fuzz_config.enable_layer_weight_scaling:
-            config['weight'] *= self._calculate_layer_scaling_factor(layer)
+        if self.fuzz_config.layer_weight_scaling is not None and self.fuzz_config.layer_weight_scaling != 1.0:
+            config['fuzz_weight'] *= self._calculate_layer_scaling_factor(layer)
         
         # Apply campaign global scaling
-        config['weight'] *= self.fuzz_config.fuzz_weight_scale
+        config['fuzz_weight'] *= self.fuzz_config.fuzz_weight_scale
         
         return config
     
@@ -837,16 +813,12 @@ class MutatorManagerData:
         """
         Apply merged configuration to field metadata and handle FuzzField materialization.
         """
-        field_metadata.fuzz_weight = config['weight']
+        field_metadata.fuzz_weight = config['fuzz_weight']
         field_metadata.dictionary_paths = config['dictionaries']
         field_metadata.default_values = config['values']
         field_metadata.mutator_weights = config['mutator_weights']
-        field_metadata.scapy_fuzz_weight = config['scapy_fuzz_weight']
-        field_metadata.dictionary_only_weight = config['dictionary_only_weight']
-        field_metadata.use_scapy_fuzz = config['use_scapy_fuzz']
         field_metadata.config_source = config['config_source']
         
-        # Handle FuzzField materialization
         if sources.fuzzfield_object is not None:
             self._materialize_fuzzfield_in_packet(layer, field_metadata.field_name, sources.fuzzfield_object)
         
@@ -884,7 +856,6 @@ class MutatorManagerData:
             for d in FIELD_TYPE_DICTIONARIES[field_type]:
                 dictionary_paths.extend(dictionary_manager.expand_macro(d))
         
-        # Remove duplicates and resolve paths
         unique_paths = list(dict.fromkeys(dictionary_paths))
         resolved_paths = [dictionary_manager._resolve_path(path) for path in unique_paths]
         
@@ -949,12 +920,11 @@ class MutatorManagerData:
                   'pattern' not in override and global_override is None):
                 global_override = override
         
-        # Return global override if no specific matches found
         return global_override or {}
     
     def _calculate_layer_scaling_factor(self, layer: Packet) -> float:
-        """Calculate layer weight scaling factor."""
-        if not self.fuzz_config.enable_layer_weight_scaling:
+        """Calculate layer fuzz_weight scaling factor."""
+        if self.fuzz_config.layer_weight_scaling is None or self.fuzz_config.layer_weight_scaling == 1.0:
             return 1.0
         
         depth_below = self._calculate_layer_depth(layer)
@@ -978,10 +948,8 @@ class MutatorManagerData:
         if not isinstance(field_value, FuzzField):
             return {'is_fuzzfield': False}
         
-        # Extract configuration from FuzzField
         config: Dict[str, Any] = {'is_fuzzfield': True}
         
-        # Get basic properties safely
         if hasattr(field_value, 'fuzz_weight'):
             config['fuzz_weight'] = field_value.fuzz_weight
         if hasattr(field_value, 'dictionaries'):
@@ -993,18 +961,6 @@ class MutatorManagerData:
         mutator_weights = getattr(field_value, 'mutator_weights', None)
         if mutator_weights:
             config['mutator_weights'] = mutator_weights
-            
-        scapy_fuzz_weight = getattr(field_value, 'scapy_fuzz_weight', None)
-        if scapy_fuzz_weight is not None:
-            config['scapy_fuzz_weight'] = scapy_fuzz_weight
-            
-        dictionary_only_weight = getattr(field_value, 'dictionary_only_weight', None)
-        if dictionary_only_weight is not None:
-            config['dictionary_only_weight'] = dictionary_only_weight
-            
-        use_scapy_fuzz = getattr(field_value, 'use_scapy_fuzz', None)
-        if use_scapy_fuzz is not None:
-            config['use_scapy_fuzz'] = use_scapy_fuzz
         
         return config
 
@@ -1200,7 +1156,6 @@ class MutatorManagerData:
                 return False
         else:
             field_metadata = field
-        # Get layer and field name
         packet_data = self.packet_data[field_metadata.packet_index]
         # Scapy uses 1-based indexing for getlayer, but our layer_index is 0-based
         layer = packet_data.packet.getlayer(field_metadata.layer_name, field_metadata.layer_index + 1)
@@ -1248,11 +1203,9 @@ class MutatorManagerData:
                 elif isinstance(assign_value, list):
                     normalized = assign_value
                 elif isinstance(assign_value, str):
-                    # Convert invalid string representations to empty list
                     if assign_value in ('', '[]'):
                         normalized = []
                     else:
-                        # Invalid string format for TCP options, fallback to empty
                         logger.debug(f"validate_and_assign: Invalid TCP options string format: {repr(assign_value)}, using []")
                         normalized = []
                 else:
@@ -1301,7 +1254,6 @@ class MutatorManagerData:
             except Exception as e:
                 logger.debug(f"validate_and_assign: Serialize test failed for {fname}: {e}")
                 return False
-            # Apply to the real layer now that validation passed
             try:
                 # Use safe IP assignment for IP fields to prevent DNS resolution delays
                 if (field_metadata.layer_name == 'IP' and fname in ['src', 'dst']):
@@ -1367,7 +1319,6 @@ class MutatorManagerData:
     def get_mutator_usage_summary(self) -> Dict[str, int]:
         """Get summary of actual mutator usage across all iterations."""
         mutator_usage: Dict[str, int] = {}
-        # Count actual mutator usage from iteration tracking
         for iteration_data in self.iteration_mutator_usage.values():
             for field_key, mutator_name in iteration_data.items():
                 mutator_usage[mutator_name] = mutator_usage.get(mutator_name, 0) + 1
@@ -1382,7 +1333,6 @@ class MutatorManagerData:
         """
         fuzzed_fields = set()
         for packet_data in self.packet_data:
-            # Only check fields marked as fuzzable during preprocessing
             for field_key in packet_data.fuzzable_fields:
                 field_metadata = packet_data.fields.get(field_key)
                 if field_metadata and field_metadata.mutation_count > 0:
@@ -1549,7 +1499,6 @@ class MutatorManagerData:
             field_metadata.mutation_count += 1
             if success:
                 field_metadata.successful_mutations += 1
-                # Record mutator usage for this successful mutation
                 self.record_mutator_usage(packet_index, field_key, mutator_name)
             else:
                 field_metadata.failed_mutations += 1

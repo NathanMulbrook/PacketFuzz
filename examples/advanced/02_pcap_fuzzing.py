@@ -68,7 +68,6 @@ class BinaryProtocolCampaign(PcapFuzzCampaign):
             payload = bytes(packet[UDP])
             self.binary_stats["packets"] += 1
             current_avg = self.binary_stats["avg_size"]
-            # Running average calculation
             new_avg = (current_avg * (self.binary_stats["packets"] - 1) + len(payload)) / self.binary_stats["packets"]
             self.binary_stats["avg_size"] = int(new_avg)
             print(f"Binary packet #{self.binary_stats['packets']}: {len(payload)} bytes (avg: {new_avg:.1f})")
@@ -87,7 +86,6 @@ class LayerFilteringCampaign(PcapFuzzCampaign):
     
     def __init__(self):
         super().__init__()
-        # Only include specific layers in processing
         self.include_layers = ["IP", "UDP", "DNS"]  
         # This excludes Raw, TCP, HTTP, etc.
         self.protocol_counts = {}
@@ -123,7 +121,7 @@ class CombinedFuzzingCampaign(PcapFuzzCampaign):
         super().__init__()
         # Extract IP layer and above
         self.extract_at_layer = "IP"
-        # Exclude Raw layers to focus on structured protocols
+        # Exclude Raw layers to focus on protocol not the data
         self.exclude_layers = ["Raw", "Padding"]
         self.packet_analysis = {"structured": 0, "raw": 0}
     
@@ -135,7 +133,6 @@ class CombinedFuzzingCampaign(PcapFuzzCampaign):
         
         while current:
             layer_count += 1
-            # Check for structured protocols
             if any(proto in current.__class__.__name__ for proto in ["HTTP", "DNS", "DHCP"]):
                 has_structured_data = True
             current = current.payload if hasattr(current, 'payload') else None
@@ -149,17 +146,9 @@ class CombinedFuzzingCampaign(PcapFuzzCampaign):
         
         return CallbackResult.SUCCESS
 
-# Register campaigns for CLI discovery
 CAMPAIGNS = [
     HTTPExtractionCampaign,
     BinaryProtocolCampaign,
     LayerFilteringCampaign,
     CombinedFuzzingCampaign
 ]
-
-if __name__ == "__main__":
-    print("Running PCAP-based fuzzing examples...")
-    
-    for campaign_class in CAMPAIGNS:
-        print(f"\n=== {campaign_class.__name__} ===")
-        campaign_class().execute()

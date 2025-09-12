@@ -63,8 +63,8 @@ class ExclusionFilteringCampaign(FuzzingCampaign):
     verbose = True
     
     # Exclude specific fields from fuzzing
-    excluded_fields = ["src", "sport", "version", "ihl"]  
     # This will fuzz everything EXCEPT these fields
+    excluded_fields = ["src", "sport", "version", "ihl"]  
     
     packet = (
         IP(src="192.168.1.100", dst="127.0.0.1") /
@@ -96,6 +96,7 @@ class LayerExclusionCampaign(FuzzingCampaign):
         )
     )
 
+#This demonstrates how information can be passed between callbacks, even between itterations.
 def advanced_pre_send_callback(context, packet):
     """Advanced callback with state tracking."""
     # Track packet modifications across iterations
@@ -142,17 +143,9 @@ class ChainedCallbacksCampaign(FuzzingCampaign):
         HTTPRequest(Path=b"/secure/api", Method=b"POST")
     )
 
-# Register campaigns for CLI discovery
 CAMPAIGNS = [
     AdvancedFieldMappingCampaign,
     ExclusionFilteringCampaign,
     LayerExclusionCampaign,
     ChainedCallbacksCampaign
 ]
-
-if __name__ == "__main__":
-    print("Running advanced campaign pattern examples...")
-    
-    for campaign_class in CAMPAIGNS:
-        print(f"\n=== {campaign_class.__name__} ===")
-        campaign_class().execute()

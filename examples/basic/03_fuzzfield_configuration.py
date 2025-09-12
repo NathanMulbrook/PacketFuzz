@@ -4,14 +4,19 @@ FuzzField Configuration Examples
 
 Demonstrates comprehensive FuzzField configuration with:
 - Custom values for precise control
+- String lists for clean, readable fuzzing (StringListFuzzCampaign, HostnameFuzzCampaign)
 - Dictionary-based fuzzing  
 - Mutator-specific configuration
 - Field descriptions and metadata
+
+The string list approach (values=["string1", "string2", ...]) is particularly
+clean and readable for many fuzzing scenarios.
 """
 
 from scapy.all import IP, TCP, UDP, Raw
+from scapy.layers.dns import DNS, DNSQR
 from packetfuzz import FuzzingCampaign, FuzzField
-from packetfuzz.sockets import RawIPConfig
+from packetfuzz.sockets.raw_ip_socket import RawIPConfig
 
 class ValueBasedFuzzCampaign(FuzzingCampaign):
     """Demonstrates FuzzField with specific values."""
@@ -37,7 +42,7 @@ class ValueBasedFuzzCampaign(FuzzingCampaign):
             ),
             # Flag combinations
             flags=FuzzField(
-                values=["S", "SA", "F", "R", "P", "FPU", ""],
+                values=[2, 18, 1, 4, 8, 41, 0],  # S, SA, F, R, P, FPU, None
                 description="TCP flag combinations"
             )
         ) /
@@ -72,37 +77,96 @@ class DictionaryBasedFuzzCampaign(FuzzingCampaign):
     output_pcap = "dictionary_based_fuzz.pcap"
     verbose = True
     
+    # Use proper DNS layer instead of manual Raw packet construction
     packet = (
         IP() /
-        UDP(dport=53) /  # DNS fuzzing
-        Raw(
-            load=FuzzField(
-                dictionaries=["dns_names.txt", "common_subdomains.txt"],
-                description="DNS query fuzzing from wordlists"
+        UDP(dport=53) /
+        DNS(
+            rd=1,
+            qd=DNSQR(
+                qname=FuzzField(
+                    dictionaries=["dns_names.txt", "common_subdomains.txt"],
+                    description="DNS query fuzzing from wordlists"
+                ),
+                qtype="A"
             )
         )
     )
+
+class StringListFuzzCampaign(FuzzingCampaign):
+    """Demonstrates FuzzField with simple lists of strings - very clean and readable."""
+    name = "String List Field Fuzzing"
+    socket_config = RawIPConfig(target="192.168.1.100")
+    iterations = 30
+    output_network = False
+    output_pcap = "string_list_fuzz.pcap"
+    verbose = True
     
-    def pre_send_callback(self, context, packet):
-        """Construct proper DNS query format."""
-        if packet.haslayer(Raw):
-            # Convert dictionary payload to DNS format
-            domain = packet[Raw].load
-            if isinstance(domain, bytes):
-                # Simple DNS query construction (normally you'd use DNS layer)
-                dns_query = b"\x00\x01"  # Query ID
-                dns_query += b"\x01\x00"  # Standard query
-                dns_query += b"\x00\x01\x00\x00\x00\x00\x00\x00"  # 1 query, 0 answers
-                
-                # Encode domain name
-                for part in domain.decode('utf-8', errors='ignore').split('.'):
-                    if part:
-                        dns_query += bytes([len(part)]) + part.encode('utf-8', errors='ignore')
-                dns_query += b"\x00"  # End of domain
-                dns_query += b"\x00\x01\x00\x01"  # A record, IN class
-                
-                packet[Raw].load = dns_query
-        return True
+    packet = (
+        IP() /
+        TCP(dport=80) /
+        Raw(
+            # HTTP requests with various methods and paths
+            load=FuzzField(
+                values=[
+                    "GET / HTTP/1.1\r\nHost: example.com\r\n\r\n",
+                    "POST /login HTTP/1.1\r\nHost: example.com\r\n\r\n",
+                    "PUT /upload HTTP/1.1\r\nHost: example.com\r\n\r\n",
+                    "DELETE /file HTTP/1.1\r\nHost: example.com\r\n\r\n",
+                    "OPTIONS * HTTP/1.1\r\nHost: example.com\r\n\r\n",
+                    "HEAD /info HTTP/1.1\r\nHost: example.com\r\n\r\n",
+                    "TRACE / HTTP/1.1\r\nHost: example.com\r\n\r\n",
+                    "CONNECT example.com:443 HTTP/1.1\r\n\r\n",
+                    "GET /../../../etc/passwd HTTP/1.1\r\nHost: example.com\r\n\r\n",
+                    "GET /admin HTTP/1.1\r\nHost: example.com\r\n\r\n",
+                    "GET /test?id=1' OR '1'='1 HTTP/1.1\r\nHost: example.com\r\n\r\n",
+                    "GET /search?q=<script>alert(1)</script> HTTP/1.1\r\nHost: example.com\r\n\r\n"
+                ],
+                description="HTTP method and injection fuzzing"
+            )
+        )
+    )
+
+class HostnameFuzzCampaign(FuzzingCampaign):
+    """Another example using string lists for hostname fuzzing."""
+    name = "Hostname String List Fuzzing"
+    socket_config = RawIPConfig(target="192.168.1.100") 
+    iterations = 15
+    output_network = False
+    output_pcap = "hostname_list_fuzz.pcap"
+    verbose = True
+    
+    packet = (
+        IP() /
+        UDP(dport=53) /
+        DNS(
+            rd=1,
+            qd=DNSQR(
+                # Clean list of test hostnames
+                qname=FuzzField(
+                    values=[
+                        "example.com",
+                        "test.example.com", 
+                        "admin.example.com",
+                        "api.example.com",
+                        "www.example.com",
+                        "mail.example.com",
+                        "ftp.example.com",
+                        "localhost",
+                        "127.0.0.1",
+                        "::1",
+                        "nonexistent.domain",
+                        "very-long-hostname-that-might-cause-issues.example.com",
+                        "",  # Empty hostname
+                        "test..double-dot.com",  # Malformed
+                        "underscore_test.com"  # RFC violation
+                    ],
+                    description="Hostname validation and edge case testing"
+                ),
+                qtype="A"
+            )
+        )
+    )
 
 class MutatorControlledFuzzCampaign(FuzzingCampaign):
     """Demonstrates FuzzField with specific mutator control."""
@@ -184,20 +248,7 @@ class AdvancedFuzzFieldCampaign(FuzzingCampaign):
             )
         )
     )
-    
-    def field_selection_callback(self, context, available_fields):
-        """Custom field selection logic."""
-        # Prioritize Raw.load field 70% of the time
-        if "Raw.load" in available_fields and context.random.random() < 0.7:
-            return ["Raw.load"]
-        
-        # Otherwise, prefer TCP fields
-        tcp_fields = [f for f in available_fields if f.startswith("TCP.")]
-        if tcp_fields:
-            return [context.random.choice(tcp_fields)]
-        
-        return available_fields[:1]  # Default to first available
-    
+ 
     def post_send_callback(self, context, packet, response=None):
         """Log advanced fuzzing results."""
         ip_len = packet[IP].len if packet.haslayer(IP) else 0
@@ -208,78 +259,11 @@ class AdvancedFuzzFieldCampaign(FuzzingCampaign):
               f"payload_len={payload_len}")
         return True
 
-def demonstrate_fuzzfield_features():
-    """Show FuzzField configuration examples."""
-    print("FuzzField Configuration Examples")
-    print("=" * 40)
-    
-    # Show basic FuzzField construction
-    basic_field = FuzzField(
-        values=[80, 443, 8080],
-        description="Common web ports"
-    )
-    print(f"Basic FuzzField: {basic_field}")
-    
-    # Show dictionary-based field
-    dict_field = FuzzField(
-        dictionaries=["passwords.txt", "usernames.txt"],
-        description="Authentication fuzzing"
-    )
-    print(f"Dictionary FuzzField: {dict_field}")
-    
-    # Show mutator-controlled field
-    mutator_field = FuzzField(
-        values=[b"base_payload"],
-        mutators={"libfuzzer": 1.0},
-        description="Mutation-based fuzzing"
-    )
-    print(f"Mutator FuzzField: {mutator_field}")
-
-def main():
-    """Run FuzzField configuration demonstrations."""
-    print("FuzzField Configuration Demonstrations")
-    print("=" * 50)
-    
-    # Show configuration examples
-    demonstrate_fuzzfield_features()
-    
-    print("\n" + "=" * 50)
-    print("Running Fuzzing Campaigns:")
-    
-    # Run value-based campaign
-    print("\n1. Value-Based Field Fuzzing:")
-    value_campaign = ValueBasedFuzzCampaign()
-    value_campaign.execute()
-    
-    # Run dictionary-based campaign
-    print("\n2. Dictionary-Based Field Fuzzing:")
-    dict_campaign = DictionaryBasedFuzzCampaign()
-    dict_campaign.execute()
-    
-    # Run mutator-controlled campaign
-    print("\n3. Mutator-Controlled Field Fuzzing:")
-    mutator_campaign = MutatorControlledFuzzCampaign()
-    mutator_campaign.execute()
-    
-    # Run advanced campaign
-    print("\n4. Advanced FuzzField Configuration:")
-    advanced_campaign = AdvancedFuzzFieldCampaign()
-    advanced_campaign.execute()
-    
-    print("\nFuzzField configuration examples complete!")
-    print("Generated PCAP files:")
-    print("- value_based_fuzz.pcap")
-    print("- dictionary_based_fuzz.pcap")
-    print("- mutator_controlled_fuzz.pcap")
-    print("- advanced_fuzzfield.pcap")
-
-# Campaign registry for framework discovery
 CAMPAIGNS = [
     ValueBasedFuzzCampaign,
     DictionaryBasedFuzzCampaign,
+    StringListFuzzCampaign,
+    HostnameFuzzCampaign,
     MutatorControlledFuzzCampaign,
     AdvancedFuzzFieldCampaign
 ]
-
-if __name__ == "__main__":
-    main()

@@ -171,7 +171,6 @@ class LibFuzzerMutator(BaseMutator):
 
 
         if round_count == 0:
-            # No multi-round: single mutation with provided seed
             return self._mutate_with_libfuzzer(data, dictionaries, max_length)
         
         # Multi-round mutation - let LibFuzzer handle the complexity
@@ -214,11 +213,7 @@ class LibFuzzerMutator(BaseMutator):
             max_length * 2 if max_length else 0  # Give LibFuzzer room to expand beyond max_length (we'll clamp later)
         )
         output_data = (ctypes.c_uint8 * max_output_size)()
-        
-        # Check if the enhanced mutation function is available
-        if self._lib is None or not hasattr(self._lib, 'mutate_with_dict_enhanced'):
-            raise RuntimeError('mutate_with_dict_enhanced not available in C extension')
-        
+
         lib = self._lib  # type: ignore
         
         if dictionaries:
@@ -302,7 +297,6 @@ class LibFuzzerMutator(BaseMutator):
         """
         # If libfuzzer is not available, return current value to allow manager to try other mutators
         current_value = getattr(field_info, 'current_value', None)
-        # Try both 'kind' and 'field_kind' for compatibility
         kind = getattr(field_info, 'kind', None) or getattr(field_info, 'field_kind', 'unknown')
 
         # Helper: parse int from bytes/str
@@ -406,7 +400,7 @@ class LibFuzzerMutator(BaseMutator):
         # Only load dictionaries once to avoid memory corruption in C extension
         if dictionaries and len(dictionaries) > 0 and not self._dictionaries_loaded:
             # Load dictionaries into LibFuzzer's memory
-                # Convert dictionaries to string format and load
+            # Convert dictionaries to string format and load
             dict_strings = []
             for d in dictionaries:
                 if isinstance(d, bytes):

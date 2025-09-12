@@ -23,7 +23,6 @@ Examples:
     # Quick demo run (recommended)
     python run_all_examples.py --quick --disable-network
     
-    # Full debugging with all report formats
     python run_all_examples.py --verbose --report-formats all --disable-network
     
     # Performance benchmark run
@@ -37,7 +36,6 @@ import argparse
 import time
 from pathlib import Path
 
-# Add the project root to the path so we can import packetfuzz
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
@@ -53,7 +51,6 @@ def run_campaign_file_cli(file_path, args):
     """
     cmd = [sys.executable, "-m", "packetfuzz", str(file_path)]
     
-    # Add common safety and performance options
     if args.disable_network:
         cmd.append("--disable-network")
     
@@ -64,7 +61,6 @@ def run_campaign_file_cli(file_path, args):
         cmd.append("-vvv")  # Maximum verbosity for hierarchical packet breakdown
     
     if args.report_formats:
-        # Split comma-separated formats and add them as separate arguments
         formats = [f.strip() for f in args.report_formats.split(',')]
         cmd.extend(["--report-formats"] + formats)
     
@@ -116,7 +112,6 @@ Recommended Usage:
     
     examples_dir = Path(__file__).parent
     
-    # Define example categories and their purposes
     example_categories = [
         {
             "name": "Basic Examples",
@@ -180,7 +175,6 @@ Recommended Usage:
                 if run_campaign_file_cli(file_path, args):
                     successful_examples += 1
                     
-                # Add small delay between examples for readability
                 if not args.quick:
                     time.sleep(1)
             else:

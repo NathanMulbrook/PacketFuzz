@@ -26,7 +26,6 @@ This utility enables PCAP-based fuzzing for regression testing scenarios. It can
    - Integrates with dictionary manager and field configuration system
 
 Example Usage:
-    # Extract HTTP payloads from TCP packets and fuzz them
     campaign = PcapFuzzCampaign()
     campaign.pcap_folder = "regression_samples/"
     campaign.extract_at_layer = "TCP"
@@ -59,7 +58,6 @@ class PcapFuzzCampaign(FuzzingCampaign):
     maintaining full compatibility with the campaign framework.
     """
     
-    # Configuration attributes
     pcap_folder: str = "regression_samples/"
     fuzz_mode: str = "field"                    # "field", "binary", "both", or "none"
     
@@ -184,7 +182,6 @@ class PcapFuzzCampaign(FuzzingCampaign):
         Execute the PCAP-based fuzzing campaign using the base class fuzzing loop for each processed/fuzzed packet.
         Iterations controls total number of packets sent. If iterations==0, process all packets once. If >0, loop over all packets until total sent == iterations.
         """
-        # Ensure campaign context is initialized
         self.context = self.context or CampaignContext(self)
         
         pcap_folder = Path(self.pcap_folder)
@@ -211,11 +208,9 @@ class PcapFuzzCampaign(FuzzingCampaign):
         # Create the fuzzer instance with all processed packets
         config = FuzzConfig(
             mode = FuzzMode.FIELD_LEVEL,  # Default for PCAP fuzzing
-            use_dictionaries = True,
-            fuzz_weight = 1.0,
+            fuzz_weight_scale = self.fuzz_weight_scale if self.fuzz_weight_scale is not None else 1.0,
             global_dict_config_path = self.global_dict_config_path,
             mutator_preference = self.mutator_preference or ["libfuzzer"],
-            enable_layer_weight_scaling = self.enable_layer_weight_scaling,
             layer_weight_scaling = self.layer_weight_scaling,
             packets = all_processed_packets,
             iterations = self.iterations

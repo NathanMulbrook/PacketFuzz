@@ -80,9 +80,10 @@ class RawIPSocket(FuzzSocket):
                 # Use the original packet to maintain proper protocol structure
                 ip_packet = copy.deepcopy(original_packet)
                 
-                # Apply target addressing if not already set
-                if hasattr(self.socket_config, 'target') and self.socket_config.target:
-                    ip_packet[IP].dst = self.socket_config.target
+                # Apply target addressing if configured
+                target = self.config.get_target('') 
+                if target:
+                    ip_packet[IP].dst = target
                 
             else:
                 # Fallback: parse the raw bytes as an IP packet

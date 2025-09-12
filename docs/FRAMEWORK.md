@@ -242,23 +242,23 @@ The framework automatically tracks sent packets, responses, and timing informati
 
 | Category     | Attribute      | Type            | Default           | Description                                      |
 |--------------|---------------|-----------------|-------------------|--------------------------------------------------|
-| **Required** | `name`        | `str`           | `None`            | Campaign identifier                              |
-|              | `target`      | `str`           | `None`            | Target IP address                                |
+| **Required** | `name`        | `Optional[str]` | `None`            | Campaign identifier                              |
+|              | `socket_config`| `Optional[object]` | `None`         | Socket configuration (contains target/interface) |
 | **Execution**| `iterations`  | `int`           | `1000`            | Number of packets to send                        |
 |              | `duration`    | `Optional[int]` | `None`            | Max execution time (seconds)                     |
-|              | `rate_limit`  | `float`         | `10.0`            | Packets per second                               |
+|              | `rate_limit`  | `float`         | `500.0`           | Packets per second                               |
 | **Output**   | `output_pcap` | `Optional[str]` | `None`            | Output PCAP filename                             |
 |              | `append_pcap` | `bool`          | `False`           | Append to existing PCAP or overwrite            |
-|              | `verbose`     | `bool`          | `True`            | Enable detailed logging                          |
-|              | `interface`   | `str`           | `"eth0"`          | Network interface (Layer 2)                     |
-| **Network**  | `socket_type` | `Optional[str]` | `None`            | Socket type: `"raw_ethernet"`, `"raw_ip"`, `"raw_tcp"`, `"raw_udp"`, `"managed_tcp"`, `"managed_udp"`, `"canbus"`; auto-detect if `None` |
+|              | `verbose`     | `Union[bool, int]` | `True`         | Enable detailed logging                          |
+|              | `stats_interval` | `float`       | `10.0`            | Statistics reporting interval (seconds)          |
+| **Network**  | `socket_type` | `Optional[str]` | `None`            | Socket type: `"raw_ethernet"`, `"raw_ip"`, `"raw_tcp"`, `"raw_udp"`, `"managed_tcp"`, `"managed_udp"`, `"canbus"`, `"server_tcp"`, `"server_udp"`, `"ftp_client"`, `"ftp_server"`, `"tftp_client"`, `"tftp_server"`, `"telnet_client"`, `"telnet_server"`, `"modbus_client"`, `"modbus_server"`; auto-detect if `None` |
 |              | `output_network` | `bool`        | `True`            | Actually send packets                            |
 |              | `response_timeout` | `float`     | `2.0`             | Response capture timeout (seconds)               |
 |              | `capture_responses` | `bool`     | `False`           | Enable response capture                          |
 | **Scaling**  | `layer_weight_scaling` | `Optional[float]` | `None`      | Layer weight scaling factor (0.0-1.0). Lower values = less outer layer fuzzing |
 |              | `enable_layer_weight_scaling` | `bool` | `True`        | Enable/disable layer weight scaling             |
 | **Advanced** | `crash_packet_logging` | `bool`   | `True`            | Enable crash packet capture                      |
-|              | `crash_log_directory` | `str`    | `"crash_logs/"`   | Directory for crash artifacts                    |
+|              | `crash_log_directory` | `str`    | `"artifacts/crash_logs/"` | Directory for crash artifacts                    |
 
 ## Network Interface Offload Management
 

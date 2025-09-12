@@ -222,7 +222,7 @@ def create(campaign: 'FuzzingCampaign') -> FuzzSocket:
 
     # Determine socket type from socket_config
     st = None
-    if hasattr(campaign, 'socket_config') and campaign.socket_config is not None:
+    if campaign.socket_config is not None:
         # Import config types to build mapping
         config_to_socket_type = {}
         try:

@@ -139,7 +139,6 @@ def check_components() -> int:
     
     print("Checking component availability...")
     
-    # Check LibFuzzer extension
     try:
         mutator = LibFuzzerMutator()
         libfuzzer_available = mutator.is_libfuzzer_available()
@@ -152,15 +151,11 @@ def check_components() -> int:
         print(f"LibFuzzer extension: Not available - {e}")
         return 1
     
-    # Check dictionary manager
     try:
-        # Check fuzzdb directory
-        fuzzdb_path = os.path.join(os.path.dirname(__file__), 'fuzzdb')
-        if os.path.exists(fuzzdb_path):
-            print("FuzzDB dictionaries: Available")
-        else:
-            print("FuzzDB dictionaries: Not found")
-            
+        for name in ['fuzzdb', 'seclists']:
+            display = 'FuzzDB' if name == 'fuzzdb' else 'SecLists'
+            path = os.path.join(os.path.dirname(__file__), name)
+            print(f"{display} dictionaries: {'Available' if os.path.exists(path) else 'Not found'}")
     except (OSError, IOError) as e:
         print(f"Dictionary manager: Error - {e}")
         return 1
@@ -228,8 +223,6 @@ def apply_cli_overrides(campaign: Any, args: Any) -> None:
 
 
 ## Logging Configuration
-    # Use explicit verbosity arguments instead of legacy verbose flag
-    
     if args.console_verbosity:
         console_verbosity = args.console_verbosity
     else:
@@ -246,11 +239,9 @@ def apply_cli_overrides(campaign: Any, args: Any) -> None:
     console_level = logging.DEBUG if console_verbosity >= 2 else logging.INFO if console_verbosity >= 1 else logging.WARNING
     file_level = logging.DEBUG if file_verbosity >= 2 else logging.INFO if file_verbosity >= 1 else logging.WARNING
     
-    # Configure logging - set root to the most verbose level needed
     root_logger = logging.getLogger()
     root_logger.setLevel(min(console_level, file_level))
     
-    # Update or create console handler
     console_handler = next((h for h in root_logger.handlers 
                            if isinstance(h, logging.StreamHandler) and h.stream.name in ['<stdout>', '<stderr>']), None)
     if console_handler:
@@ -261,12 +252,10 @@ def apply_cli_overrides(campaign: Any, args: Any) -> None:
         console_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
         root_logger.addHandler(console_handler)
     
-    # Update existing file handler if present
     for handler in root_logger.handlers:
         if isinstance(handler, logging.FileHandler):
             handler.setLevel(file_level)
     
-    # Log configuration if verbosity is high enough
     if max(console_verbosity, file_verbosity) >= 2:
         logger.debug(f"Logging configured - Console: {logging.getLevelName(console_level)}, "
                     f"File: {logging.getLevelName(file_level)} "
@@ -482,14 +471,12 @@ def main() -> int:
             pcap_file = getattr(instance, 'output_pcap', None) or getattr(instance, 'pcap_filename', 'None')
             dict_config = getattr(instance, 'dictionary_config_file', None) or 'Default'
             
-            # Show CLI override info if applicable
             if args.dictionary_config:
                 dict_config = f"{args.dictionary_config} (CLI override)"
             
             print(f"  {i}. {campaign_class.__name__} ({network_status}, PCAP: {pcap_file}, Dict: {dict_config})")
         return 0
     
-    # Execute campaigns
     success_count = 0
     total_campaigns = len(campaigns)
     for campaign_class in campaigns:

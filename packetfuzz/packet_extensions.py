@@ -6,12 +6,10 @@ This module provides a simpler approach that doesn't interfere with Scapy's
 internal attribute resolution mechanism.
 """
 
-# Standard library imports
 from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Union
 
-# Third-party imports
 from scapy.fields import Field
 from scapy.packet import Packet
 
@@ -78,7 +76,6 @@ class FuzzConfigRegistry:
         self._packet_ids.discard(packet_id)
 
 
-# Global registry instance
 _fuzz_config_registry = FuzzConfigRegistry()
 
 
@@ -97,13 +94,11 @@ class FieldFuzzProxy:
             super().__setattr__(name, value)
             return
         
-        # Get or create field config
         config = _fuzz_config_registry.get_field_config(self._packet, self._field_name)
         if config is None:
             config = FieldFuzzConfig()
             _fuzz_config_registry.set_field_config(self._packet, self._field_name, config)
         
-        # Set the configuration attribute
         if hasattr(config, name):
             setattr(config, name, value)
         else:
@@ -131,7 +126,6 @@ def install_packet_extensions():
     Uses method injection for field configuration only.
     """
     
-    # Add field utility methods to Packet class  
     def get_field_fuzz_config(self, field_name: str) -> Optional[FieldFuzzConfig]:
         """Get field-level fuzzing configuration"""
         return _fuzz_config_registry.get_field_config(self, field_name)
@@ -152,7 +146,6 @@ def install_packet_extensions():
         """Get fuzzing configuration proxy for a field"""
         return FieldFuzzProxy(self, field_name)
     
-    # Add methods to Packet class
     Packet.get_field_fuzz_config = get_field_fuzz_config  # type: ignore[attr-defined]
     Packet.get_all_field_fuzz_configs = get_all_field_fuzz_configs  # type: ignore[attr-defined]
     Packet.clear_fuzz_configs = clear_fuzz_configs  # type: ignore[attr-defined]
@@ -160,7 +153,4 @@ def install_packet_extensions():
     Packet.field_fuzz = field_fuzz  # type: ignore[attr-defined]
 
 
-
-
-# Auto-install extensions when module is imported
 install_packet_extensions()

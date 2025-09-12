@@ -152,7 +152,8 @@ class BoofuzzIntegerAdapter(BaseMutator):
                 int_val = int.from_bytes(data, 'little')
             else:
                 int_val = 0
-        except:
+        except (ValueError, OverflowError) as e:
+            logger.warning(f"Failed to convert bytes to int: {data.hex()}: {e}")
             int_val = 0
         
         if self._primitive is None:
@@ -176,7 +177,8 @@ class BoofuzzIntegerAdapter(BaseMutator):
                     return result.to_bytes(len(data), 'little')
                 else:
                     return data
-            except:
+            except (ValueError, OverflowError) as e:
+                logger.warning(f"Failed to convert int {result} to bytes (length {len(data)}): {e}")
                 return data
         return data
     
@@ -211,7 +213,8 @@ class BoofuzzIntegerAdapter(BaseMutator):
             # Try to convert back to appropriate integer size
             try:
                 return int.from_bytes(mutated_bytes[:len(current_value)], 'little')
-            except:
+            except (ValueError, OverflowError) as e:
+                logger.warning(f"Failed to convert mutated bytes back to int: {e}")
                 return current_value
         
         return current_value
@@ -280,7 +283,8 @@ class BoofuzzFloatAdapter(BaseMutator):
                 float_val = struct.unpack('<f', data[:4])[0]
             else:
                 float_val = 0.0
-        except:
+        except (struct.error, ValueError, TypeError) as e:
+            logger.warning(f"Failed to unpack float from data {data[:4].hex()}: {e}")
             float_val = 0.0
         
         if self._primitive is None:
@@ -310,7 +314,8 @@ class BoofuzzFloatAdapter(BaseMutator):
                     return struct.pack('<f', float(result))
                 else:
                     return data
-            except:
+            except (struct.error, ValueError, OverflowError) as e:
+                logger.warning(f"Failed to pack float {result}: {e}")
                 return data
         return data
     

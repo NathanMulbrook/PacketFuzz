@@ -62,7 +62,6 @@ class MutatorManager:
         self.current_fuzzed_fields: List[str] = []
         self.fuzzed_fields_per_packet: List[Dict[str, Dict[str, Any]]] = []
         
-        # Track current iteration for sequential field fuzzing
         self.current_iteration: int = 0
         
         install_packet_extensions()
@@ -172,13 +171,7 @@ class MutatorManager:
                 for ft in available_fieldtypes[:10]:  # Limit to first 10 to avoid spam
                     sample_fields = self.data.get_all_fields_of_type(ft)
                     logger.debug(f"[FIELDTYPE_DEBUG] {ft}: {len(sample_fields)} fields, sample keys: {[f.field_key for f in sample_fields[:3]]}")
-        
-        
-        # Step 2: Initialize tracking for all packets
-        
-        # Step 3: Batch fuzzing - Collect all field/layer combinations across all packets
-        # Since all packets are deep copies of the same original, we can use the first packet as template
-   
+ 
         for field_type in self.data.get_all_fieldtypes():
             self._fuzz_field_in_layer(field_type)
         
@@ -188,8 +181,7 @@ class MutatorManager:
             logger.info(f"[FUZZ] Field fuzzing complete: generated {fuzzed_count} fuzzed packets")
         
         # Write debug report of all fuzzed packets (only in debug mode)
-        if VERBOSITY_LEVEL >= 3:  # Only in debug mode
-            #TODO update reporting
+        if VERBOSITY_LEVEL >= 3:
             log_dir = Path(DEFAULT_LOG_DIR)
             log_dir.mkdir(parents=True, exist_ok=True)
             write_debug_packet_log(self.data.fuzzed_packets, file_path=str(log_dir / "fuzz_fields_output_report.txt"), title="Fuzz Fields Output")
@@ -273,9 +265,23 @@ class MutatorManager:
             mutators = list(field.mutator_weights.keys())
             weights = list(field.mutator_weights.values())
             mutator_selection = random.choices(mutators, weights=weights, k=1)[0]
+            logger.debug(f"Using field-level mutator weights: {field.mutator_weights}, selected: {mutator_selection}")
         else:
-            # Fallback to default when no weights configured
-            mutator_selection = "libfuzzer"
+            # Fallback to campaign mutator preference when no field-level weights configured
+            if self.fuzz_config.mutator_preference:
+                if isinstance(self.fuzz_config.mutator_preference, dict):
+                    mutators = list(self.fuzz_config.mutator_preference.keys())
+                    weights = list(self.fuzz_config.mutator_preference.values())
+                    mutator_selection = random.choices(mutators, weights=weights, k=1)[0]
+                    logger.debug(f"Using campaign-level mutator preference: {self.fuzz_config.mutator_preference}, selected: {mutator_selection}")
+                else:
+                    # Handle case where it's still a list (shouldn't happen but safety first)
+                    mutator_selection = random.choice(self.fuzz_config.mutator_preference)
+                    logger.debug(f"Using campaign-level mutator preference (list): {self.fuzz_config.mutator_preference}, selected: {mutator_selection}")
+            else:
+                # Final fallback to default when no configuration available
+                mutator_selection = "libfuzzer"
+                logger.debug(f"No mutator preference configured, using default: {mutator_selection}")
         
         # Apply legacy weight overrides (deprecated but maintained for compatibility)
         #TODO consider removing these
@@ -339,7 +345,6 @@ class MutatorManager:
                 # Already in correct format
                 return mutated_value
             elif isinstance(mutated_value, (str, bytes)):
-                # Convert string/bytes to dictionary format
                 s = mutated_value.decode('utf-8', errors='ignore') if isinstance(mutated_value, bytes) else str(mutated_value)
                 if ':' in s:
                     parts = s.split(':', 1)
@@ -347,7 +352,6 @@ class MutatorManager:
                     header_value = parts[1].strip() if len(parts) > 1 else ''
                     return {header_name: header_value}
                 else:
-                    # No colon found, create a custom header
                     return {f"X-Custom-{field_name}": s}
             else:
                 # For other types (int, etc.), convert to string first then to dict
@@ -386,7 +390,6 @@ class MutatorManager:
             - Applies per-layer weight checking for proper layer weight scaling
         """
         
-        # Try a few time to mutate a field
         attempts = 0
         last_err = None
         success = False
@@ -417,22 +420,23 @@ class MutatorManager:
                     
                     success = self.data.validate_and_assign(field_info, value=compatible_value)
                     last_err = None  # Clear error on success
+            except (AttributeError, ValueError, TypeError, RuntimeError) as e:
+                last_err = str(e)
+                success = False
+                logger.debug(f"Mutation attempt failed: {e}")
             except Exception as e:
                 last_err = str(e)
                 success = False
+                logger.warning(f"Unexpected exception during mutation: {type(e).__name__}: {e}")
 
-        # If all attempts failed
         if not success:
             logger.warning(f"Field mutation failed after {attempts} attempts: {field_info.field_key}: {last_err}")
             
-            # Record failure using centralized tracking
             self.data.record_field_mutation(field_info.field_key, field_info.packet_index, False, mutator_type if 'mutator_type' in locals() else "unknown")
             
-            # Revert to original value through the data class
-            # Get the original value and revert
+            # Revert to original value
             original_value = field_info.current_value
             if original_value is not None:
-                # Try to revert to original value
                 revert_success = self.data.validate_and_assign(field_info, original_value)
                 if field_info.field_name in CRITICAL_FIELDS:
                     if revert_success:
@@ -443,7 +447,6 @@ class MutatorManager:
                 if field_info.field_name in CRITICAL_FIELDS:
                     logger.debug(f"No original value to revert for {field_info.field_key} (mutation fallback)")
         else:
-            # Record successful mutation using centralized tracking
             self.data.record_field_mutation(field_info.field_key, field_info.packet_index, True, mutator_type if 'mutator_type' in locals() else "unknown")
             
             if field_info.field_name in CRITICAL_FIELDS:
@@ -499,7 +502,6 @@ class MutatorManager:
         iterations = int(iters_cfg) if isinstance(iters_cfg, int) and iters_cfg > 0 else 1
         mutated_packets = []
         for packet_index, packet in enumerate(self.data.original_packets):
-            # Get packet-level dictionaries using consolidated API
             dictionary_paths = self.dictionary_manager.get_packet_dictionaries(packet)
             if not dictionary_paths:
                 # Collect dictionary paths from processed field metadata

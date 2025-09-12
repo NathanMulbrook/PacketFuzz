@@ -11,7 +11,6 @@ FuzzDB dictionaries for comprehensive network protocol fuzzing.
 Now uses embedded packet configuration with field_fuzz() and fuzz_config() methods.
 """
 
-# Standard library imports
 from __future__ import annotations
 import copy
 import difflib
@@ -33,7 +32,6 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterator, List, Optional, Protocol, Union
 
-# Third-party imports
 from scapy.layers.can import CAN
 from scapy.layers.inet import ICMP, IP, TCP, UDP
 from scapy.layers.l2 import ARP, Ether
@@ -41,7 +39,6 @@ from scapy.packet import Packet, Raw, fuzz
 from scapy.sendrecv import send, sendp, sniff, sr1
 from scapy.utils import wrpcap
 
-# Local imports
 from .mutator_manager import FuzzConfig, FuzzMode, MutatorManager, DEFAULT_FUZZ_WEIGHT, DEFAULT_MUTATOR_PREFERENCE
 from .mutator_manager_data import MutatorManagerData
 from .socket_types import SocketType
@@ -51,7 +48,6 @@ from .utils.scapy_utils import get_layer_names_from_packets, get_layer_name
 from .default_mappings import FIELD_NAME_WEIGHTS, DEFAULT_FUZZ_WEIGHT_SCALING
 from .utils.pattern_utils import parse_field_patterns, pattern_matches_any
 
-# Constants
 DEFAULT_PCAP_FILENAME = "fuzzing_session.pcap"
 DEFAULT_ITERATIONS = 1000
 DEFAULT_RATE_LIMIT = 500.0
@@ -100,23 +96,22 @@ if not logging.getLogger().handlers:
         raise SystemExit(2)
 logger = logging.getLogger(__name__)
 
-# Install packet extensions for embedded configuration
 from .packet_extensions import install_packet_extensions
 install_packet_extensions()
 
 
 class CallbackResult(Enum):
     """Standard return values for all callback functions"""
-    SUCCESS = "success"          # Continue normally
-    NO_SUCCESS = "no_success"    # Non-critical failure, continue with logging
-    FAIL_CRASH = "fail_crash"    # Critical failure, trigger crash handling
+    SUCCESS = "success"
+    NO_SUCCESS = "no_success"
+    FAIL_CRASH = "fail_crash"
 
 
 @dataclass
 class CrashInfo:
     """Standardized crash information passed to crash callbacks"""
     packet: Optional[Packet]
-    crash_source: str  # "pre_launch", "pre_send", "post_send", "monitor"
+    crash_source: str
     exception: Optional[Exception] = None
     context: Optional['CampaignContext'] = None
     timestamp: datetime = field(default_factory=datetime.now)
@@ -138,49 +133,39 @@ class CampaignContext:
         'no_success_count': 0,
         'crash_count': 0
     })
-    shared_data: dict = field(default_factory=dict)  # User data sharing between callbacks, not used by framework
+    shared_data: dict = field(default_factory=dict)
     start_time: float = field(default_factory=time.time)
     fuzz_history: List[FuzzHistoryEntry] = field(default_factory=list)
     max_history_size: int = 100000
-    socket: Optional[socket.socket] = None  # Placeholder for raw socket object if needed (for backward compatibility)
-    fuzz_socket: Optional[FuzzSocket] = None  # New: wrapper around raw socket
+    socket: Optional[socket.socket] = None
+    fuzz_socket: Optional[FuzzSocket] = None
     mutator_data: Optional[MutatorManagerData] = None 
 @dataclass
 class FuzzHistoryEntry:
     """Tracks runtime execution data for a single fuzzing iteration (responses, failures, timing)"""
-    # Core execution timing
     timestamp_sent: Optional[datetime] = None
     timestamp_received: Optional[datetime] = None
-    iteration: int = -1 #This is probably not needed, but this can help with desync issues
+    iteration: int = -1
     
-    # Runtime results
     response: Optional[Any] = None
     crashed: bool = False
     crash_info: Optional[CrashInfo] = None
     
-    # Serialization tracking (runtime execution data)
-    packet_bytes: Optional[bytes] = None  # Serialized packet bytes that were actually sent
-    serialization_failed: bool = False  # True if packet couldn't be serialized
-    serialization_error: Optional[str] = None  # Error message if serialization failed
+    packet_bytes: Optional[bytes] = None
+    serialization_failed: bool = False
+    serialization_error: Optional[str] = None
     
-    # Network and protocol information (for reporting)
-    
-    # Payload information (derived from sent bytes)
     payload_size: Optional[int] = None
-    payload_hash: Optional[str] = None  # Hash of the payload for deduplication
+    payload_hash: Optional[str] = None
     
-    # Response information (runtime results)
     response_size: Optional[int] = None
-    response_status: Optional[str] = None  # HTTP status, error code, etc.
-    response_headers: Optional[dict] = None  # For HTTP-like protocols
+    response_status: Optional[str] = None
+    response_headers: Optional[dict] = None
     
-    # Campaign context (for reporting)
-    # campaign_name and protocol are now omitted; derive from campaign or packet as needed
-    test_case_id: Optional[str] = None  # User-defined test case identifier
+    test_case_id: Optional[str] = None
     
-    # Additional metadata
-    notes: Optional[str] = None  # User or system notes about this iteration
-    tags: List[str] = field(default_factory=list)  # Custom tags for categorization
+    notes: Optional[str] = None
+    tags: List[str] = field(default_factory=list)
     
     def get_response_time(self) -> Optional[float]:
         """Calculate response time in milliseconds if both timestamps are available"""
@@ -258,7 +243,6 @@ class CallbackManager:
         context.stats['callbacks_executed'] += 1
         result = callback_func(context, *args)
         
-        # Handle different return types
         if isinstance(result, CallbackResult):
             return result
         elif result is True or result == "success":
@@ -286,15 +270,12 @@ class CallbackManager:
         context.stats['crash_count'] += 1
         crash_info = CrashInfo(packet, crash_source, exception, context)
         
-        # 1. Built-in crash packet logging (if enabled)
         if self.campaign.crash_packet_logging:
             self._internal_crash_logger(crash_info, context)
         
-        # 2. User crash callback (if provided)
         if self.campaign.crash_callback:
             self.campaign.crash_callback(crash_info, context)
         
-        # 3. Store crash in most recent history entry if available
         if context.iteration is not context.fuzz_history[-1].iteration:
             logger.error("Mismatch between context iteration and latest fuzz history entry iteration during crash handling.")
             raise RuntimeError("Iteration mismatch during crash handling.")
@@ -304,7 +285,7 @@ class CallbackManager:
             latest_entry.crashed = True
             latest_entry.crash_info = crash_info
         
-        # 4. Stop campaign execution
+        # Stop campaign execution
         context.is_running = False
     
     def handle_no_success(self, callback_type: str, context: CampaignContext, *args) -> None:
@@ -321,7 +302,6 @@ class CallbackManager:
         if self.campaign.no_success_callback:
             self.campaign.no_success_callback(callback_type, context, *args)
         else:
-            # Default logging if no user callback
             logger.warning(f"Callback {callback_type} returned no-success")
     
 
@@ -336,13 +316,11 @@ class CallbackManager:
             context: Campaign context
         """
 
-        # Ensure crash log directory exists
         crash_dir = Path(self.campaign.crash_log_directory)
         crash_dir.mkdir(parents=True, exist_ok=True)
 
         crash_id = crash_info.crash_id
 
-        # Log crash metadata
         target_info = getattr(self.campaign.socket_config, 'target', 'N/A') if self.campaign.socket_config else 'N/A'
         metadata = {
             "crash_id": crash_id,
@@ -358,7 +336,6 @@ class CallbackManager:
             metadata["packet_summary"] = crash_info.packet.summary()
             pcap_path = crash_dir / f"{crash_id}.pcap"
             report_path = crash_dir / f"{crash_id}_report.txt"
-            # Write crash report using new focused function
             write_crash_report(
                 packet=crash_info.packet,
                 file_path=str(report_path),
@@ -367,7 +344,6 @@ class CallbackManager:
                 crash_info=crash_info,
                 pcap_path=str(pcap_path)
             )
-        # JSON metadata (always created)
         with (crash_dir / f"{crash_id}_metadata.json").open("w") as f:
             json.dump(metadata, f, indent=2, default=str)
         logger.error(f"Crash logged: {crash_id} in {crash_dir}/")
@@ -393,9 +369,6 @@ class FuzzField:
                  fuzz_weight: float = 1.0,
                  description: str = "",
                  mutators: Optional[Union[list[str], dict[str, float]]] = None,
-                 scapy_fuzz_weight: float = 0.1,
-                 use_scapy_fuzz: bool = False,
-                 dictionary_only_weight: float = 0.0,
                  dictionary_override: bool = False):
         """Initialize FuzzField with field-specific fuzzing configuration."""
         self.values = values or []
@@ -403,9 +376,8 @@ class FuzzField:
         self.fuzz_weight = fuzz_weight
         self.description = description
         
-        # Normalize mutators to dict format immediately
+        # Normalize mutators to dict format
         if isinstance(mutators, list):
-            # Convert list to equal-weight dict for backward compatibility
             if not mutators:
                 self.mutators = {"libfuzzer": 1.0}
             else:
@@ -414,9 +386,6 @@ class FuzzField:
         elif isinstance(mutators, dict):
             self.mutators = mutators.copy()
         
-        self.scapy_fuzz_weight = scapy_fuzz_weight
-        self.use_scapy_fuzz = use_scapy_fuzz
-        self.dictionary_only_weight = dictionary_only_weight
         self.dictionary_override = dictionary_override
 
     def choose_value(self) -> Any:
@@ -502,11 +471,9 @@ def configure_interface_offload(interface: str, features: List[str], disable: bo
     if os.geteuid() != 0:
         raise PermissionError("Root privileges required for interface configuration")
     
-    # Check if ethtool is available
     if not shutil.which("ethtool"):
         raise FileNotFoundError("ethtool command not found - install ethtool package")
     
-    # Validate interface exists
     if not os.path.exists(f"/sys/class/net/{interface}"):
         raise RuntimeError(f"Network interface '{interface}' not found")
     
@@ -531,7 +498,6 @@ def configure_interface_offload(interface: str, features: List[str], disable: bo
         except subprocess.CalledProcessError:
             logger.warning(f"Failed to query feature '{feature}' on '{interface}'")
     
-    # Apply new settings
     success_count = 0
     for feature in features:
         if feature not in original_settings:
@@ -629,7 +595,7 @@ class FuzzingCampaign:
     Packet-level configuration is now embedded in the packet object itself using:
         packet[Layer].field_fuzz('fieldname').dictionary = ["dict1.txt", "dict2.txt"]
         packet[Layer].field_fuzz('fieldname').default_values = [value1, value2, value3]
-        packet[Layer].field_fuzz('fieldname').weight = 0.8
+        packet[Layer].field_fuzz('fieldname').fuzz_weight = 0.8
         packet[Layer].fuzz_config().dictionary = ["packet_dict.txt"]
     """
     
@@ -652,6 +618,7 @@ class FuzzingCampaign:
     
     
     # Callback configuration
+    #TODO is this really needed since the callback function will work if its just defined in the subclass?
     pre_launch_callback: Optional[Callable] = None
     pre_connect_callback: Optional[Callable] = None  # New: called before accept_connection/listen
     pre_send_callback: Optional[Callable] = None
@@ -675,14 +642,13 @@ class FuzzingCampaign:
     mutator_preference: Optional[Union[List[str], Dict[str, float]]] = None  # Campaign mutator preference (normalized to dict in __init__)
     
     # Layer-weight scaling controls (campaign-level overrides)
-    # Lower values reduce fuzzing of outer layers more aggressively:
-    #   - 0.9: Mild reduction (outer layers get 90% → 81% → 73% of base weight)
-    #   - 0.5: Moderate reduction (outer layers get 50% → 25% → 12.5% of base weight)  
-    #   - 0.1: Aggressive reduction (outer layers get 10% → 1% → 0.1% of base weight)
-    enable_layer_weight_scaling: bool = True
+    # Controls the weight reduction for outer network layers to focus fuzzing on inner layers
+    # Values: None/1.0 = no scaling, 0.5 = outer layers get 50%→25%→12.5% weight, 0.9 = mild reduction
     layer_weight_scaling: Optional[float] = None  # None uses default from default_mappings
 
-    fuzz_weight_scaling: Optional[float] = None  # None uses default from default_mappings
+    # Global weight scale multiplier applied to all field weights (campaign-level fuzzing intensity control)
+    # Values: 0.1 = very light fuzzing, 1.0 = default intensity, 2.0 = heavy fuzzing
+    fuzz_weight_scale: Optional[float] = None  # None uses default (1.0)
 
     # Optionally exclude layers from fuzzing by name (sets fuzz_weight=0.0 for those layers)
     excluded_layers: Optional[List[str]] = None
@@ -727,7 +693,6 @@ class FuzzingCampaign:
             if (not attr_name.startswith('__') and 
                 not callable(getattr(self.__class__, attr_name))):
                 
-                # Get class attribute value
                 class_value = getattr(self.__class__, attr_name)
                 
                 # Only deep copy mutable types (list, dict, set)
@@ -740,7 +705,6 @@ class FuzzingCampaign:
             equal_weight = 1.0 / len(self.mutator_preference)
             self.mutator_preference = {mutator: equal_weight for mutator in self.mutator_preference}
         
-        # Validate field inclusion/exclusion: both cannot be set in same campaign
         if (self.fields_to_fuzz and self.excluded_fields):
             raise ValueError(
                 "Campaign cannot have both 'fields_to_fuzz' (whitelist) and 'excluded_fields' (blacklist) set. "
@@ -753,18 +717,15 @@ class FuzzingCampaign:
                 "Use either whitelist approach (layers_t_fuzz) or blacklist approach (excluded_layers), but not both."
             )
         
-        # Handle 'all' in report_formats
         if 'all' in self.report_formats:
             self.report_formats = ['html', 'json', 'csv', 'sarif', 'markdown', 'yaml']
         
-        # Initialize instance-specific objects
         self.callback_manager = CallbackManager(self)
         self.context = CampaignContext(self)  # Initialize context immediately
         self.monitor_thread = None
         self._original_offload_settings = {}
         self._interface_configured = False
         
-        # Handle excluded_layers by adding advanced mapping entries
         if self.excluded_layers:
             if not self.advanced_field_mapping_overrides:
                 self.advanced_field_mapping_overrides = []
@@ -911,7 +872,7 @@ class FuzzingCampaign:
             # Mutator configuration
             'mutator_preference',
             # Layer-weight scaling
-            'enable_layer_weight_scaling', 'layer_weight_scaling', 'fuzz_weight_scaling',
+            'layer_weight_scaling',
             # Layer/field filtering
             'excluded_layers', 'layers_to_fuzz', 'excluded_fields', 'fields_to_fuzz',
             # Network interface offload
@@ -927,13 +888,11 @@ class FuzzingCampaign:
             '_interface_configured'
         }
         
-        # Check each instance attribute for typos
         for attr_name in vars(self).keys():
             if attr_name.startswith('_'):  # Skip private attributes
                 continue
                 
             if attr_name not in valid_attributes:
-                # Find closest match using difflib
                 closest_matches = difflib.get_close_matches(
                     attr_name, valid_attributes, n=3, cutoff=0.6
                 )
@@ -945,7 +904,7 @@ class FuzzingCampaign:
                 
                 errors.append(f"Unknown attribute '{attr_name}'. {suggestion}")
         
-        packet = getattr(self, 'packet', None)
+        packet = self.packet
         
         # If no packet assigned, try to obtain one via get_packet()
         if packet is None:
@@ -985,7 +944,6 @@ class FuzzingCampaign:
                         if not packet.haslayer(IP):
                             errors.append(f"{socket_type.name} socket requires packet with IP header")
         
-        # Log validation errors
         if errors:
             logger.error("Campaign validation failed:")
             for error in errors:
@@ -1003,7 +961,6 @@ class FuzzingCampaign:
         Falls back to current directory if specified path is invalid.
         """
         if not self.output_pcap:
-            # Generate smart default based on campaign name
             if self.name:
                 # Convert campaign name to valid filename
                 safe_name = "".join(c.lower() if c.isalnum() else "_" for c in self.name)
@@ -1021,7 +978,6 @@ class FuzzingCampaign:
             pcap_dir.mkdir(parents=True, exist_ok=True)
             pcap_path = pcap_dir / pcap_path.name
         else:
-            # Try to create the specified directory
             try:
                 pcap_path.parent.mkdir(parents=True, exist_ok=True)
             except (PermissionError, OSError) as e:
@@ -1040,9 +996,7 @@ class FuzzingCampaign:
             iteration=iteration,
         )
         
-        # Add essential packet data without causing memory issues
         if packet:
-            # Store packet bytes for reproduction
             history_entry.packet_bytes = bytes(packet)
             history_entry.payload_size = len(history_entry.packet_bytes)
             history_entry.payload_hash = hashlib.md5(history_entry.packet_bytes).hexdigest()
@@ -1051,7 +1005,6 @@ class FuzzingCampaign:
         if len(self.context.fuzz_history) >= self.context.max_history_size:
             self.context.fuzz_history.pop(0)  # Remove oldest entry
         
-        # Add entry to history
         self.context.fuzz_history.append(history_entry)
         
         return history_entry
@@ -1123,7 +1076,6 @@ class FuzzingCampaign:
                 logger.info("[SERIALIZE] Skipping send for this iteration due to serialize failure")
                 pkt_bytes = None
 
-        # Store serialized bytes in history entry
         self.context.fuzz_history[-1].packet_bytes = pkt_bytes
         self.context.fuzz_history[-1].payload_size = len(pkt_bytes)
         
@@ -1182,19 +1134,17 @@ class FuzzingCampaign:
             
             config = FuzzConfig(
                 mode = fuzz_mode,
-                use_dictionaries = True,
-                fuzz_weight = self.fuzz_weight_scaling if self.fuzz_weight_scaling is not None else DEFAULT_FUZZ_WEIGHT_SCALING,
+                fuzz_weight_scale = self.fuzz_weight_scale if self.fuzz_weight_scale is not None else 1.0,
                 global_dict_config_path = self.global_dict_config_path,
                 mutator_preference = self.mutator_preference if self.mutator_preference is not None else DEFAULT_MUTATOR_PREFERENCE,
-                enable_layer_weight_scaling = self.enable_layer_weight_scaling,
                 layer_weight_scaling = self.layer_weight_scaling,
                 # Include packet and iteration information in config
                 packets = self.packet,
                 iterations = self.iterations,
                 # Pass campaign-level field mapping overrides
-                advanced_field_mapping_overrides = getattr(self, 'advanced_field_mapping_overrides', None),
+                advanced_field_mapping_overrides = self.advanced_field_mapping_overrides,
                 # Pass sequential field fuzzing flag
-                sequential_field_fuzzing = getattr(self, 'sequential_field_fuzzing', False)
+                sequential_field_fuzzing = self.sequential_field_fuzzing
             )
             fuzzer = MutatorManager(config)
             self.context.mutator_data = fuzzer.fuzz_packet()
@@ -1206,7 +1156,7 @@ class FuzzingCampaign:
             logger.info(f"   Iterations: {self.iterations}")
             logger.info(f"   Layer: {self.context.fuzz_socket.socket_type}")
             logger.info(f"   Rate limit: {self.rate_limit} packets/sec")
-            pkt_for_info = getattr(self, 'packet', None)
+            pkt_for_info = self.packet
             if hasattr(pkt_for_info, 'has_fuzz_config') and pkt_for_info.has_fuzz_config():  # type: ignore[attr-defined]
                 logger.info("   ### Packet has embedded fuzzing configuration")
             if self.pre_launch_callback or self.pre_send_callback or self.post_send_callback or self.crash_callback or self.no_success_callback or self.monitor_callback:
@@ -1250,27 +1200,24 @@ class FuzzingCampaign:
                 generate_campaign_reports(
                     campaign=self,
                     campaign_context=self.context,
-                    level=getattr(self, 'report_level', 'executive'),
+                    level=self.report_level,
                     output_formats=self.report_formats,
                     output_directory=None  # Auto-generated path
                 )
                 
                 # For very verbose runs (verbosity >= 3), dump the entire packet history
-                if hasattr(self, 'verbose') and isinstance(self.verbose, int) and self.verbose >= 3:
+                if self.verbose >= 3:
                     if self.context.fuzz_history:
                         from datetime import datetime
                         
-                        # Create logs directory if it doesn't exist
                         log_dir = Path("artifacts/logs")
                         log_dir.mkdir(parents=True, exist_ok=True)
                         
-                        # Generate filename with timestamp
                         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                        campaign_name = getattr(self, 'name', 'unknown_campaign')
+                        campaign_name = self.name or 'unknown_campaign'
                         dump_filename = f"fuzz_history_{campaign_name}_{timestamp}.log"
                         dump_path = log_dir / dump_filename
                         
-                        # Write the packet history dump
                         write_fuzz_history_dump(
                             fuzz_history=self.context.fuzz_history,
                             file_path=str(dump_path),
@@ -1328,7 +1275,6 @@ class FuzzingCampaign:
         This implementation includes PCAP output, target resolution, 
         rate limiting, callback execution, and proper network/file output handling.
         """
-        # Initialize counters and state
         packets_sent = 0
         packets_written_to_pcap = 0
         serialize_failure_count = 0
@@ -1510,7 +1456,6 @@ class FuzzingCampaign:
                         self.context.fuzz_history[-1].response = response
 
 ##Post send callback           
-                # Execute post-send callback
                 #TODO, cleanup callbacks interface
                 if self.post_send_callback:
                     result = self.callback_manager.execute_callback(
@@ -1536,13 +1481,11 @@ class FuzzingCampaign:
                     self.context.socket = None
                 
 ##Rate limiting
-                # Only apply rate limiting if network sending is enabled
                 if self.rate_limit and network_enabled:
                     time.sleep(1.0 / self.rate_limit)
             
 ##End of itterations loop
 
-            # Close fuzz_socket if we opened it for reuse
             if network_enabled and self.context.fuzz_socket and self.reuse_socket:
                 self.context.fuzz_socket.close()
                 self.context.fuzz_socket = None

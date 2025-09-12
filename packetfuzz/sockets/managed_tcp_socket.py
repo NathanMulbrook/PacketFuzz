@@ -62,7 +62,11 @@ class ManagedTCPSocket(FuzzSocket):
         if not self._sock:
             raise RuntimeError("Socket not open")
             
-        return self._sock.send(packet_bytes)
+        try:
+            return self._sock.send(packet_bytes)
+        except (ConnectionError, OSError) as e:
+            # Socket errors should crash the fuzzing campaign
+            raise RuntimeError(f"TCP socket send failed: {e}") from e
 
     def receive_response(self, timeout: Optional[float] = None) -> Optional[bytes]:
         """Receive response data from TCP connection."""
@@ -79,6 +83,9 @@ class ManagedTCPSocket(FuzzSocket):
         except socket.timeout:
             self.logger.debug("receive timeout")
             return None
+        except (ConnectionError, OSError) as e:
+            # Socket errors should crash the fuzzing campaign
+            raise RuntimeError(f"TCP socket receive failed: {e}") from e
         finally:
             if timeout is not None:
                 self._sock.settimeout(None)  # Reset to blocking
@@ -96,8 +103,8 @@ class ManagedTCPSocket(FuzzSocket):
         from scapy.layers.inet import IP, TCP
         import random
         
-        target_ip = self.socket_config.target if hasattr(self.socket_config, 'target') else '127.0.0.1'
-        target_port = self.socket_config.port if hasattr(self.socket_config, 'port') else 80
+        target_ip = self.config.get_target('127.0.0.1')
+        target_port = self.config.get_port(80)
         
         # Use iteration for consistent but unique source ports
         base_sport = 49152  # Start of ephemeral port range  

@@ -97,8 +97,8 @@ class ManagedUDPSocket(FuzzSocket):
         from scapy.volatile import RandShort
         import random
         
-        target_ip = self.socket_config.target if hasattr(self.socket_config, 'target') else '127.0.0.1'
-        target_port = self.socket_config.port if hasattr(self.socket_config, 'port') else 53
+        target_ip = self.config.get_target('127.0.0.1')
+        target_port = self.config.get_port(53)
         
         # Use iteration for consistent but unique source ports
         base_sport = 49152  # Start of ephemeral port range

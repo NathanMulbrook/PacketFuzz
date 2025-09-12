@@ -52,7 +52,6 @@ class WebSecurityTestingCampaign(FuzzingCampaign):
             )
         )
     )
-    # Generate all report formats for comprehensive analysis
     report_formats = ['json', 'html', 'markdown', 'yaml', 'sarif']
 
 class NetworkProtocolAnalysisCampaign(FuzzingCampaign):
@@ -60,7 +59,7 @@ class NetworkProtocolAnalysisCampaign(FuzzingCampaign):
     name = "Network Protocol Analysis"
     socket_config = RawIPConfig(target="127.0.0.1")
     iterations = 8
-    verbose = True  # Shows complete protocol hierarchy
+    verbose = True
     packet = (
         IP(
             dst=FuzzField(
@@ -93,13 +92,13 @@ class PerformanceBenchmarkCampaign(FuzzingCampaign):
     """Performance benchmarking with detailed metrics."""
     name = "Performance Benchmark"
     socket_config = RawIPConfig(target="127.0.0.1")
-    iterations = 25  # Higher iteration count for performance analysis
-    verbose = True  # Track performance with detailed logging
+    iterations = 25 
+    verbose = True
     packet = (
         IP(dst="127.0.0.1") /
         TCP(
             dport=FuzzField(
-                values=list(range(8000, 8020)),  # Port range for testing
+                values=list(range(8000, 8020)),
                 description="Port range for performance testing"
             )
         ) /
@@ -110,9 +109,8 @@ class PerformanceBenchmarkCampaign(FuzzingCampaign):
             Host=b"localhost"
         )
     )
-    report_formats = ['json']  # JSON for easy programmatic analysis
+    report_formats = ['json']
 
-# Campaign registry
 CAMPAIGNS = [
     WebSecurityTestingCampaign,
     NetworkProtocolAnalysisCampaign,

@@ -15,28 +15,10 @@ import time
 from typing import Optional, Dict, List, Any, Tuple, Union, TYPE_CHECKING
 from dataclasses import dataclass, field
 
-try:
-    # Check if pymodbus is available
-    import pymodbus
-    from pymodbus.server import StartTcpServer, ServerStop
-    from pymodbus.datastore import ModbusSequentialDataBlock, ModbusSlaveContext, ModbusServerContext
-    from pymodbus.transaction import ModbusSocketFramer
-    PYMODBUS_AVAILABLE = True
-except ImportError:
-    # Define stubs for type checking when pymodbus is not available
-    class StartTcpServer:
-        pass
-    class ServerStop:
-        pass
-    class ModbusSequentialDataBlock:
-        pass
-    class ModbusSlaveContext:
-        pass
-    class ModbusServerContext:
-        pass
-    class ModbusSocketFramer:
-        pass
-    PYMODBUS_AVAILABLE = False
+import pymodbus
+from pymodbus.server import StartTcpServer, ServerStop
+from pymodbus.datastore import ModbusSequentialDataBlock, ModbusSlaveContext, ModbusServerContext
+from pymodbus.transaction import ModbusSocketFramer
 
 from .socket_interface import FuzzSocket
 from .base_socket import BaseSocketConfig
@@ -166,10 +148,6 @@ class CustomModbusServer:
         """Start the Modbus server."""
         if self.running:
             return
-            
-        if not PYMODBUS_AVAILABLE:
-            self.logger.error("pymodbus is not available. Cannot start Modbus server.")
-            return False
             
         try:
             self.running = True
@@ -305,14 +283,8 @@ class ModbusServerSocket(FuzzSocket):
     """
 
     def __init__(self, campaign) -> None:
-        if not PYMODBUS_AVAILABLE:
-            raise ImportError(
-                "pymodbus is required for ModbusServerSocket. "
-                "Please install it using 'pip install pymodbus>=3.1.0'"
-            )
-        
         super().__init__(campaign)
-        cfg = getattr(self.campaign, 'socket_config', None)
+        cfg = self.socket_config
         self.socket_cfg: ModbusServerConfig = (
             cfg if isinstance(cfg, ModbusServerConfig) else ModbusServerConfig()
         )
@@ -320,7 +292,7 @@ class ModbusServerSocket(FuzzSocket):
         self._server: Optional[CustomModbusServer] = None
         self._raw_server_socket: Optional[socket.socket] = None
         self._running = False
-        self.debug_mode = getattr(self.campaign, 'debug_mode', False) or self.socket_cfg.debug_mode
+        self.debug_mode = self.socket_cfg.debug_mode
         
         # For injecting fuzzed responses
         self._response_queue = []
@@ -395,11 +367,13 @@ class ModbusServerSocket(FuzzSocket):
         last_request = requests[-1]
         
         # Return a serialized representation of the request
-        # This is a simple implementation that could be enhanced
+        # This is a simple implementation
         try:
             import json
             return json.dumps(last_request).encode('utf-8')
-        except Exception:
+        except (TypeError, ValueError) as e:
+            # JSON serialization failed, fallback to string representation
+            self.logger.debug(f"JSON serialization failed for request: {e}")
             return str(last_request).encode('utf-8')
 
     def get_captured_requests(self) -> List[Dict[str, Any]]:
@@ -473,7 +447,6 @@ class ModbusServerSocket(FuzzSocket):
             "port": self.socket_cfg.port,
             "unit_id": self.socket_cfg.unit_id,
             "running": self._running,
-            "pymodbus_available": PYMODBUS_AVAILABLE,
             "captured_requests": len(self.get_captured_requests())
         })
         return base_info

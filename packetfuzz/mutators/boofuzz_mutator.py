@@ -176,7 +176,6 @@ class BoofuzzMutator(BaseMutator):
             
         except Exception as e:
             logger.warning(f"Error mutating field '{field_info.field_name}' with boofuzz: {e}")
-            # Return original value on error rather than failing silently
             return field_info.current_value
     
     def initialize(self, field_metadata: FieldMetadata, seed_data: List[Any], rng: Optional[random.Random] = None) -> bool:

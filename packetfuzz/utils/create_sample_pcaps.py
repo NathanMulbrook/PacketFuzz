@@ -10,14 +10,12 @@ This script generates various sample PCAP files containing:
 
 The generated PCAP files are saved in the 'regression_samples' directory.
 """
-# Standard library imports
 import sys
 from pathlib import Path
 
 # Path setup
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-# Third-party imports
 from scapy.layers.dns import DNS, DNSQR
 from scapy.layers.inet import IP, TCP, UDP
 from scapy.layers.l2 import Ether
@@ -70,7 +68,6 @@ def create_sample_pcaps():
         Ether(src="aa:bb:cc:dd:ee:03", dst="aa:bb:cc:dd:ee:04")/IP(src="172.16.0.3", dst="172.16.0.4")/TCP(sport=9876, dport=80)/Raw(b"L2_HTTP_REQUEST"),
     ]
     
-    # Write PCAP files
     regression_dir = Path("regression_samples")
     regression_dir.mkdir(exist_ok=True)
     

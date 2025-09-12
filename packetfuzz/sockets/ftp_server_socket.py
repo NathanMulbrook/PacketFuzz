@@ -136,8 +136,14 @@ class FTPServerSocket(FuzzSocket):
     """
 
     def __init__(self, campaign) -> None:
+        if not PYFTPDLIB_AVAILABLE:
+            raise ImportError(
+                "pyftpdlib is required for FTPServerSocket. "
+                "Please install it using 'pip install pyftpdlib'"
+            )
+        
         super().__init__(campaign)
-        cfg = getattr(self.campaign, 'socket_config', None)
+        cfg = self.socket_config
         self.socket_cfg: FTPServerConfig = cfg if isinstance(cfg, FTPServerConfig) else FTPServerConfig()
         
         self._server: Optional[FTPServer] = None

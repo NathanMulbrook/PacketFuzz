@@ -48,17 +48,14 @@ class ServerTCPSocket(FuzzSocket):
     def open(self) -> "ServerTCPSocket":
         """Create and bind TCP listening socket."""
         try:
-            # Create TCP socket
             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             
             # Allow socket reuse
             s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             
-            # Bind to address from config
             bind_address = self.socket_cfg.bind_address
             port = self.socket_cfg.port
             
-            # Bind to address
             s.bind((bind_address, port))
             
             self._sock = s
@@ -91,7 +88,6 @@ class ServerTCPSocket(FuzzSocket):
             
             client_sock, client_addr = self._sock.accept()
             
-            # Create a new FuzzSocket for the client connection
             client_socket = ClientTCPSocket(self.campaign, client_sock)
             return client_socket, client_addr
             
@@ -119,7 +115,6 @@ class ServerTCPSocket(FuzzSocket):
         from scapy.layers.l2 import Ether
         from scapy.layers.inet import IP, TCP
         
-        # Create TCP packet with server context
         tcp_packet = TCP(
             sport=self.socket_config.port,
             dport=0,  # Unknown client port for server
@@ -198,7 +193,6 @@ class ClientTCPSocket(FuzzSocket):
         # For server-side connections, we reverse src/dst
         sport = random.randint(49152, 65535)
         
-        # Create complete TCP/IP/Ethernet packet with fuzzed data as payload
         completed = Ether(dst="ff:ff:ff:ff:ff:ff", src="00:00:00:00:00:00") / \
                    IP(dst="127.0.0.1", src="127.0.0.1") / \
                    TCP(dport=sport, sport=80) / Raw(load=raw_bytes)

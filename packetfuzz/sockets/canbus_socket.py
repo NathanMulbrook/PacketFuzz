@@ -65,7 +65,11 @@ class CANBusSocket(FuzzSocket):
         if not self._sock:
             raise RuntimeError("Socket not open")
             
-        return self._sock.send(packet_bytes)
+        try:
+            return self._sock.send(packet_bytes)
+        except (ConnectionError, OSError) as e:
+            # Socket errors should crash the fuzzing campaign
+            raise RuntimeError(f"CAN socket send failed: {e}") from e
 
 
 
@@ -84,6 +88,9 @@ class CANBusSocket(FuzzSocket):
         except socket.timeout:
             logging.getLogger(__name__).debug("[CANBusSocket] receive timeout")
             return None
+        except (ConnectionError, OSError) as e:
+            # Socket errors should crash the fuzzing campaign
+            raise RuntimeError(f"CAN socket receive failed: {e}") from e
         finally:
             if timeout is not None:
                 self._sock.settimeout(None)  # Reset to blocking
@@ -95,7 +102,8 @@ class CANBusSocket(FuzzSocket):
         CAN frames have a specific format, so we create a minimal Ethernet frame
         with the raw CAN data as payload for PCAP compatibility.
         """
-        from scapy.layers.l2 import Ether, Raw
+        from scapy.layers.l2 import Ether
+        from scapy.packet import Raw
         
         # Create Ethernet frame with CAN data as payload
         completed = Ether(dst="ff:ff:ff:ff:ff:ff", src="00:00:00:00:00:00") / Raw(load=raw_bytes)

@@ -81,14 +81,12 @@ class DictionaryManager:
         if p.is_absolute():
             return str(p)
         
-        # Handle legacy fuzzdb-specific path format for backwards compatibility
         if path.startswith("fuzzdb/") and self.fuzzdb_path:
             return str(Path(self.fuzzdb_path) / path[7:])
         
         # For any other relative path, resolve it relative to project root
         project_root = self._find_project_root()
         
-        # Try to resolve the path directly from project root
         candidate_path = project_root / path
         if candidate_path.exists():
             return str(candidate_path)
@@ -365,7 +363,6 @@ class DictionaryManager:
             if not entry_str:
                 continue  # Skip entries that become empty after normalization
                 
-            # Apply length filtering if enabled and max_length is provided
             if FILTER_BY_MAX_LENGTH and max_length is not None and len(entry_str) > max_length:
                 entries_filtered_by_length += 1
                 continue

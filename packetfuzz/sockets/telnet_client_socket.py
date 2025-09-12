@@ -45,13 +45,20 @@ class TelnetClientSocket(FuzzSocket):
     """
 
     def __init__(self, campaign) -> None:
+        if not TELNETLIB_AVAILABLE:
+            raise ImportError(
+                "telnetlib is required for TelnetClientSocket but was not found. "
+                "telnetlib was deprecated in Python 3.11 and removed in Python 3.13. "
+                "Consider using a different socket type or install a telnet library."
+            )
+        
         super().__init__(campaign)
-        cfg = getattr(self.campaign, 'socket_config', None)
+        cfg = self.socket_config
         self.socket_cfg: TelnetClientConfig = cfg if isinstance(cfg, TelnetClientConfig) else TelnetClientConfig()
         self._telnet_client: Optional[telnetlib.Telnet] = None
         self._connected = False
         self._last_response = None
-        self.debug_mode = getattr(self.campaign, 'debug_mode', False)
+        self.debug_mode = False  # Default value since TelnetClientConfig may not have debug_mode
 
     def open(self) -> "TelnetClientSocket":
         """Connect to Telnet server."""
@@ -103,11 +110,13 @@ class TelnetClientSocket(FuzzSocket):
         if self.debug_mode:
             self.logger.debug(f"Sending {len(packet_bytes)} bytes: {packet_bytes}")
         
-        self._telnet_client.write(packet_bytes)
+        if self._telnet_client is not None:
+            self._telnet_client.write(packet_bytes)
         
         if self.socket_cfg.one_connection_per_command:
             # Read response before closing if configured for one command per connection
-            self._last_response = self._telnet_client.read_all()
+            if self._telnet_client is not None:
+                self._last_response = self._telnet_client.read_all()
             self.close()
         
         return len(packet_bytes)

@@ -1015,10 +1015,9 @@ class AdvancedPerformanceGenerator(ReportGeneratorInterface):
             campaign_info = {
                 "fuzz_mode": config.mode.value if hasattr(config.mode, 'value') else str(config.mode),
                 "max_mutations": config.max_mutations,
-                "use_dictionaries": config.use_dictionaries,
                 "global_fuzz_weight": config.fuzz_weight,
                 "fuzz_weight_scale": config.fuzz_weight_scale,
-                "layer_weight_scaling_enabled": config.enable_layer_weight_scaling,
+                "layer_weight_scaling_enabled": config.layer_weight_scaling is not None and config.layer_weight_scaling != 1.0,
                 "layer_weight_scaling_factor": config.layer_weight_scaling,
                 "mutator_preferences": config.mutator_preference,
                 "single_packet_mode": getattr(mutator_data, 'is_single_packet', None),
@@ -1030,7 +1029,8 @@ class AdvancedPerformanceGenerator(ReportGeneratorInterface):
                 campaign_info["estimated_total_mutations"] = config.iterations * len(mutator_data.get_all_fuzzable_fields())
             else:
                 campaign_info["estimated_total_mutations"] = "Unknown (iterations not set)"
-            campaign_info["dictionary_usage_enabled"] = config.use_dictionaries
+            # Dictionaries are always enabled when mutators support them
+            campaign_info["dictionary_usage_enabled"] = True
             
             return campaign_info
         except Exception as e:
@@ -1622,6 +1622,13 @@ class MarkdownExporter(ExporterInterface):
             if analysis.get('most_used_mutator'):
                 mutator, count = analysis['most_used_mutator']
                 md += f"- **Most Used Mutator:** {mutator} ({count} times)\n"
+            
+            # Add mutator preferences distribution if available
+            if analysis.get('mutator_preferences_distribution'):
+                md += "\n### Mutator Preferences Distribution\n\n"
+                md += "| Preference | Usage Count |\n|---|---|\n"
+                for pref, count in sorted(analysis['mutator_preferences_distribution'].items(), key=lambda x: x[1], reverse=True):
+                    md += f"| {pref} | {count} |\n"
             md += "\n"
         
         # Weight Analysis
@@ -1636,6 +1643,20 @@ class MarkdownExporter(ExporterInterface):
                 dist = weights["weight_distribution"]
                 md += f"- **Weight Range:** {dist.get('min_final_weight', 0)} - {dist.get('max_final_weight', 0)}\n"
                 md += f"- **Average Final Weight:** {dist.get('avg_final_weight', 0)}\n"
+            
+            # Add scaling effectiveness details
+            if "scaling_effectiveness" in weights:
+                scaling_eff = weights["scaling_effectiveness"]
+                md += f"- **Scaling Impact Score:** {scaling_eff.get('scaling_impact_score', 0.0)}\n"
+                
+                if "scaling_distribution" in scaling_eff:
+                    dist = scaling_eff["scaling_distribution"]
+                    md += "\n### Scaling Distribution\n\n"
+                    md += "| Scaling Level | Field Count |\n|---|---|\n"
+                    md += f"| No Scaling | {dist.get('no_scaling', 0)} |\n"
+                    md += f"| Light Scaling | {dist.get('light_scaling', 0)} |\n"
+                    md += f"| Moderate Scaling | {dist.get('moderate_scaling', 0)} |\n"
+                    md += f"| Heavy Scaling | {dist.get('heavy_scaling', 0)} |\n"
             md += "\n"
         
         # Campaign Configuration
@@ -1644,15 +1665,35 @@ class MarkdownExporter(ExporterInterface):
             md += "## Campaign Configuration\n\n"
             md += f"- **Fuzz Mode:** {config.get('fuzz_mode', 'unknown')}\n"
             md += f"- **Max Mutations:** {config.get('max_mutations', 0)}\n"
-            md += f"- **Use Dictionaries:** {config.get('use_dictionaries', False)}\n"
+            md += f"- **Use Dictionaries:** Always enabled when supported\n"
             md += f"- **Global Fuzz Weight:** {config.get('global_fuzz_weight', 0)}\n"
             md += f"- **Fuzz Weight Scale:** {config.get('fuzz_weight_scale', 1.0)}\n"
             md += f"- **Layer Weight Scaling Enabled:** {config.get('layer_weight_scaling_enabled', False)}\n"
             md += f"- **Single Packet Mode:** {config.get('single_packet_mode', False)}\n"
             md += f"- **Total Iterations:** {config.get('total_iterations', 0)}\n"
             md += f"- **Estimated Total Mutations:** {config.get('estimated_total_mutations', 0)}\n"
-            if config.get('mutator_preferences'):
-                md += f"- **Mutator Preferences:** {', '.join(config['mutator_preferences'])}\n"
+            
+            # Handle mutator preferences - could be list or dict
+            mutator_prefs = config.get('mutator_preferences')
+            if mutator_prefs:
+                if isinstance(mutator_prefs, dict):
+                    # Dictionary format: {'libfuzzer': 1.0, 'scapy': 0.8}
+                    pref_list = [f"{k} ({v})" for k, v in mutator_prefs.items()]
+                    md += f"- **Mutator Preferences:** {', '.join(pref_list)}\n"
+                elif isinstance(mutator_prefs, list):
+                    # List format: ['libfuzzer', 'scapy']
+                    md += f"- **Mutator Preferences:** {', '.join(mutator_prefs)}\n"
+                else:
+                    md += f"- **Mutator Preferences:** {mutator_prefs}\n"
+            
+            # Add layer weight scaling factor if available
+            if config.get('layer_weight_scaling_factor') is not None:
+                md += f"- **Layer Weight Scaling Factor:** {config.get('layer_weight_scaling_factor')}\n"
+            
+            # Add dictionary usage flag
+            if 'dictionary_usage_enabled' in config:
+                md += f"- **Dictionary Usage Enabled:** {config.get('dictionary_usage_enabled', False)}\n"
+            
             md += "\n"
         
         # Mutation Effectiveness
@@ -1662,8 +1703,10 @@ class MarkdownExporter(ExporterInterface):
             
             if "field_coverage" in effectiveness:
                 coverage = effectiveness["field_coverage"]
+                md += f"- **Total Available Fields:** {coverage.get('total_available_fields', 0)}\n"
+                md += f"- **Fuzzable Fields:** {coverage.get('fuzzable_fields', 0)}\n"
+                md += f"- **Actually Fuzzed Fields:** {coverage.get('actually_fuzzed_fields', 0)}\n"
                 md += f"- **Field Coverage:** {coverage.get('coverage_percentage', 0)}%\n"
-                md += f"- **Actually Fuzzed Fields:** {coverage.get('actually_fuzzed_fields', 0)} / {coverage.get('fuzzable_fields', 0)}\n"
             
             md += f"- **Effectiveness Score:** {effectiveness.get('effectiveness_score', 0)}/100\n"
             
@@ -1681,12 +1724,26 @@ class MarkdownExporter(ExporterInterface):
             md += f"- **Fields with Dictionaries:** {dicts.get('fields_with_dictionaries', 0)}\n"
             md += f"- **Total Dictionary Files:** {dicts.get('total_dictionary_files', 0)}\n"
             
-            if dicts.get('most_common_dictionaries'):
+            # Full dictionary distribution (not just top 10)
+            if dicts.get('dictionary_distribution'):
+                md += "\n### Complete Dictionary Distribution\n\n"
+                md += "| Dictionary | Usage Count |\n|---|---|\n"
+                # Sort by usage count
+                sorted_dicts = sorted(dicts['dictionary_distribution'].items(), key=lambda x: x[1], reverse=True)
+                for dict_path, count in sorted_dicts:
+                    # Truncate long paths for readability
+                    display_path = dict_path if len(dict_path) <= 60 else "..." + dict_path[-57:]
+                    md += f"| {display_path} | {count} |\n"
+                md += "\n"
+            
+            # Still keep the legacy most_common_dictionaries for compatibility
+            elif dicts.get('most_common_dictionaries'):
                 md += "\n### Most Common Dictionaries\n\n"
                 md += "| Dictionary | Usage Count |\n|---|---|\n"
                 for dict_path, count in dicts['most_common_dictionaries'][:10]:
-                    md += f"| {dict_path} | {count} |\n"
-            md += "\n"
+                    display_path = dict_path if len(dict_path) <= 60 else "..." + dict_path[-57:]
+                    md += f"| {display_path} | {count} |\n"
+                md += "\n"
         
         # Performance Recommendations
         if "recommendations" in content:
@@ -1699,8 +1756,58 @@ class MarkdownExporter(ExporterInterface):
         # Top Performing Fields (from field_performance)
         if "field_performance" in content:
             field_perf = content["field_performance"]
+            
+            # Add detailed field analysis table
+            if field_perf.get("field_details"):
+                md += "## Detailed Field Analysis\n\n"
+                md += f"- **Total Fields Analyzed:** {field_perf.get('total_fields_analyzed', 0)}\n\n"
+                
+                # Create comprehensive field details table
+                md += "### Field Performance Details\n\n"
+                md += "| Field Key | Field Name | Kind | Layer | Base Weight | Final Weight | Mutations | Success Rate | Dict Count | Config Source | Last Mutated |\n"
+                md += "|---|---|---|---|---|---|---|---|---|---|---|\n"
+                
+                for field in field_perf["field_details"]:
+                    # Truncate field key for readability
+                    field_key = field.get('field_key', 'unknown')
+                    display_key = field_key if len(field_key) <= 20 else field_key[:17] + "..."
+                    
+                    # Format last mutated timestamp
+                    last_mutated = field.get('last_mutated', '')
+                    if last_mutated:
+                        # Convert datetime to string if needed, then format
+                        last_mutated_str = str(last_mutated)
+                        # Just show date and time, not microseconds
+                        last_mutated_str = last_mutated_str.split('.')[0] if '.' in last_mutated_str else last_mutated_str
+                    
+                    md += f"| {display_key} | {field.get('field_name', 'unknown')} | {field.get('field_kind', 'unknown')} | {field.get('layer_name', 'unknown')} | {field.get('base_weight', 0)} | {field.get('final_weight', 0)} | {field.get('mutation_count', 0)} | {field.get('success_rate', 0)}% | {field.get('dictionary_count', 0)} | {field.get('config_source', 'unknown')} | {last_mutated_str} |\n"
+                md += "\n"
+            
+            # Field config sources summary
+            if field_perf.get("field_config_sources"):
+                md += "### Field Configuration Sources\n\n"
+                md += "| Config Source | Field Count |\n|---|---|\n"
+                for source, count in field_perf["field_config_sources"].items():
+                    md += f"| {source} | {count} |\n"
+                md += "\n"
+            
+            # Weight scaling impact
+            if field_perf.get("weight_scaling_impact"):
+                scaling_impact = field_perf["weight_scaling_impact"]
+                md += "### Weight Scaling Impact\n\n"
+                md += f"- **Fields Affected by Scaling:** {scaling_impact.get('fields_affected_by_scaling', 0)}\n"
+                md += f"- **Average Scaling Reduction:** {scaling_impact.get('average_scaling_reduction', 0)}\n"
+                
+                if scaling_impact.get("highly_scaled_fields"):
+                    md += "\n#### Highly Scaled Fields\n\n"
+                    md += "| Field | Original Weight | Final Weight | Reduction |\n|---|---|---|---|\n"
+                    for field in scaling_impact["highly_scaled_fields"]:
+                        md += f"| {field.get('field', 'unknown')} | {field.get('original_weight', 0)} | {field.get('final_weight', 0)} | {field.get('reduction', 0)}% |\n"
+                md += "\n"
+            
+            # Top performing fields summary (keep existing functionality)
             if field_perf.get("top_performing_fields"):
-                md += "## Top Performing Fields (by mutation count)\n\n"
+                md += "### Top Performing Fields (by mutation count)\n\n"
                 md += "| Field | Layer | Mutations | Success Rate | Final Weight |\n|---|---|---|---|---|\n"
                 for field in field_perf["top_performing_fields"][:10]:
                     md += f"| {field.get('field_name', 'unknown')} | {field.get('layer_name', 'unknown')} | {field.get('mutation_count', 0)} | {field.get('success_rate', 0)}% | {field.get('final_weight', 0)} |\n"
@@ -2150,7 +2257,8 @@ def write_fuzz_history_dump(
                     try:
                         iteration_num = getattr(entry, 'iteration', i)
                         fuzzed_fields = mutator_data.get_fuzzed_fields_for_packet(iteration_num)
-                    except Exception:
+                    except Exception as e:
+                        logger.debug(f"Failed to get fuzzed fields for iteration {iteration_num}: {e}")
                         pass  # Continue with empty fuzzed_fields
                 
                 if fuzzed_fields:
